@@ -109,59 +109,57 @@
 
 ## Traceability
 
-*(Populated during roadmap creation)*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FNDTN-01 | — | Pending |
-| FNDTN-02 | — | Pending |
-| FNDTN-03 | — | Pending |
-| FNDTN-04 | — | Pending |
-| FNDTN-05 | — | Pending |
-| FNDTN-06 | — | Pending |
-| FNDTN-07 | — | Pending |
-| KICK-01 | — | Pending |
-| KICK-02 | — | Pending |
-| KICK-03 | — | Pending |
-| KICK-04 | — | Pending |
-| KICK-05 | — | Pending |
-| KICK-06 | — | Pending |
-| KICK-07 | — | Pending |
-| KICK-08 | — | Pending |
-| KICK-09 | — | Pending |
-| KICK-10 | — | Pending |
-| KICK-11 | — | Pending |
-| KICK-12 | — | Pending |
-| KICK-13 | — | Pending |
-| KICK-14 | — | Pending |
-| KICK-15 | — | Pending |
-| GRV-01 | — | Pending |
-| GRV-02 | — | Pending |
-| GRV-03 | — | Pending |
-| GRV-04 | — | Pending |
-| GRV-05 | — | Pending |
-| PERF-01 | — | Pending |
-| PERF-02 | — | Pending |
-| PERF-03 | — | Pending |
-| PERF-04 | — | Pending |
-| PERF-05 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
-| UI-05 | — | Pending |
-| UI-06 | — | Pending |
-| PRST-01 | — | Pending |
-| PRST-02 | — | Pending |
-| PRST-03 | — | Pending |
-| PRST-04 | — | Pending |
-| PRST-05 | — | Pending |
+| FNDTN-01 | Phase A | Pending |
+| FNDTN-02 | Phase A | Pending |
+| FNDTN-03 | Phase A | Pending |
+| FNDTN-04 | Phase A | Pending |
+| FNDTN-05 | Phase A | Pending |
+| FNDTN-06 | Phase A | Pending |
+| FNDTN-07 | Phase A | Pending |
+| KICK-01 | Phase A | Pending |
+| KICK-02 | Phase A | Pending |
+| KICK-03 | Phase B | Pending |
+| KICK-04 | Phase B | Pending |
+| KICK-05 | Phase B | Pending |
+| KICK-06 | Phase B | Pending |
+| KICK-07 | Phase B | Pending |
+| KICK-08 | Phase B | Pending |
+| KICK-09 | Phase B | Pending |
+| KICK-10 | Phase B | Pending |
+| KICK-11 | Phase B | Pending |
+| KICK-12 | Phase A | Pending |
+| KICK-13 | Phase B | Pending |
+| KICK-14 | Phase B | Pending |
+| KICK-15 | Phase A | Pending |
+| GRV-01 | Phase C | Pending |
+| GRV-02 | Phase C | Pending |
+| GRV-03 | Phase C | Pending |
+| GRV-04 | Phase C | Pending |
+| GRV-05 | Phase C | Pending |
+| PERF-01 | Phase D | Pending |
+| PERF-02 | Phase D | Pending |
+| PERF-03 | Phase D | Pending |
+| PERF-04 | Phase D | Pending |
+| PERF-05 | Phase D | Pending |
+| UI-01 | Phase E | Pending |
+| UI-02 | Phase F | Pending |
+| UI-03 | Phase F | Pending |
+| UI-04 | Phase G | Pending |
+| UI-05 | Phase G | Pending |
+| UI-06 | Phase E | Pending |
+| PRST-01 | Phase G | Pending |
+| PRST-02 | Phase G | Pending |
+| PRST-03 | Phase G | Pending |
+| PRST-04 | Phase G | Pending |
+| PRST-05 | Phase G | Pending |
 
 **Coverage:**
 - v1 requirements: 42 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 42 ⚠️
+- Mapped to phases: 42 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-28*
-*Last updated: 2026-09-28 after initial definition*
+*Last updated: 2026-09-28 after roadmap creation*
