@@ -96,4 +96,11 @@ _Static_assert(sizeof(struct bohm_instance) < 800000, "instance under 800KB");
 /* Model registry — defined in model_registry.c (Plan A-02). */
 extern const kick_model_vtable_t *g_models[MODEL_COUNT];
 
+/* --- FM2 engine exports (Plan A-02, src/models/fm2.c) ------------------- */
+/* The FM2 vtable (defined in fm2.c) and the Page-1 param setter that dsp.c
+ * dispatches all kick keys to. dsp.c never calls DSP math directly (D-01);
+ * it routes PK_* kick keys to fm2_set_param and triggers/renders via g_models. */
+extern const kick_model_vtable_t g_fm2_vtable;
+void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val);
+
 #endif /* OMEGA_H */

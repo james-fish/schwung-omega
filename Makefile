@@ -36,19 +36,29 @@ TEST_FLAGS += -lm
 DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
 TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.c \
             src/dsp_primitives.c
+# Focused FM2 engine unit test (A-02 Task 1): exercises fm2_* directly against
+# a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.
+FM2_TEST_SRCS = tests/test_fm2.c tests/malloc_trap.c \
+                src/models/fm2.c src/dsp_primitives.c
 
-.PHONY: dsp.so test clean deploy
+.PHONY: dsp.so test test-fm2 clean deploy
 
 # dsp.so: cross-compiled module. Populated fully by A-02 (dsp.c, registry, fm2.c).
 dsp.so:
 	@mkdir -p build
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so
 
-# test: native Wave 0 gate. Compiles + runs the offline harness (< 5 s).
-test:
+# test: native gate. Runs the FM2 engine unit test then the offline harness.
+test: test-fm2
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render
 	./build/test_render
+
+# test-fm2: focused FM2 DSP unit test (< 5 s).
+test-fm2:
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(FM2_TEST_SRCS) -o build/test_fm2
+	./build/test_fm2
 
 clean:
 	rm -rf build tests/output
