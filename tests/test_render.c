@@ -107,11 +107,34 @@ int main(void) {
     api->set_param(inst, PK_FM_INDEX, "0.9"); render_energy(api, inst, bufB);
     assert(memcmp(bufA, bufB, sizeof(bufA)) != 0);
 
-    /* get_param contract: ui_hierarchy handled, unknown key returns -1. */
-    char uibuf[256];
-    int uin = api->get_param(inst, PK_UI_HIER, uibuf, sizeof(uibuf));
-    assert(uin > 0);
-    assert(api->get_param(inst, "nonexistent_key", uibuf, sizeof(uibuf)) == -1);
+    /* ---- ui_hierarchy contract (A-03) ------------------------------------ */
+    /* Bytes-written return + in-bounds + null-terminated (Pitfall 3/4). */
+    char uibuf[4096];
+    int n = api->get_param(inst, PK_UI_HIER, uibuf, sizeof(uibuf));
+    assert(n > 0 && n < (int)sizeof(uibuf));
+    assert(uibuf[n] == '\0');   /* return value excludes terminator; buf[n] is '\0' */
+
+    /* Page 1 key + all 3 FM2 Page-2 keys present (dynamic Page 2 assembly). */
+    assert(strstr(uibuf, "pitch"));
+    assert(strstr(uibuf, "fm_ratio"));
+    assert(strstr(uibuf, "fm_index"));
+    assert(strstr(uibuf, "op2_wave"));
+    /* FX placeholders present too (D-08). */
+    assert(strstr(uibuf, "fx_type") && strstr(uibuf, "fx_amt"));
+
+    /* Unknown key returns -1 (do NOT return 0 or write garbage). */
+    char tmp[8];
+    assert(api->get_param(inst, "nonexistent_key_xyz", tmp, sizeof(tmp)) == -1);
+
+    /* Truncation safety (Pitfall 3): a deliberately tiny buf_len must NOT write
+     * past the buffer and must still null-terminate. A canary byte after the
+     * bounded region must stay untouched. */
+    struct { char b[16]; char canary; } probe;
+    probe.canary = (char)0x5A;
+    int tn = api->get_param(inst, PK_UI_HIER, probe.b, (int)sizeof(probe.b));
+    assert(probe.canary == (char)0x5A);        /* no overrun past buf_len */
+    assert(tn >= 0 && tn < (int)sizeof(probe.b));  /* bytes written within bounds */
+    assert(probe.b[tn] == '\0');               /* still null-terminated */
 
     api->destroy_instance(inst);
 
