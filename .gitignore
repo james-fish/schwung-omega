@@ -1,4 +1,5 @@
 build/
+.DS_Store
 tests/output/*
 !tests/output/.gitkeep
 *.o

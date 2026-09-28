@@ -11,15 +11,15 @@
 
 - [ ] **FNDTN-01**: Module implements `plugin_api_v2_t` C plugin interface — loads and runs unmodified in Schwung instrument slots, DR32 pad slots, and Movy tracks
 - [ ] **FNDTN-02**: `module.json` manifest present with `component_type: sound_generator`, `pad_layout: drums`, `api_version: 2`, id `omega`
-- [ ] **FNDTN-03**: Zero dynamic allocation on audio thread — all buffers (groove delay, wavetable scratch, model state) pre-allocated in `create_instance`; malloc-trap debug build `abort()`s on any audio-thread heap call
-- [ ] **FNDTN-04**: `dsp.so` cross-compiled for Linux ARM64 (aarch64, glibc 2.35) via Docker `schwung-builder:latest` image pinned by digest; CI `objdump -T` gate enforces no GLIBC symbols newer than 2.35
-- [ ] **FNDTN-05**: FPCR flush-to-zero bit set explicitly in `render_block` — prevents denormal stalls on ARM64 Cortex-A53 (FPCR is per-thread, not inherited from host)
-- [ ] **FNDTN-06**: Offline test harness: mock `host_api_v1_t` stub + render-to-WAV output for DSP verification and listening without Move hardware
+- [x] **FNDTN-03**: Zero dynamic allocation on audio thread — all buffers (groove delay, wavetable scratch, model state) pre-allocated in `create_instance`; malloc-trap debug build `abort()`s on any audio-thread heap call
+- [x] **FNDTN-04**: `dsp.so` cross-compiled for Linux ARM64 (aarch64, glibc 2.35) via Docker `schwung-builder:latest` image pinned by digest; CI `objdump -T` gate enforces no GLIBC symbols newer than 2.35
+- [x] **FNDTN-05**: FPCR flush-to-zero bit set explicitly in `render_block` — prevents denormal stalls on ARM64 Cortex-A53 (FPCR is per-thread, not inherited from host)
+- [x] **FNDTN-06**: Offline test harness: mock `host_api_v1_t` stub + render-to-WAV output for DSP verification and listening without Move hardware
 - [ ] **FNDTN-07**: Output stage uses `clamp + isfinite + lrintf` before int16 cast — no unclamped float-to-int16 conversions anywhere in the signal path
 
 ### Kick Engine
 
-- [ ] **KICK-01**: Model dispatcher vtable — 10+ models selectable via MODEL parameter; each model implements `trigger`, `render`, `set_p2`, and `p2_slot_desc` function pointers; model IDs are permanent (append-only, never renumber)
+- [x] **KICK-01**: Model dispatcher vtable — 10+ models selectable via MODEL parameter; each model implements `trigger`, `render`, `set_p2`, and `p2_slot_desc` function pointers; model IDs are permanent (append-only, never renumber)
 - [ ] **KICK-02**: FM2 model — 2-operator wavetable FM kick; carrier and modulator are both wavetable oscillators; FM index has its own decay envelope; model-specific Kick Page 2: FM RATIO, FM INDEX, OP2 WAVE
 - [ ] **KICK-03**: FM4 model — 4-operator FM with 4 selectable routing algorithms (OPL3-inspired); per-operator AM envelopes; model-specific Kick Page 2: ALGORITHM, OP RATIO, OP INDEX, OP AMP, FEEDBACK, ALGO
 - [ ] **KICK-04**: WTR model — wavetable body oscillator + dedicated transient impulse synth; body and click are independently enveloped; model-specific Kick Page 2: WAVE SELECT, BODY PITCH, TRANS DECAY, TRANS COLOR
@@ -33,7 +33,7 @@
 - [ ] **KICK-12**: Universal Kick Page 1 present for all models (8 encoders): PITCH, LENGTH, SUSTAIN, CURVE (808↔909 pitch sweep), ATTACK, TRS DEC, TRS TNE, COLOR
 - [ ] **KICK-13**: Context-sensitive Kick Page 2: FX TYPE (Diode/Clip/SAT/Fold/Crush), FX AMT, + 6 model-specific parameter slots assembled dynamically from active model's `p2_slot_desc`
 - [ ] **KICK-14**: Post-kick FX modes: Diode (back-to-back diode rounding), Clip (asymmetric soft clip), SAT (warm parallel saturation), Fold (wavefolder), Crush (bit-depth/sample-rate reduction)
-- [ ] **KICK-15**: Wavetables stored as `static const float` arrays in `.rodata` (shared across all instances); linear interpolation with 2048+1 guard sample; pre-band-limited source tables
+- [x] **KICK-15**: Wavetables stored as `static const float` arrays in `.rodata` (shared across all instances); linear interpolation with 2048+1 guard sample; pre-band-limited source tables
 
 ### Groove Rumble
 
@@ -113,12 +113,12 @@
 |-------------|-------|--------|
 | FNDTN-01 | Phase A | Pending |
 | FNDTN-02 | Phase A | Pending |
-| FNDTN-03 | Phase A | Pending |
-| FNDTN-04 | Phase A | Pending |
-| FNDTN-05 | Phase A | Pending |
-| FNDTN-06 | Phase A | Pending |
+| FNDTN-03 | Phase A | Complete |
+| FNDTN-04 | Phase A | Complete |
+| FNDTN-05 | Phase A | Complete |
+| FNDTN-06 | Phase A | Complete |
 | FNDTN-07 | Phase A | Pending |
-| KICK-01 | Phase A | Pending |
+| KICK-01 | Phase A | Complete |
 | KICK-02 | Phase A | Pending |
 | KICK-03 | Phase B | Pending |
 | KICK-04 | Phase B | Pending |
@@ -132,7 +132,7 @@
 | KICK-12 | Phase A | Pending |
 | KICK-13 | Phase B | Pending |
 | KICK-14 | Phase B | Pending |
-| KICK-15 | Phase A | Pending |
+| KICK-15 | Phase A | Complete |
 | GRV-01 | Phase C | Pending |
 | GRV-02 | Phase C | Pending |
 | GRV-03 | Phase C | Pending |
