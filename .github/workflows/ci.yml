@@ -16,11 +16,9 @@ jobs:
   cross-build-gate:
     name: Docker cross-build + glibc gate
     runs-on: ubuntu-latest
-    # NOTE: dsp.so requires move_plugin_init_v2 + the model registry, which land
-    # in Plan A-02. Until then this job is allowed to fail. Flip
-    # continue-on-error to false once A-02 provides the entry points.
-    # TODO(A-02): set continue-on-error: false after entry points land.
-    continue-on-error: true
+    # dsp.c/ui.c/model_registry.c/fm2.c all exist (A-01..A-03), so `make dsp.so`
+    # must succeed and the glibc gate must pass. This job is now blocking.
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
       - name: Cross-compile dsp.so in schwung-builder
