@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native-test:
+    name: Native offline harness (make test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: make test
+        run: make test
+
+  cross-build-gate:
+    name: Docker cross-build + glibc gate
+    runs-on: ubuntu-latest
+    # NOTE: dsp.so requires move_plugin_init_v2 + the model registry, which land
+    # in Plan A-02. Until then this job is allowed to fail. Flip
+    # continue-on-error to false once A-02 provides the entry points.
+    # TODO(A-02): set continue-on-error: false after entry points land.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cross-compile dsp.so in schwung-builder
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            ghcr.io/charlesvestal/schwung-builder:latest make dsp.so
+      - name: glibc / libmvec / export gate
+        run: ./scripts/glibc_gate.sh build/dsp.so
