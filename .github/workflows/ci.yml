@@ -14,17 +14,21 @@ jobs:
         run: make test
 
   cross-build-gate:
-    name: Docker cross-build + glibc gate
-    runs-on: ubuntu-latest
-    # dsp.c/ui.c/model_registry.c/fm2.c all exist (A-01..A-03), so `make dsp.so`
-    # must succeed and the glibc gate must pass. This job is now blocking.
+    name: aarch64 cross-build (glibc 2.35) + gate
+    # ubuntu-22.04 ships glibc 2.35, matching the Move device target. Its
+    # gcc-aarch64-linux-gnu package cross-compiles against the 2.35 aarch64
+    # sysroot, so the produced dsp.so passes scripts/glibc_gate.sh (<= 2.35)
+    # without needing the private ghcr.io/charlesvestal/schwung-builder image.
+    runs-on: ubuntu-22.04
     continue-on-error: false
     steps:
       - uses: actions/checkout@v4
-      - name: Cross-compile dsp.so in schwung-builder
+      - name: Install aarch64 cross-toolchain
         run: |
-          docker run --rm -v "$PWD:/workspace" -w /workspace \
-            ghcr.io/charlesvestal/schwung-builder:latest make dsp.so
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Cross-compile dsp.so
+        run: make dsp.so
       - name: glibc / libmvec / export gate
         run: ./scripts/glibc_gate.sh build/dsp.so
       - name: Upload deployable artifact (dsp.so + module.json)

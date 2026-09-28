@@ -17,9 +17,12 @@ XCC  = aarch64-linux-gnu-gcc
 
 # --- aarch64 (shipped) flags — granular fast-math subset; no CPU pinning (D-15
 #     defers the Cortex core flag until on-device /proc/cpuinfo confirms it) ---
+# NOTE: -lm is NOT here. GNU ld resolves libraries left-to-right, so -lm must
+# appear AFTER the sources that reference it (see $(LDLIBS), appended in the
+# recipes below). macOS's linker is order-insensitive, but Linux CI is not.
 AARCH_FLAGS = -std=gnu11 -O3 -shared -fPIC -Isrc \
               -fno-math-errno -ffp-contract=fast \
-              -fvisibility=hidden -Wl,--no-undefined -lm
+              -fvisibility=hidden -Wl,--no-undefined
 
 # --- Native test flags -------------------------------------------------------
 # The malloc trap (-DOMEGA_MALLOC_TRAP) relies on __libc_* interposition, which
@@ -30,7 +33,9 @@ UNAME_S := $(shell uname -s)
 ifneq ($(UNAME_S),Darwin)
     TEST_FLAGS += -DOMEGA_MALLOC_TRAP
 endif
-TEST_FLAGS += -lm
+
+# Link libraries — MUST be last on the link line for GNU ld (see AARCH_FLAGS note).
+LDLIBS = -lm
 
 # --- Sources -----------------------------------------------------------------
 DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
@@ -49,18 +54,18 @@ FM2_TEST_SRCS = tests/test_fm2.c tests/malloc_trap.c \
 # dsp.so: cross-compiled module. src/*.c wildcard already covers src/ui.c (A-03).
 dsp.so:
 	@mkdir -p build
-	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so
+	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
 
 # test: native gate. Runs the FM2 engine unit test then the offline harness.
 test: test-fm2
 	@mkdir -p build tests/output
-	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render
+	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
 
 # test-fm2: focused FM2 DSP unit test (< 5 s).
 test-fm2:
 	@mkdir -p build
-	$(CC) $(TEST_FLAGS) $(FM2_TEST_SRCS) -o build/test_fm2
+	$(CC) $(TEST_FLAGS) $(FM2_TEST_SRCS) -o build/test_fm2 $(LDLIBS)
 	./build/test_fm2
 
 clean:
