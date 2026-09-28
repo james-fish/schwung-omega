@@ -34,7 +34,10 @@ TEST_FLAGS += -lm
 
 # --- Sources -----------------------------------------------------------------
 DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
+# Full-lifecycle harness (A-02 Task 3): drives move_plugin_init_v2 through the
+# real dsp.c / fm2.c / registry (create -> on_midi -> render x512 -> destroy).
 TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.c \
+            src/dsp.c src/models/fm2.c src/models/model_registry.c \
             src/dsp_primitives.c
 # Focused FM2 engine unit test (A-02 Task 1): exercises fm2_* directly against
 # a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.
