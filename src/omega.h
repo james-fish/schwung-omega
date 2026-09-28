@@ -103,4 +103,12 @@ extern const kick_model_vtable_t *g_models[MODEL_COUNT];
 extern const kick_model_vtable_t g_fm2_vtable;
 void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val);
 
+/* --- UI hierarchy (Plan A-03, src/ui.c) -------------------------------- */
+/* Defining OMEGA_HAS_UI tells dsp.c that ui.c owns the real omega_build_ui, so
+ * dsp.c drops its temporary #ifndef OMEGA_HAS_UI fallback (D-08/D-09). Assembles
+ * Kick Page 1 (8 slots) + the active model's Kick Page 2 into the caller's
+ * buffer with zero allocation, bounded to buf_len; returns bytes written. */
+#define OMEGA_HAS_UI 1
+int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len);
+
 #endif /* OMEGA_H */
