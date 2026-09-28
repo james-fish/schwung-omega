@@ -8,7 +8,7 @@
 
 ## Phases
 
-- [ ] **Phase A: Foundation + FM2 Model** - Prove the entire pipeline end-to-end: plugin loads in all 3 hosts, FM2 kick sounds on-device, all RT-safety primitives and CI gates in place
+- [ ] **Phase A: Foundation + FM2 Model** - Prove the entire pipeline end-to-end: plugin loads in all 3 hosts, FM2 kick sounds on-device, all RT-safety primitives and CI gates in place (code + CI complete; ON-DEVICE verification PENDING — SC1/SC5/D-15 await hardware, see docs/ON_DEVICE_VALIDATION.md)
 - [ ] **Phase B: Remaining 9 Kick Models** - All 10 models playable, each with correct context-sensitive Kick Page 2 params and FX chain
 - [ ] **Phase C: Groove Rumble Engine** - Rumble audibly syncs to project tempo; GEN model hooks connected to Groove Page 2
 - [ ] **Phase D: Performer Chain** - Full kick to rumble to duck to filter to clip chain complete and CPU-measured on-device
@@ -35,7 +35,7 @@ Plans:
 - [x] A-01-scaffolding-and-contracts-PLAN.md — build/test scaffolding, shared contracts (omega.h vtable + primitives), .rodata sine table, mock host, malloc trap, WAV writer, glibc gate, CI
 - [x] A-02-fm2-engine-and-entry-points-PLAN.md — full FM2 engine, plugin entry points (dsp.c dispatch), model registry, module.json, real lifecycle harness
 - [x] A-03-ui-hierarchy-and-buflen-spike-PLAN.md — real minimal ui_hierarchy (Page 1 + FM2 Page 2), D-10 buf_len one-shot spike, CI cross-build flipped to blocking
-- [ ] A-04-on-device-validation-PLAN.md — cross-build + deploy, 3-host load/audio verification (SC1), per-host buf_len capture (SC5), SoC identification (D-15)
+- [~] A-04-on-device-validation-PLAN.md — runbook docs created + committed (docs/ON_DEVICE_VALIDATION.md, docs/SOC_IDENTIFICATION.md); cross-build/deploy/3-host verify (SC1), buf_len capture (SC5), SoC ID (D-15) PENDING on-device human verification (macOS host has no Docker/device link)
 **UI hint**: yes
 
 ### Phase B: Remaining 9 Kick Models
@@ -116,7 +116,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| A. Foundation + FM2 | 2/4 | In Progress|  |
+| A. Foundation + FM2 | 4/4 | Complete   | 2026-09-28 |
 | B. 9 Kick Models | 0/? | Not started | - |
 | C. Groove Rumble | 0/? | Not started | - |
 | D. Performer Chain | 0/? | Not started | - |

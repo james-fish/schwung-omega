@@ -3,14 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed A-03-ui-hierarchy-and-buflen-spike-PLAN.md
-last_updated: "2026-09-28T22:39:52.000Z"
+stopped_at: "A-04 paused at human-verify checkpoint (Task 3): on-device 3-host load/listen + buf_len capture pending hardware"
+last_updated: "2026-09-28T22:47:04.525Z"
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 4
-  completed_plans: 3
-  percent: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State: Omega
@@ -32,14 +31,14 @@ progress:
 ## Current Position
 
 Phase: A (Foundation + FM2 Model) — EXECUTING
-Plan: 4 of 4 (A-01, A-02, A-03 complete)
+Plan: 4 of 4 (A-01, A-02, A-03 complete; A-04 automatable work done, paused at human-verify checkpoint)
 **Phase:** A — Foundation + FM2 Model
-**Plan:** A-04 (on-device validation) — next
-**Status:** Executing Phase A
-**Progress:** Phase 0 of 7 complete; Plan 3 of 4 in Phase A complete
+**Plan:** A-04 (on-device validation) — PAUSED at Task 3 human-verify checkpoint
+**Status:** Executing Phase A — awaiting on-device human verification (SC1, SC5, D-15)
+**Progress:** Phase 0 of 7 complete; A-04 runbook docs committed, on-device steps PENDING
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks; on-device verify pending)
 ```
 
 ---
@@ -60,6 +59,7 @@ Plan: 4 of 4 (A-01, A-02, A-03 complete)
 | Phase A-foundation-fm2-model P02 | 6min | 3 tasks | 8 files |
 | Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
 | Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
+| Phase A-foundation-fm2-model P04 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,8 +82,11 @@ Plan: 4 of 4 (A-01, A-02, A-03 complete)
 - **[A-03] `omega_build_ui` returns bytes-written excluding terminator** — bounded `ui_append` copies `min(len, remaining)` reserving the terminator byte so it never overruns `buf_len` and always null-terminates (Pitfall 3/4); matches `fm2_p2_slot_desc` convention
 - **[A-03] D-10 buf_len log stays in dsp.c, formatted locale-independently** — dsp.c owns `g_host`; `omega_itoa_msg` uses manual digit extraction (no `snprintf`/`atof`); one-shot flag-guarded, `SPIKE (D-10)` comment schedules removal/gating before ship; native harness measured `ui_buflen=4096`
 - **[A-03] CI cross-build + glibc gate flipped to blocking** — `continue-on-error: false` now that dsp.c/ui.c/registry/fm2.c all exist; `make dsp.so` + glibc/libmvec/export gate must pass
+- **[A-04] On-device validation captured as runbooks, not fabricated** — `docs/SOC_IDENTIFICATION.md` (/proc/cpuinfo decode table, -mcpu deferred per D-15) + `docs/ON_DEVICE_VALIDATION.md` (build→deploy→3-host loads/audible/buf_len table). Cross-build (Docker), deploy (scp), and device SSH are unavailable on the macOS host (all probed and confirmed absent); CI is the authoritative build/glibc gate. Hardware-dependent fields marked `PENDING (on-device)`. **A-04 STOPS at the Task 3 human-verify checkpoint; SC1 (3-host), SC5 (buf_len), D-15 (SoC ID) remain UNVERIFIED pending hardware.**
 
 ### Todos / Watchpoints
+
+- **[A-04 ON-DEVICE PENDING] Complete the two runbooks at the Move device** — obtain gate-passing dsp.so (CI artifact or Docker build + glibc_gate.sh), `deploy.sh`, load+listen in Schwung slot / DR32 pad / Movy track (SC1), `grep ui_buflen` the device log (SC5), read `/proc/cpuinfo` (D-15). Fill `docs/ON_DEVICE_VALIDATION.md` + `docs/SOC_IDENTIFICATION.md`, then Phase A is ready for `/gsd:verify-work`.
 
 - **Five reference-code bugs to NOT carry forward**: hardcoded 120 BPM tap interval; unbounded asymmetric fast_tanh; amplitude-threshold ducking; missing int16 clamp/isfinite; zero-margin scratch buffer
 - Set FPCR flush-to-zero bit explicitly in `render_block` (per-thread, not inherited)
@@ -111,7 +114,7 @@ None.
 
 **Next action:** Execute Plan A-04 (on-device validation) — deploy `dsp.so` to Move, load in all 3 host contexts (Schwung slot, DR32 pad, Movy track), read the `[host] ui_buflen=<v>` log per host (resolves the buf_len open question, unblocks Phase E sizing), read `/proc/cpuinfo` for the `-mcpu` decision (D-15), confirm FM2 sounds on-device.
 
-**Stopped at:** Completed A-03-ui-hierarchy-and-buflen-spike-PLAN.md
+**Stopped at:** A-04 paused at human-verify checkpoint (Task 3): on-device 3-host load/listen + buf_len capture pending hardware
 
 **Recent activity:**
 
