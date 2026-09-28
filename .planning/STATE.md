@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed A-02-fm2-engine-and-entry-points-PLAN.md
-last_updated: "2026-09-29T22:34:33.125Z"
+stopped_at: Completed A-03-ui-hierarchy-and-buflen-spike-PLAN.md
+last_updated: "2026-09-28T22:39:52.000Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -32,14 +32,14 @@ progress:
 ## Current Position
 
 Phase: A (Foundation + FM2 Model) — EXECUTING
-Plan: 3 of 4 (A-01, A-02 complete)
+Plan: 4 of 4 (A-01, A-02, A-03 complete)
 **Phase:** A — Foundation + FM2 Model
-**Plan:** A-03 (UI hierarchy) — next
+**Plan:** A-04 (on-device validation) — next
 **Status:** Executing Phase A
-**Progress:** Phase 0 of 7 complete; Plan 2 of 4 in Phase A complete
+**Progress:** Phase 0 of 7 complete; Plan 3 of 4 in Phase A complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 2/4 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans)
 ```
 
 ---
@@ -58,6 +58,8 @@ Plan: 3 of 4 (A-01, A-02 complete)
 |------|----------|-------|-------|
 | Phase A-foundation-fm2-model P01 | 6min | 3 tasks | 17 files |
 | Phase A-foundation-fm2-model P02 | 6min | 3 tasks | 8 files |
+| Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
+| Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -76,6 +78,10 @@ Plan: 3 of 4 (A-01, A-02 complete)
 - **[A-01] No `-mcpu` pinning** — per D-15, the Cortex core flag is deferred to on-device `/proc/cpuinfo` confirmation (A-04); baseline ARMv8-A only
 - **[A-02] FM2 output scaled 0.6 body / 0.4 click** — the summed carrier+click can exceed 1.0; the engine self-limits so the float output stays within [-1,1] before int16 conversion (FNDTN-07/D-12), rather than relying on the clamp to mask overflow
 - **[A-02] `omega_build_ui` stub behind `#ifndef OMEGA_HAS_UI`** — dsp.c ships a minimal `{"pages":[]}` so A-02 links standalone; A-03's ui.c defines OMEGA_HAS_UI and owns the real `ui_hierarchy` (D-08) + the D-10 buf_len log
+- **[A-03] Kick Page 2 spliced from the model** — ui.c drops the outer `[` `]` of the active model's `p2_slot_desc` array and injects the interior into its own `"slots":[...]`, then appends FX TYPE/AMT; the model owns its slot list, ui.c owns page structure (clean for Phase B models)
+- **[A-03] `omega_build_ui` returns bytes-written excluding terminator** — bounded `ui_append` copies `min(len, remaining)` reserving the terminator byte so it never overruns `buf_len` and always null-terminates (Pitfall 3/4); matches `fm2_p2_slot_desc` convention
+- **[A-03] D-10 buf_len log stays in dsp.c, formatted locale-independently** — dsp.c owns `g_host`; `omega_itoa_msg` uses manual digit extraction (no `snprintf`/`atof`); one-shot flag-guarded, `SPIKE (D-10)` comment schedules removal/gating before ship; native harness measured `ui_buflen=4096`
+- **[A-03] CI cross-build + glibc gate flipped to blocking** — `continue-on-error: false` now that dsp.c/ui.c/registry/fm2.c all exist; `make dsp.so` + glibc/libmvec/export gate must pass
 
 ### Todos / Watchpoints
 
@@ -103,12 +109,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan A-03 (UI hierarchy) — add `src/ui.c` (real `ui_hierarchy`, D-08), define `OMEGA_HAS_UI` (removing dsp.c's stub), implement the D-10 one-shot buf_len log, consume `fm2_p2_slot_desc` for the FM2 Page-2 slots; then flip CI cross-build `continue-on-error` to false.
+**Next action:** Execute Plan A-04 (on-device validation) — deploy `dsp.so` to Move, load in all 3 host contexts (Schwung slot, DR32 pad, Movy track), read the `[host] ui_buflen=<v>` log per host (resolves the buf_len open question, unblocks Phase E sizing), read `/proc/cpuinfo` for the `-mcpu` decision (D-15), confirm FM2 sounds on-device.
 
-**Stopped at:** Completed A-02-fm2-engine-and-entry-points-PLAN.md
+**Stopped at:** Completed A-03-ui-hierarchy-and-buflen-spike-PLAN.md
 
 **Recent activity:**
 
+- 2026-09-29: A-03 complete — real `ui_hierarchy` (ui.c, D-08/D-09): static Page 1 (8 keyed slots) + dynamic FM2 Page 2 spliced from `p2_slot_desc` + FX TYPE/AMT; dsp.c wired to ui.c (fallback removed), D-10 one-shot locale-independent buf_len log; CI cross-build flipped to blocking; harness proves the get_param contract; `make test` green (commits 98e62a0, 3ac9e54, e8802b7)
 - 2026-09-29: A-02 complete — FM2 engine (fm2.c), plugin entry points (dsp.c), model registry, module.json; real move_plugin_init_v2 lifecycle harness; `make test` green (commits bccf4e9, c4d028c, 3cac29b)
 - 2026-09-29: A-01 complete — shared contracts (omega.h), .rodata sine table, dsp_primitives, full offline test harness + glibc gate + CI; `make test` green (commits 205e0c4, 0ac3a38, 07a33ed)
 - 2026-09-28: PROJECT.md, REQUIREMENTS.md (42 v1 reqs), research/SUMMARY.md created

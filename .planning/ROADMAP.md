@@ -34,7 +34,7 @@
 Plans:
 - [x] A-01-scaffolding-and-contracts-PLAN.md — build/test scaffolding, shared contracts (omega.h vtable + primitives), .rodata sine table, mock host, malloc trap, WAV writer, glibc gate, CI
 - [x] A-02-fm2-engine-and-entry-points-PLAN.md — full FM2 engine, plugin entry points (dsp.c dispatch), model registry, module.json, real lifecycle harness
-- [ ] A-03-ui-hierarchy-and-buflen-spike-PLAN.md — real minimal ui_hierarchy (Page 1 + FM2 Page 2), D-10 buf_len one-shot spike, CI cross-build flipped to blocking
+- [x] A-03-ui-hierarchy-and-buflen-spike-PLAN.md — real minimal ui_hierarchy (Page 1 + FM2 Page 2), D-10 buf_len one-shot spike, CI cross-build flipped to blocking
 - [ ] A-04-on-device-validation-PLAN.md — cross-build + deploy, 3-host load/audio verification (SC1), per-host buf_len capture (SC5), SoC identification (D-15)
 **UI hint**: yes
 
