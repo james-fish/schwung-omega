@@ -33,8 +33,10 @@ int main(void) {
     for (int i = 0; i < GUARD_LEN; i++) {
         int src = i % TABLE_LEN; /* index 2048 duplicates index 0 */
         float v = sinf(2.0f * pi * (float)src / (float)TABLE_LEN);
-        /* %.9g preserves full float precision round-trip; append 'f' suffix. */
-        printf("    %.9gf%s\n", (double)v, (i + 1 < GUARD_LEN) ? "," : "");
+        /* %.9e always emits a decimal point + exponent, so the 'f' suffix is
+         * always a valid float literal (%.9g can print bare "0"/"1" -> "0f",
+         * which is an invalid octal/decimal constant). */
+        printf("    %.9ef%s\n", (double)v, (i + 1 < GUARD_LEN) ? "," : "");
     }
 
     printf("};\n\n");
