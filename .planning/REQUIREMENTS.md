@@ -94,9 +94,9 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 
 ### Sample Infrastructure (Phase B3)
 
-- [ ] **SMPL-01**: A samples folder inside the module hosts sample content, enumerated off the audio thread at `create_instance`.
-- [ ] **SMPL-02**: Sample selection is a string list-picker (enum) showing sample names — never a knob — for USR SAMPLE SELECT and any sample-select control.
-- [ ] **SMPL-03**: Optionally browse the SD card for samples (bounded, off audio thread).
+- [x] **SMPL-01**: A samples folder inside the module hosts sample content, enumerated off the audio thread at `create_instance`.
+- [x] **SMPL-02**: Sample selection is a string list-picker (enum) showing sample names — never a knob — for USR SAMPLE SELECT and any sample-select control.
+- [x] **SMPL-03**: Optionally browse the SD card for samples (bounded, off audio thread).
 
 ### Groove Redesign (Phase C1)
 
@@ -188,9 +188,9 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | VOICE-04 | Phase B2 (v1.1) | Complete |
 | VOICE-05 | Phase B2 (v1.1) | Complete |
 | VOICE-06 | Phase B2 (v1.1) | Complete (on-device tuning pending) |
-| SMPL-01 | Phase B3 (v1.1) | Pending |
-| SMPL-02 | Phase B3 (v1.1) | Pending |
-| SMPL-03 | Phase B3 (v1.1) | Pending |
+| SMPL-01 | Phase B3 (v1.1) | Complete |
+| SMPL-02 | Phase B3 (v1.1) | Complete |
+| SMPL-03 | Phase B3 (v1.1) | Complete (SD path best-guess, confirm on-device) |
 | GRVX-01 | Phase C1 (v1.1) | Pending |
 | GRVX-02 | Phase C1 (v1.1) | Pending |
 | GRVX-03 | Phase C1 (v1.1) | Pending |
