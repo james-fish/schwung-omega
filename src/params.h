@@ -59,7 +59,7 @@ typedef enum {
 
 /* Global (non-per-model) parameter indices. */
 typedef enum {
-    GKI_MASTER_VOL = 0, GKI_MODEL,
+    GKI_MASTER_VOL = 0, GKI_MODEL, GKI_GRV_TYPE,
     GKI_GRV_VOL, GKI_GRV_LENGTH, GKI_GRV_COLOR,
     GKI_GRV_TAP1, GKI_GRV_TAP2, GKI_GRV_TAP3, GKI_GRV_TAP4, GKI_GRV_MONO,
     GKI_COUNT

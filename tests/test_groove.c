@@ -442,6 +442,53 @@ static void test_gen_lpf_pole(void) {
     printf("test_groove: GRV-04 LPF POLE OK (2-pole r=%.4f vs 4-pole r=%.4f)\n", r2, r4);
 }
 
+/* ---- GRVX-02 (C1): feedback rumble sustains + stays bounded ---------------- */
+/* A single kick with high LENGTH (feedback) must produce a rumble that SUSTAINS
+ * into the second half of a long buffer (a dry gated echo would decay to near
+ * silence), while staying bounded (no runaway). Long LENGTH must sustain more
+ * than short LENGTH. */
+static void test_feedback_rumble(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    static int16_t buf[NSAMP];
+    double dbeat = dbeat_for_bpm(128.0);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+
+    /* Long LENGTH (high feedback), single kick, no re-trigger. */
+    select_model(api, inst, MODEL_FM2);
+    prime_groove(api, inst);
+    api->set_param(inst, KGRV_VOL,    "0.9");
+    api->set_param(inst, KGRV_LENGTH, "0.95");   /* strong feedback */
+    api->on_midi(inst, noteon, 3, 0);
+    render_driven(api, inst, dbeat, buf);
+
+    /* Second-half energy is a meaningful fraction of first-half (sustained), and
+     * every sample is in range (bounded, no runaway). */
+    double e1 = buf_rms(buf, NSAMP / 2);
+    double e2 = buf_rms(buf + NSAMP / 2, NSAMP / 2);
+    for (int i = 0; i < NSAMP; i++) assert(buf[i] >= -32768 && buf[i] <= 32767);
+    assert(e1 > 1e-3 && e2 > 1e-3);
+    assert(e2 > 0.15 * e1);   /* rumble sustains, not gated to silence */
+
+    /* Short LENGTH sustains LESS than long LENGTH (feedback controls the tail). */
+    static int16_t bshort[NSAMP];
+    prime_groove(api, inst);
+    api->set_param(inst, KGRV_VOL,    "0.9");
+    api->set_param(inst, KGRV_LENGTH, "0.15");   /* little feedback */
+    api->on_midi(inst, noteon, 3, 0);
+    render_driven(api, inst, dbeat, bshort);
+    double es2 = buf_rms(bshort + NSAMP / 2, NSAMP / 2);
+    assert(e2 > es2);   /* longer LENGTH => more sustained rumble */
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRVX-02 feedback rumble sustains + bounded OK (e2/e1=%.2f)\n", e2/e1);
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -460,6 +507,7 @@ int main(void) {
     test_tap_delay_presence();
     test_page1_responsive();
     test_mono_sum();
+    test_feedback_rumble();   /* GRVX-02: continuous rumble, not gated echo */
 
     /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
      * LPF POLE 2/4-pole cascade toggle. Requires GEN registered. */

@@ -56,7 +56,7 @@ const float g_kick_defaults[PKI_COUNT] = {
 /* Globals: master starts full, groove seeded to groove_init's normalized
  * middles (grv_vol silent opt-in, taps 0.6, color ~8 kHz -> ~0.44). */
 const float g_global_defaults[GKI_COUNT] = {
-    [GKI_MASTER_VOL]=1.0f, [GKI_MODEL]=0.0f,
+    [GKI_MASTER_VOL]=1.0f, [GKI_MODEL]=0.0f, [GKI_GRV_TYPE]=0.0f,  /* TAPS */
     [GKI_GRV_VOL]=0.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
     [GKI_GRV_TAP1]=0.6f, [GKI_GRV_TAP2]=0.6f, [GKI_GRV_TAP3]=0.6f,
     [GKI_GRV_TAP4]=0.6f, [GKI_GRV_MONO]=0.0f,
@@ -96,7 +96,7 @@ static const char *const k_kick_keys[PKI_COUNT] = {
 };
 
 static const char *const k_global_keys[GKI_COUNT] = {
-    [GKI_MASTER_VOL]=PK_MASTER_VOL, [GKI_MODEL]=PK_MODEL,
+    [GKI_MASTER_VOL]=PK_MASTER_VOL, [GKI_MODEL]=PK_MODEL, [GKI_GRV_TYPE]=PK_GRV_TYPE,
     [GKI_GRV_VOL]=PK_GRV_VOL, [GKI_GRV_LENGTH]=PK_GRV_LENGTH,
     [GKI_GRV_COLOR]=PK_GRV_COLOR, [GKI_GRV_TAP1]=PK_GRV_TAP1,
     [GKI_GRV_TAP2]=PK_GRV_TAP2, [GKI_GRV_TAP3]=PK_GRV_TAP3,

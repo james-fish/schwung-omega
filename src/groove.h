@@ -46,7 +46,19 @@ typedef struct groove_state {
     float color_lp_l_s;          /* tpt1 lowpass state (the tpt1_t `.s`), L */
     float color_lp_r_s;          /* tpt1 lowpass state (the tpt1_t `.s`), R */
     bool  mono;                   /* MONO force-sum toggle (GRV-05) */
+
+    /* --- Redesign (C1, GRVX-01/02) ---------------------------------------
+     * type: 0 = TAPS (feedback multitap rumble), 1 = GEN (generative groove).
+     * The feedback loop turns the dry 4-tap echo into a CONTINUOUS resonant
+     * rumble (fixes "bit-crushed & quiet"): energy recirculates through the ring
+     * at the 16th-note interval, darkened by a one-pole LP in the loop and
+     * bounded by a gentle saturator. fb_amount comes from LENGTH. */
+    int   type;                   /* GROOVE_TYPE_TAPS / _GEN */
+    float fb_amount;              /* feedback gain 0..~0.9 (from LENGTH) */
+    float fb_lp_l_s, fb_lp_r_s;   /* one-pole LP state in the feedback path */
 } groove_state_t;
+
+enum { GROOVE_TYPE_TAPS = 0, GROOVE_TYPE_GEN = 1 };
 
 /* Groove API (implemented in src/groove.c). host_api_v1 is defined in omega.h;
  * this header is included by omega.h AFTER host_api_v1 is declared, so the type

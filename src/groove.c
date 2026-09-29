@@ -45,13 +45,15 @@ static inline float clampf(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
 
-/* ---- LENGTH -> per-tap decay curve (control-rate; powf here, not render) -- */
-/* A longer LENGTH keeps the later taps louder: base grows from 0.3 to 0.95,
- * and each tap t attenuates by base^(t+1) so tap 4 fades faster than tap 1. */
+/* ---- LENGTH -> per-tap decay curve + feedback amount (control-rate) ------- */
+/* A longer LENGTH keeps the later taps louder AND raises the feedback gain so
+ * the rumble sustains into a continuous drone (GRVX-02). base drives the tap
+ * decay; fb_amount 0.30..0.88 recirculates energy through the ring. */
 static void groove_set_length(groove_state_t *g, float v) {
     float base = 0.3f + 0.65f * v;
     for (int t = 0; t < 4; t++)
         g->tap_decay[t] = powf(base, (float)(t + 1));
+    g->fb_amount = 0.30f + 0.58f * v;   /* longer LENGTH -> more sustained rumble */
 }
 
 static inline float tpt_g_from_hz(float fc) {
@@ -85,6 +87,11 @@ void groove_init(groove_state_t *g) {
     g->color_lp_l_s = 0.0f;
     g->color_lp_r_s = 0.0f;
     g->mono         = false;
+
+    /* Redesign defaults (C1). */
+    g->type       = GROOVE_TYPE_TAPS;
+    g->fb_lp_l_s  = 0.0f;
+    g->fb_lp_r_s  = 0.0f;
 }
 
 /* ---- groove_update_tempo (VERBATIM C-RESEARCH §Pattern 2, GRV-02) -------- */
@@ -140,8 +147,22 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
  * applies the COLOR lowpass + MONO force-sum + VOL. NO transcendental here. */
 void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                  float *out_gl, float *out_gr) {
-    g->buf_l[g->write_pos] = kick_l;
-    g->buf_r[g->write_pos] = kick_r;
+    /* FEEDBACK RUMBLE (GRVX-02): recirculate the signal one 16th behind into the
+     * write head, darkened by a one-pole LP and bounded by a gentle saturator, so
+     * the ring sustains a continuous resonant rumble instead of a dry gated echo.
+     * The LP keeps the rumble low/warm; the saturator prevents runaway (fb<0.9 +
+     * loss guarantees stability). All algebraic — no transcendental per sample. */
+    unsigned rp1 = (g->write_pos - (unsigned)g->samples_per_16th) & GRV_DELAY_MASK;
+    const float FB_LP_A = 0.20f;                 /* ~1.5 kHz one-pole in the loop */
+    g->fb_lp_l_s += FB_LP_A * (g->buf_l[rp1] - g->fb_lp_l_s);
+    g->fb_lp_r_s += FB_LP_A * (g->buf_r[rp1] - g->fb_lp_r_s);
+    float wl = kick_l + g->fb_amount * g->fb_lp_l_s;
+    float wr = kick_r + g->fb_amount * g->fb_lp_r_s;
+    wl = wl / (1.0f + 0.25f * (wl < 0.0f ? -wl : wl));   /* bounded feedback */
+    wr = wr / (1.0f + 0.25f * (wr < 0.0f ? -wr : wr));
+    g->buf_l[g->write_pos] = wl;
+    g->buf_r[g->write_pos] = wr;
+
     float gl = 0.0f, gr = 0.0f;
     for (int t = 0; t < 4; t++) {
         unsigned rp = (g->write_pos - (unsigned)((t + 1) * g->samples_per_16th)) & GRV_DELAY_MASK;
@@ -173,7 +194,9 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     if (!key) return;
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
-    if (strcmp(key, PK_GRV_VOL) == 0) {
+    if (strcmp(key, PK_GRV_TYPE) == 0) {
+        g->type = (v >= 0.5f) ? GROOVE_TYPE_GEN : GROOVE_TYPE_TAPS;
+    } else if (strcmp(key, PK_GRV_VOL) == 0) {
         g->vol = v;
     } else if (strcmp(key, PK_GRV_LENGTH) == 0) {
         groove_set_length(g, v);

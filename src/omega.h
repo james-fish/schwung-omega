@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 10   /* == GKI_COUNT (master/model + 8 groove) */
+#define OMEGA_GKI_COUNT 11   /* == GKI_COUNT (master/model + groove type + 8 groove) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -238,6 +238,7 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 /* Model-independent groove-voice keys; dsp.c routes these to groove_set_param
  * BEFORE the model-vtable fallback (they must NOT go through the kick model).
  * The string values MUST match the literals tests/test_groove.c uses. */
+#define PK_GRV_TYPE   "grv_type"   /* C1 GRVX-01: TAPS/GEN groove type selector */
 #define PK_GRV_VOL    "grv_vol"
 #define PK_GRV_LENGTH "grv_length"
 #define PK_GRV_COLOR  "grv_color"

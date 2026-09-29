@@ -107,6 +107,7 @@ static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush\"]
 static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
 static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
+static const char OPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
@@ -143,7 +144,11 @@ static const char KN_KICK2[] =
     "[\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR
     "\",\"" PK_FILTER_ROUTE "\",\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\",\"" PK_FX_TONE "\"]";
 
+/* Groove Page 1 (C1 redesign): leads with the TYPE selector (TAPS/GEN, GRVX-01),
+ * then the rumble controls. LENGTH now drives feedback sustain (GRVX-02). MONO
+ * moved to Groove Page 2 to keep Page 1 at 8 encoders. */
 static const uiparam_t P_GROOVE1[] = {
+    { PK_GRV_TYPE,   "TYPE",   "TYPE", UP_ENUM,  "",  "0",    OPT_GRVTYPE },
     { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_COLOR,  "COLOR",  "COLOR",UP_FLOAT, "%", "0.01", NULL },
@@ -151,11 +156,10 @@ static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_TAP2,   "TAP2",   "TAP2", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP3,   "TAP3",   "TAP3", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP4,   "TAP4",   "TAP4", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_MONO,   "MONO",   "MONO", UP_ENUM,  "",  "0",    OPT_MONO },
 };
 static const char KN_GROOVE1[] =
-    "[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR "\",\"" PK_GRV_TAP1
-    "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\",\"" PK_GRV_MONO "\"]";
+    "[\"" PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
+    "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
 
 static const uiparam_t P_GROOVE2[] = {
     { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },

@@ -314,7 +314,8 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
 /* Groove Page-1 keys are model-independent (Phase C): they dispatch to
  * groove_set_param, never the kick model vtable. */
 static bool is_groove_key(const char *key) {
-    return strcmp(key, PK_GRV_VOL)    == 0 || strcmp(key, PK_GRV_LENGTH) == 0 ||
+    return strcmp(key, PK_GRV_TYPE)   == 0 ||
+           strcmp(key, PK_GRV_VOL)    == 0 || strcmp(key, PK_GRV_LENGTH) == 0 ||
            strcmp(key, PK_GRV_COLOR)  == 0 || strcmp(key, PK_GRV_TAP1)   == 0 ||
            strcmp(key, PK_GRV_TAP2)   == 0 || strcmp(key, PK_GRV_TAP3)   == 0 ||
            strcmp(key, PK_GRV_TAP4)   == 0 || strcmp(key, PK_GRV_MONO)   == 0;
