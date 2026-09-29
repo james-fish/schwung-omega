@@ -8,6 +8,19 @@ Omega is a native C Schwung module for Ableton Move that brings the complete Ohm
 
 A techno producer on Ableton Move should be able to dial in a full Bohm-style kick + rumble + performer system from one module, with immediate access to the most expressive performance controls on the root page.
 
+## Current Milestone: v1.1 Refinement
+
+**Goal:** Fix the on-device UX and audio defects found testing Phases B/C, and complete the reworked design, before building the Performer chain.
+
+**Target features:**
+- Param/UI infrastructure: per-key value readback, rich schema (enum/int/float, options, defaults, units, steps), per-model state memory, correct control types
+- Kick voicing + page reorg: lower/deeper pitch+curve, merge redundant params, model-unique params on Page 1 / transients on Page 2, per-model voicing fixes
+- Sample infrastructure: module sample folder + SD browse, string list-picker for sample selection
+- Groove redesign: TAPS/GEN type selector decoupled from kick model, feedback rumble, per-type pages with reverb/drive/filter/LFO, GEN retrigger modes + seqlen 1–32 + tone shaping
+- Performer chain (Phase D): duck → DJ filter → soft clip, on-device CPU measured
+
+**Authoritative brief:** `.planning/REFINEMENT-FEEDBACK.md` (root-cause investigation + per-model/per-page detail from on-device testing).
+
 ## Requirements
 
 ### Validated
@@ -126,4 +139,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-28 after initialization*
+*Last updated: 2026-09-29 — milestone v1.1 Refinement started*

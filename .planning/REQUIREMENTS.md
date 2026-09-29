@@ -70,6 +70,44 @@
 
 ---
 
+## v1.1 Requirements (Refinement)
+
+Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/REFINEMENT-FEEDBACK.md`.
+
+### Param/UI Infrastructure (Phase B.1)
+
+- [ ] **UIX-01**: `get_param(key, buf, buf_len)` returns the current value (locale-independent string) for every individual param key, not just `ui_hierarchy` — so the host reads back knob positions (fixes knobs/model-box/vol displaying 0). Unknown keys still return -1.
+- [ ] **UIX-02**: Param schema in `ui_hierarchy` carries rich metadata per control: `type` (`float`/`int`/`enum`), `options` (string list for enums), `default`, `min`, `max`, `step`, `unit`, `short_name`, and `display_format` where useful — matching the reference module.json format.
+- [ ] **UIX-03**: Discrete named parameters render as `enum` string selectors (same control type as Model): FX type, groove type, scale, retrigger mode, filter routing, reverb type, sample select.
+- [ ] **UIX-04**: Per-model parameter state memory — switching models restores that model's last-set values (never visually or actually reset to 0/50%); the active model's params report their stored values via `get_param`.
+- [ ] **UIX-05**: Each control declares an appropriate UI element and sweep: bidirectional/centered where meaningful, discrete where meaningful, and real-world units where meaningful (e.g. PITCH in Hz).
+- [ ] **UIX-06**: Drive/distortion amount applies automatic output-gain compensation so raising drive does not simply increase level.
+
+### Kick Voicing & Page Reorg (Phase B.2)
+
+- [ ] **VOICE-01**: Global PITCH range lowered — floor and ceiling both dropped so a musical kick fundamental is reachable without maxing CURVE; PITCH exposed in Hz.
+- [ ] **VOICE-02**: CURVE has a stronger pitch-envelope shape (more curve) so it does more of the 808↔909 work.
+- [ ] **VOICE-03**: Redundant Page-1 params merged — TRS TNE ⊕ COLOR into one tone control, and LENGTH ⊕ SUSTAIN into one length control.
+- [ ] **VOICE-04**: Kick Page 1 = PITCH, LENGTH, CURVE + 4–5 model-unique params; Kick Page 2 = the 3 transient controls + FX selector/amt/tone + filter + filter routing (SYN/TRANSIENT/BOTH). FM engine with 6 controls merges two to fit Page 1.
+- [ ] **VOICE-05**: Post-kick FX exposes a discrete type selector + amount + a third tone/mix control.
+- [ ] **VOICE-06**: Per-model voicing fixes — WTR (raise WTSEL/BODYPIT defaults), FM2 (lower default ratio/index), PHY (reach lower pitch, fix HEAD TENS direction), TRS (blend between distinct transient sources, not just noise), ANA (SUB LEVEL/SUB DECAY/SMP audibly functional), USR (smooth WMORP jumps) — each audibly kick-like at defaults.
+
+### Sample Infrastructure (Phase B.3)
+
+- [ ] **SMPL-01**: A samples folder inside the module hosts sample content, enumerated off the audio thread at `create_instance`.
+- [ ] **SMPL-02**: Sample selection is a string list-picker (enum) showing sample names — never a knob — for USR SAMPLE SELECT and any sample-select control.
+- [ ] **SMPL-03**: Optionally browse the SD card for samples (bounded, off audio thread).
+
+### Groove Redesign (Phase C.1)
+
+- [ ] **GRVX-01**: Groove has a discrete Type selector (TAPS / GEN) that swaps the groove control set; GEN groove is decoupled from the base kick model and pairs with any model.
+- [ ] **GRVX-02**: Groove voice redesigned to a resonant/feedback rumble (not a dry 4-tap echo) — audibly a continuous rumble, not gated/bit-crushed, at usable levels.
+- [ ] **GRVX-03**: TAPS type — Page 1 tap controls (COLOR filter audibly effective) + Page 2 FX: reverb (cheap, 1–3 types, MIX/DECAY/TONE), drive, filter type, LFO speed, LFO amount.
+- [ ] **GRVX-04**: GEN type — Page 1: SCALE (enum incl. off/unquantized), SEED, SEQ LEN (1–32, actually seeds a 1–32 × 16th sequence), ROTATE (bidirectional), SWING; Page 2: WAVE TYPE, WAVEFOLDER, FILTER (RES+ENV, usable curve), LFO, MUTATE, DELAY, REVERB, DRIVE.
+- [ ] **GRVX-05**: GEN retrigger mode control — on-note / 1 / 2 / 4 / 8 bars / NONE, default NONE (sequencer free-runs, obeys length; does not retrigger every kick hit); sequence stops when transport stops.
+
+---
+
 ## v2 Requirements
 
 ### EXT Voice Hosting

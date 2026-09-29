@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: completed
-stopped_at: Completed C-03-PLAN.md (GEN transport clock + Groove Page 2; GRV-04 delivered; Phase C 3/3 plans coded)
-last_updated: "2026-09-29T18:07:42.023Z"
+milestone: v1.1
+milestone_name: Refinement
+status: defining_requirements
+stopped_at: Milestone v1.1 Refinement started — requirements defined, roadmap next
+last_updated: "2026-09-29T21:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -24,19 +24,20 @@ progress:
 
 **What it is:** A native C Schwung module for Ableton Move — a multi-engine kick synthesizer (10 models) + 4-tap groove rumble generator + live performer mixer, in a single `dsp.so` loadable in Schwung slots, DR32 pads, and Movy tracks.
 
-**Current focus:** Phase C — Groove Rumble Engine
+**Current focus:** Milestone v1.1 Refinement — UX/audio defect fixes + reworked design before Performer chain
 
 ---
 
 ## Current Position
 
-Phase: C
-Plan: Not started
-**Status:** Milestone complete
-**Progress:** Phase C 3/3 plans (C-01 test infra + C-02 groove engine + C-03 GEN transport clock & Groove Page 2; GRV-01/02/03/04/05 all delivered)
+Phase: Not started (defining requirements)
+Plan: —
+**Status:** Defining requirements
+**Last activity:** 2026-09-29 — Milestone v1.1 Refinement started (see `.planning/REFINEMENT-FEEDBACK.md`)
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware; C: 3/3 plans coded — GRV-01/02/03/04/05 GREEN offline)
+v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
+v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign → then Phase D
 ```
 
 ---
