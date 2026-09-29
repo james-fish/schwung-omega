@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>   /* USR (KICK-10): bounded one-time WAV read in create ONLY */
 
 /* ---- Host handle + returned plugin vtable -------------------------------- */
 static const host_api_v1_t *g_host = NULL;
@@ -64,6 +65,94 @@ static float dsp_parse_f(const char *s) {
  * OMEGA_HAS_UI). The temporary A-02 fallback has been removed; dsp.c only calls
  * through the omega.h declaration now. */
 
+/* ---- USR off-render file load (KICK-10) ---------------------------------- */
+/* RT-SAFETY CONTRACT (B-RESEARCH Open Question 2, recommendation 1): a BOUNDED,
+ * one-time file read is permitted HERE — in create_instance — because this is
+ * where the single calloc happens, OFF the hot render loop. render_block,
+ * set_param, on_midi and get_param stay ABSOLUTELY file-I/O-free. No host->log
+ * anywhere (get_param/render run on the SPI audio callback where logging is a
+ * write() syscall that drops audio). fopen/fread/fclose appear only below.
+ *
+ * On any absence/failure the usr_* buffers are left zeroed and inst->usr_loaded
+ * stays false; usr.c then synthesises a built-in fallback so USR is non-silent. */
+
+static uint16_t rd_u16le(const unsigned char *p) {
+    return (uint16_t)(p[0] | (p[1] << 8));
+}
+static uint32_t rd_u32le(const unsigned char *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* Read a canonical PCM16 WAV (as written by tests/wav.c) from `path` into
+ * inst->usr_sample, bounded to the buffer cap. Mono-downmixes multi-channel to
+ * a single one-shot. Sets usr_sample_len + usr_loaded on success. Bounded reads
+ * only; ignores malformed/oversized content gracefully. */
+static void usr_load_wav(bohm_instance_t *inst, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+
+    unsigned char hdr[44];
+    if (fread(hdr, 1, sizeof hdr, f) != sizeof hdr) { fclose(f); return; }
+    if (memcmp(hdr + 0, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0 ||
+        memcmp(hdr + 12, "fmt ", 4) != 0 || memcmp(hdr + 36, "data", 4) != 0) {
+        fclose(f); return;   /* not the canonical 44-byte PCM16 layout */
+    }
+    uint16_t fmt      = rd_u16le(hdr + 20);   /* 1 = PCM */
+    uint16_t channels = rd_u16le(hdr + 22);
+    uint16_t bits     = rd_u16le(hdr + 34);
+    if (fmt != 1 || bits != 16 || channels < 1 || channels > 8) { fclose(f); return; }
+
+    const int CAP = (int)(sizeof inst->usr_sample / sizeof inst->usr_sample[0]);
+    int nframes = 0;
+    int16_t frame[8];
+    /* Bounded loop: never write past CAP; one downmixed float per source frame. */
+    while (nframes < CAP) {
+        size_t got = fread(frame, sizeof(int16_t), channels, f);
+        if (got != channels) break;   /* EOF or short read */
+        float acc = 0.0f;
+        for (int c = 0; c < channels; c++) acc += (float)frame[c] / 32768.0f;
+        inst->usr_sample[nframes++] = acc / (float)channels;
+    }
+    fclose(f);
+
+    if (nframes > 0) {
+        inst->usr_sample_len = nframes;
+        inst->usr_loaded     = true;
+    }
+}
+
+/* Read a raw single-cycle float32 wavetable (OMEGA_WT_LEN samples) from `path`
+ * into inst->usr_wavetable, appending the guard sample (t[WT_LEN]=t[0]) so the
+ * branch-free wt_read wrap holds. Bounded to exactly one cycle. */
+static void usr_load_wavetable(bohm_instance_t *inst, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    float cyc[OMEGA_WT_LEN];
+    size_t got = fread(cyc, sizeof(float), (size_t)OMEGA_WT_LEN, f);
+    fclose(f);
+    if (got != (size_t)OMEGA_WT_LEN) return;   /* need a full cycle */
+    for (int i = 0; i < OMEGA_WT_LEN; i++) inst->usr_wavetable[i] = cyc[i];
+    inst->usr_wavetable[OMEGA_WT_LEN] = cyc[0];   /* guard sample */
+    inst->usr_wt_loaded = true;
+    inst->usr_loaded    = true;
+}
+
+/* Join module_dir + "/user/" + name into buf (bounded). Returns false on
+ * overflow. No allocation; used only in create_instance. */
+static bool usr_join_path(char *buf, size_t buflen,
+                          const char *module_dir, const char *name) {
+    size_t dl = strlen(module_dir), nl = strlen(name);
+    const char *sep = "/user/";
+    size_t sl = strlen(sep);
+    if (dl + sl + nl + 1 > buflen) return false;
+    memcpy(buf, module_dir, dl);
+    memcpy(buf + dl, sep, sl);
+    memcpy(buf + dl + sl, name, nl);
+    buf[dl + sl + nl] = '\0';
+    return true;
+}
+
 /* ---- vtable functions ---------------------------------------------------- */
 
 /* All 11 kick param keys, defaulted to mid on create. */
@@ -73,7 +162,6 @@ static const char *const k_kick_keys[] = {
 };
 
 static void *omega_create(const char *module_dir, const char *json_defaults) {
-    (void)module_dir;
     (void)json_defaults;
     /* Single allocation for the whole instance (CLAUDE.md single-alloc). calloc
      * zero-inits every field, giving a deterministic denormal/NaN-free start. */
@@ -82,6 +170,20 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
     inst->model         = MODEL_FM2;
     inst->main_volume   = 1.0f;
     inst->logged_buflen = false;
+
+    /* USR (KICK-10): bounded, one-time user-content load from module_dir/user/.
+     * This is the ONLY file I/O in the whole module and it runs here, off the
+     * render loop (B-RESEARCH Open Question 2). On absence/failure usr_loaded
+     * stays false and usr.c falls back to a built-in wavetable (non-silent).
+     * The trap guards render_block, NOT create — so fread here is compliant. */
+    if (module_dir && module_dir[0]) {
+        char path[512];
+        if (usr_join_path(path, sizeof path, module_dir, "kick.wav"))
+            usr_load_wav(inst, path);
+        if (usr_join_path(path, sizeof path, module_dir, "wavetable.raw"))
+            usr_load_wavetable(inst, path);
+    }
+
     /* Prime all kick params to mid so a bare create -> trigger is audible.
      * Route through the active model's vtable (NULL-guarded), not a hardcoded
      * fm2_set_param, so every model receives its primed defaults. */

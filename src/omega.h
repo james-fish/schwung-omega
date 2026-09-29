@@ -20,6 +20,12 @@
 /* Scratch buffers are sized to OMEGA_MAX_BLOCK, comfortably above the host's
  * 128-frame block. Never size scratch to exactly 2x128 (CLAUDE.md: add margin). */
 #define OMEGA_MAX_BLOCK 256
+/* USR user-wavetable geometry (KICK-10). Numerically mirrors WT_LEN/WT_GUARD in
+ * dsp_primitives.h (single-cycle length + 1 guard so wt_read is branch-free),
+ * defined here so the bohm_instance layout does not pull in dsp_primitives.h.
+ * A _Static_assert in usr.c binds these to the primitive geometry. */
+#define OMEGA_WT_LEN    2048
+#define OMEGA_WT_GUARD  (OMEGA_WT_LEN + 1)
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -125,6 +131,19 @@ struct bohm_instance {
     float      main_volume;       /* master output gain (0..1) */
     bool       logged_buflen;     /* D-10 one-shot ui_hierarchy buf_len log flag */
     char       model_state[4096]; /* per-model state region; FM2 plan overlays this */
+
+    /* --- USR (KICK-10) user content — off-render load region -------------
+     * The user WAV/wavetable does NOT fit in model_state[4096], so its storage
+     * lives HERE, still inside the SINGLE calloc (B-RESEARCH Pitfall 4: grow the
+     * one allocation, never a per-file malloc). All fields are hard-capped and
+     * zero-initialised by the calloc; usr_loaded gates the built-in fallback so
+     * USR is non-silent with no user file. Populated by a bounded one-time read
+     * in create_instance (dsp.c) — the ONLY file I/O in the module. */
+    float usr_wavetable[OMEGA_WT_GUARD]; /* user single-cycle wavetable + guard (~8 KB) */
+    float usr_sample[44100];         /* up to 1 s user one-shot @44.1k (~176 KB) */
+    int   usr_sample_len;            /* valid frames in usr_sample (0 if none) */
+    bool  usr_wt_loaded;             /* a user wavetable was read */
+    bool  usr_loaded;                /* any user content (sample or wavetable) */
 };
 
 _Static_assert(sizeof(struct bohm_instance) < 800000, "instance under 800KB");
