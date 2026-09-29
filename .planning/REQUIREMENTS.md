@@ -31,7 +31,7 @@
 - [ ] **KICK-10**: USR model — user-defined: load a custom WAV sample and/or 2048-sample wavetable from device storage (`module_dir/user/`); file I/O done off audio thread at `create_instance`; model-specific Kick Page 2: SAMPLE SELECT, WT MORPH, LAYER VOL, PITCH ENV
 - [ ] **KICK-11**: GEN model — generative rumble: PRNG pitch/velocity sequence generator; seed for repeatable sequences; scale-quantized or free-frequency mode; Euclidean density gating for rhythmic feel; model-specific Kick Page 2 parameters (see GRV-04)
 - [x] **KICK-12**: Universal Kick Page 1 present for all models (8 encoders): PITCH, LENGTH, SUSTAIN, CURVE (808↔909 pitch sweep), ATTACK, TRS DEC, TRS TNE, COLOR
-- [ ] **KICK-13**: Context-sensitive Kick Page 2: FX TYPE (Diode/Clip/SAT/Fold/Crush), FX AMT, + 6 model-specific parameter slots assembled dynamically from active model's `p2_slot_desc`
+- [x] **KICK-13**: Context-sensitive Kick Page 2: FX TYPE (Diode/Clip/SAT/Fold/Crush), FX AMT, + 6 model-specific parameter slots assembled dynamically from active model's `p2_slot_desc`
 - [ ] **KICK-14**: Post-kick FX modes: Diode (back-to-back diode rounding), Clip (asymmetric soft clip), SAT (warm parallel saturation), Fold (wavefolder), Crush (bit-depth/sample-rate reduction)
 - [x] **KICK-15**: Wavetables stored as `static const float` arrays in `.rodata` (shared across all instances); linear interpolation with 2048+1 guard sample; pre-band-limited source tables
 
@@ -130,7 +130,7 @@
 | KICK-10 | Phase B | Pending |
 | KICK-11 | Phase B | Pending |
 | KICK-12 | Phase A | Complete |
-| KICK-13 | Phase B | Pending |
+| KICK-13 | Phase B | Complete |
 | KICK-14 | Phase B | Pending |
 | KICK-15 | Phase A | Complete |
 | GRV-01 | Phase C | Pending |

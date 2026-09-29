@@ -3,13 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "A-04 paused at human-verify checkpoint (Task 3): on-device 3-host load/listen + buf_len capture pending hardware"
-last_updated: "2026-09-28T22:47:04.525Z"
+stopped_at: Completed B-01-vtable-dispatch-and-switch-reinit-PLAN.md
+last_updated: "2026-09-29T09:34:43.218Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Omega
@@ -24,21 +25,19 @@ progress:
 
 **What it is:** A native C Schwung module for Ableton Move — a multi-engine kick synthesizer (10 models) + 4-tap groove rumble generator + live performer mixer, in a single `dsp.so` loadable in Schwung slots, DR32 pads, and Movy tracks.
 
-**Current focus:** Phase A — Foundation + FM2 Model
+**Current focus:** Phase B — Remaining 9 Kick Models
 
 ---
 
 ## Current Position
 
-Phase: A (Foundation + FM2 Model) — EXECUTING
-Plan: 4 of 4 (A-01, A-02, A-03 complete; A-04 automatable work done, paused at human-verify checkpoint)
-**Phase:** A — Foundation + FM2 Model
-**Plan:** A-04 (on-device validation) — PAUSED at Task 3 human-verify checkpoint
-**Status:** Executing Phase A — awaiting on-device human verification (SC1, SC5, D-15)
-**Progress:** Phase 0 of 7 complete; A-04 runbook docs committed, on-device steps PENDING
+**Phase:** B — Remaining 9 Kick Models — EXECUTING
+**Plan:** 1 of 9 complete (B-01 done); next is B-02 (shared primitives + FX chain)
+**Status:** Executing Phase B
+**Progress:** Phase B 1/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks; on-device verify pending)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 1/9 plans)
 ```
 
 ---
@@ -60,11 +59,15 @@ Plan: 4 of 4 (A-01, A-02, A-03 complete; A-04 automatable work done, paused at h
 | Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
 | Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
 | Phase A-foundation-fm2-model P04 | 2min | 2 tasks | 2 files |
+| Phase B-remaining-9-kick-models P01 | 4min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
 ### Key Decisions
 
+- **[B-01] Internal vtable extended, not the ABI** — `kick_model_vtable_t` gained a `set_param` fn ptr (no `_Static_assert` binds it; internal, not host ABI). dsp.c now dispatches all kick keys through `g_models[inst->model]->set_param` instead of the hardcoded `fm2_set_param` (Pitfall 2 fix). The locked `host_api_v1_t`/`plugin_api_v2_t` `+120`/`+56` asserts were left untouched.
+- **[B-01] Designated-initializer registry (intermediate-compilation contract)** — `model_id_t` grown append-only to `MODEL_COUNT=10`; `g_models[]` uses designated initializers with `[MODEL_FM2]` set and 9 slots C-zero-init to NULL, guarded by `_Static_assert(len == MODEL_COUNT)`. The array links at every wave; each later model plan replaces its own NULL WITH the `.c` that defines its vtable symbol. dsp.c + the switch harness treat NULL slots as silence (no NULL deref).
+- **[B-01] Clean model-switch re-init (KICK-13)** — `PK_MODEL` change memsets `model_state[4096]` and re-primes defaults through the incoming model's `set_param`, killing the stale-state/NaN hazard when a new model reinterprets the shared overlay bytes. `tests/test_switch.c` is the automated KICK-13 gate (A->B->A + trigger, finite/bounded/non-stale, registry-length + NULL-slot-silence asserts); forward-compatible via NULL-slot skip.
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -114,7 +117,7 @@ None.
 
 **Next action:** Execute Plan A-04 (on-device validation) — deploy `dsp.so` to Move, load in all 3 host contexts (Schwung slot, DR32 pad, Movy track), read the `[host] ui_buflen=<v>` log per host (resolves the buf_len open question, unblocks Phase E sizing), read `/proc/cpuinfo` for the `-mcpu` decision (D-15), confirm FM2 sounds on-device.
 
-**Stopped at:** A-04 paused at human-verify checkpoint (Task 3): on-device 3-host load/listen + buf_len capture pending hardware
+**Stopped at:** Completed B-01-vtable-dispatch-and-switch-reinit-PLAN.md
 
 **Recent activity:**
 
