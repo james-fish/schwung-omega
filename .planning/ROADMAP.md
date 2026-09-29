@@ -79,7 +79,7 @@
 ### Phases (v1.1)
 
 - [x] **Phase B1: Param/UI Infrastructure** - Per-key value readback + rich enum/int/float schema + per-model state memory + correct control types + drive auto-gain; foundational, unblocks every UI complaint (completed 2026-09-30, native tests GREEN)
-- [ ] **Phase B2: Kick Voicing & Page Reorg** - Lower/deeper pitch + stronger CURVE, merge redundant params, model-unique params on Page 1 / transients on Page 2, per-model voicing fixes
+- [x] **Phase B2: Kick Voicing & Page Reorg** - Lower/deeper pitch + stronger CURVE, merge redundant params, model-unique params on Page 1 / transients on Page 2, per-model voicing fixes (completed 2026-09-30, native tests GREEN; on-device voicing audit + TRS transient-source redesign + FILTER ROUTE syn/trans split pending — docs/VOICING_AUDIT_v1_1.md)
 - [ ] **Phase B3: Sample Infrastructure** - Module samples folder + optional SD browse, enumerated off-thread at create_instance; string list-picker for sample selection
 - [ ] **Phase C1: Groove Redesign** - TAPS/GEN type selector decoupled from kick model; feedback/resonant rumble (fixes "bit-crushed & quiet"); per-type pages with reverb/drive/filter/LFO; GEN retrigger modes + seqlen 1–32 + tone shaping
 - [ ] **Phase D: Performer Chain** - Full kick→groove→duck→DJ filter→soft clip chain, CPU-measured on-device inside the 10–15% budget
@@ -186,7 +186,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | B1. Param/UI Infrastructure | 2/2 | Complete (UIX-01..06; native tests GREEN, on-device pending) | 2026-09-30 |
-| B2. Kick Voicing & Page Reorg | 0/? | Not started | - |
+| B2. Kick Voicing & Page Reorg | 3/3 | Complete (VOICE-01..06; native GREEN, on-device audit pending) | 2026-09-30 |
 | B3. Sample Infrastructure | 0/? | Not started | - |
 | C1. Groove Redesign | 0/? | Not started | - |
 | D. Performer Chain | 0/? | Not started | - |

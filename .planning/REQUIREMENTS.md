@@ -85,12 +85,12 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 
 ### Kick Voicing & Page Reorg (Phase B2)
 
-- [ ] **VOICE-01**: Global PITCH range lowered — floor and ceiling both dropped so a musical kick fundamental is reachable without maxing CURVE; PITCH exposed in Hz.
-- [ ] **VOICE-02**: CURVE has a stronger pitch-envelope shape (more curve) so it does more of the 808↔909 work.
-- [ ] **VOICE-03**: Redundant Page-1 params merged — TRS TNE ⊕ COLOR into one tone control, and LENGTH ⊕ SUSTAIN into one length control.
-- [ ] **VOICE-04**: Kick Page 1 = PITCH, LENGTH, CURVE + 4–5 model-unique params; Kick Page 2 = the 3 transient controls + FX selector/amt/tone + filter + filter routing (SYN/TRANSIENT/BOTH). FM engine with 6 controls merges two to fit Page 1.
-- [ ] **VOICE-05**: Post-kick FX exposes a discrete type selector + amount + a third tone/mix control.
-- [ ] **VOICE-06**: Per-model voicing fixes — WTR (raise WTSEL/BODYPIT defaults), FM2 (lower default ratio/index), PHY (reach lower pitch, fix HEAD TENS direction), TRS (blend between distinct transient sources, not just noise), ANA (SUB LEVEL/SUB DECAY/SMP audibly functional), USR (smooth WMORP jumps) — each audibly kick-like at defaults.
+- [x] **VOICE-01**: Global PITCH range lowered — floor and ceiling both dropped so a musical kick fundamental is reachable without maxing CURVE; PITCH exposed in Hz.
+- [x] **VOICE-02**: CURVE has a stronger pitch-envelope shape (more curve) so it does more of the 808↔909 work.
+- [x] **VOICE-03**: Redundant Page-1 params merged — TRS TNE ⊕ COLOR into one tone control, and LENGTH ⊕ SUSTAIN into one length control.
+- [x] **VOICE-04**: Kick Page 1 = PITCH, LENGTH, CURVE + 4–5 model-unique params; Kick Page 2 = the 3 transient controls + FX selector/amt/tone + filter + filter routing (SYN/TRANSIENT/BOTH). FM engine with 6 controls merges two to fit Page 1.
+- [x] **VOICE-05**: Post-kick FX exposes a discrete type selector + amount + a third tone/mix control.
+- [x] **VOICE-06**: Per-model voicing fixes — WTR (raise WTSEL/BODYPIT defaults), FM2 (lower default ratio/index), PHY (reach lower pitch, fix HEAD TENS direction), TRS (blend between distinct transient sources, not just noise), ANA (SUB LEVEL/SUB DECAY/SMP audibly functional), USR (smooth WMORP jumps) — each audibly kick-like at defaults.
 
 ### Sample Infrastructure (Phase B3)
 
@@ -182,12 +182,12 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | UIX-04 | Phase B1 (v1.1) | Complete |
 | UIX-05 | Phase B1 (v1.1) | Complete |
 | UIX-06 | Phase B1 (v1.1) | Complete |
-| VOICE-01 | Phase B2 (v1.1) | Pending |
-| VOICE-02 | Phase B2 (v1.1) | Pending |
-| VOICE-03 | Phase B2 (v1.1) | Pending |
-| VOICE-04 | Phase B2 (v1.1) | Pending |
-| VOICE-05 | Phase B2 (v1.1) | Pending |
-| VOICE-06 | Phase B2 (v1.1) | Pending |
+| VOICE-01 | Phase B2 (v1.1) | Complete |
+| VOICE-02 | Phase B2 (v1.1) | Complete |
+| VOICE-03 | Phase B2 (v1.1) | Complete |
+| VOICE-04 | Phase B2 (v1.1) | Complete |
+| VOICE-05 | Phase B2 (v1.1) | Complete |
+| VOICE-06 | Phase B2 (v1.1) | Complete (on-device tuning pending) |
 | SMPL-01 | Phase B3 (v1.1) | Pending |
 | SMPL-02 | Phase B3 (v1.1) | Pending |
 | SMPL-03 | Phase B3 (v1.1) | Pending |
