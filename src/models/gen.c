@@ -133,7 +133,7 @@ static void gen_step_pitch(gen_state *g) {
     int semi = scale_quantize(g->scale, g->degree) - 12;  /* center around root */
     /* Body fundamental = root * 2^(semi/12). exp2 via powf at CONTROL rate. */
     g->f0 = clampf(g->base_f0 * powf(2.0f, (float)semi / 12.0f), 20.0f, 400.0f);
-    g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+    g->sweep_hz = clampf(g->f0 * (1.5f + g->curve * 7.0f), 0.0f, 1000.0f);
 }
 
 /* Fire a step: re-trigger the amp + pitch envelopes for the current f0. */
@@ -153,16 +153,16 @@ void gen_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_PITCH) == 0) {
-        g->base_f0 = 30.0f * powf(110.0f / 30.0f, v);   /* sub-bass [30,110] Hz */
+        g->base_f0 = omega_pitch_hz(val);   /* sub-bass [30,110] Hz */
         g->f0 = g->base_f0;
-        g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+        g->sweep_hz = clampf(g->f0 * (1.5f + g->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         g->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         g->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         g->curve = v;
-        g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+        g->sweep_hz = clampf(g->f0 * (1.5f + g->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         /* ATTACK biases the body wave brighter (more attack presence). */
         g->wave = (int)(v * (float)(NUM_WAVES - 1) + 0.5f);

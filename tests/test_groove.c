@@ -90,6 +90,10 @@ static void select_model(plugin_api_v2_t *api, void *inst, int model_idx) {
  * moderate LENGTH/COLOR) so the rumble is audible when C-02 lands. */
 static void prime_groove(plugin_api_v2_t *api, void *inst) {
     for (int i = 0; i < N_PAGE1; i++) api->set_param(inst, k_page1_keys[i], "0.5");
+    /* PITCH is a Hz domain now (B2, VOICE-01); "0.5" clamps to the 30 Hz floor
+     * and shortens the kick tail. Voice it at a normal ~55 Hz so the later taps
+     * still capture tail energy. */
+    api->set_param(inst, PK_PITCH, "55");
     api->set_param(inst, KGRV_VOL,    "0.8");
     api->set_param(inst, KGRV_LENGTH, "0.7");
     api->set_param(inst, KGRV_COLOR,  "0.6");

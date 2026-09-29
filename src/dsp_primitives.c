@@ -12,6 +12,25 @@
 #include "wavetables.h"   /* defines: const float _Alignas(16) g_wavetables[...] */
 #include <assert.h>
 
+/* Shared PITCH parse -> Hz, clamped to [OMEGA_PITCH_MIN, OMEGA_PITCH_MAX] (B2,
+ * VOICE-01). Locale-independent integer/decimal parse (models pass the raw val
+ * string; PITCH is a Hz value now, NOT the 0..1 the model's local parse_f would
+ * clamp). Control rate only. */
+float omega_pitch_hz(const char *val) {
+    if (!val) return OMEGA_PITCH_MIN;
+    const char *s = val;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '+') s++;
+    float ip = 0.0f;
+    while (*s >= '0' && *s <= '9') { ip = ip * 10.0f + (float)(*s - '0'); s++; }
+    float fp = 0.0f, sc = 0.1f;
+    if (*s == '.') { s++; while (*s >= '0' && *s <= '9') { fp += (float)(*s - '0') * sc; sc *= 0.1f; s++; } }
+    float hz = ip + fp;
+    if (hz < OMEGA_PITCH_MIN) hz = OMEGA_PITCH_MIN;
+    if (hz > OMEGA_PITCH_MAX) hz = OMEGA_PITCH_MAX;
+    return hz;
+}
+
 /* --- Scale-quantize tables (GEN, KICK-11) ------------------------------ */
 /* Semitone offsets per scale degree, in .rodata (branch-light lookup, no
  * per-sample interval math). Rows: chromatic, major, minor, minor-pentatonic.

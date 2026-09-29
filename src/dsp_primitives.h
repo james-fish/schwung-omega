@@ -205,4 +205,19 @@ static inline float crush(float x, float levels) {
 /* Runtime KICK-15 guard-sample self-check (defined in dsp_primitives.c). */
 void omega_primitives_selfcheck(void);
 
+/* ---- Shared PITCH voicing (B2, VOICE-01/02) ------------------------------
+ * PITCH is now a DIRECT Hz control (not a normalized 0..1 exp map) with a lower
+ * floor/ceiling so a musical kick fundamental is reachable without maxing CURVE.
+ * Every model maps PK_PITCH through omega_pitch_hz(val) and derives its downward
+ * pitch-sweep depth through omega_sweep_hz(f0, curve) — a STRONGER curve than the
+ * old f0*(2+curve*4): the sweep now reaches ~8.5x f0 at full CURVE for a much
+ * more pronounced 909 drop. Both run at control rate (set_param), never render. */
+#define OMEGA_PITCH_MIN 30.0f
+#define OMEGA_PITCH_MAX 200.0f
+float omega_pitch_hz(const char *val);          /* parse Hz, clamp [MIN,MAX] */
+static inline float omega_sweep_hz(float f0, float curve) {
+    float d = f0 * (1.5f + curve * 7.0f);
+    return d < 0.0f ? 0.0f : (d > 1000.0f ? 1000.0f : d);
+}
+
 #endif /* DSP_PRIMITIVES_H */

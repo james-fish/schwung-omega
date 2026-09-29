@@ -120,15 +120,15 @@ void dig_set_param(bohm_instance_t *inst, const char *key, const char *val) {
 
     if (strcmp(key, PK_PITCH) == 0) {
         /* Same exp map as FM2/WTR (D-B03): techno pocket ~50 Hz at v=0.5. */
-        d->f0 = 35.0f * powf(120.0f / 35.0f, v);
-        d->sweep_hz = clampf(d->f0 * (2.0f + d->curve * 4.0f), 0.0f, 480.0f);
+        d->f0 = omega_pitch_hz(val);
+        d->sweep_hz = clampf(d->f0 * (1.5f + d->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         d->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         d->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         d->curve = v;                                  /* 0 = 808 slow, 1 = 909 fast */
-        d->sweep_hz = clampf(d->f0 * (2.0f + d->curve * 4.0f), 0.0f, 480.0f);
+        d->sweep_hz = clampf(d->f0 * (1.5f + d->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         d->attack = v;                                 /* sample-thump amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {

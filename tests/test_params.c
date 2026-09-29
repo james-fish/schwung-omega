@@ -233,11 +233,16 @@ static void assert_param_responsive(plugin_api_v2_t *api, void *inst,
     for (int i = 0; i < np2; i++)     allkeys[N_PAGE1 + i] = p2keys[i];
 
     for (int k = 0; k < total; k++) {
+        /* PITCH is a Hz domain now (B2, VOICE-01): 0.1/0.9 both clamp to the
+         * floor, so sweep it across the real Hz range instead. */
+        int is_pitch = (strcmp(allkeys[k], PK_PITCH) == 0);
+        const char *lo = is_pitch ? "40"  : "0.1";
+        const char *hi = is_pitch ? "160" : "0.9";
         prime_mid(api, inst, p2keys, np2);
-        api->set_param(inst, allkeys[k], "0.1");
+        api->set_param(inst, allkeys[k], lo);
         render_rms(api, inst, bufLo);
         prime_mid(api, inst, p2keys, np2);
-        api->set_param(inst, allkeys[k], "0.9");
+        api->set_param(inst, allkeys[k], hi);
         render_rms(api, inst, bufHi);
         if (!param_changed(bufLo, bufHi)) {
             int atk = (int)(0.030 * 44100.0);

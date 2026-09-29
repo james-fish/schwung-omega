@@ -45,6 +45,7 @@ typedef struct {
     const char *unit;        /* "", "%", "Hz", "ms" ... */
     const char *step;        /* JSON number literal, e.g. "0.01" */
     const char *options;     /* enum: pre-serialized JSON array; else NULL */
+    const char *mn, *mx;     /* float min/max JSON literals (NULL => 0.0/1.0) */
 } uiparam_t;
 
 /* Default lookup: reuse the value-cache key->index so schema defaults never
@@ -70,11 +71,13 @@ static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) 
             p->key, p->name, p->shortn, p->options, defbuf);
     } else {
         pk_format_value(ui_default_for(p->key), 4, defbuf, (int)sizeof defbuf);
+        const char *mn = p->mn ? p->mn : "0.0";
+        const char *mx = p->mx ? p->mx : "1.0";
         snprintf(obj, sizeof obj,
             "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
-            "\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"default\":%s,"
+            "\"type\":\"float\",\"min\":%s,\"max\":%s,\"default\":%s,"
             "\"step\":%s,\"unit\":\"%s\"}",
-            p->key, p->name, p->shortn, defbuf, p->step, p->unit);
+            p->key, p->name, p->shortn, mn, mx, defbuf, p->step, p->unit);
     }
     ui_puts(buf, buf_len, off, obj);
 }
@@ -116,7 +119,7 @@ static const char KN_ROOT[] = "[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]";
  * (LENGTH now folds in SUSTAIN, VOICE-03) followed by the ACTIVE model's unique
  * params (spliced from its p2_slot_desc). PITCH exposed in Hz (VOICE-01). */
 static const uiparam_t P_KICK1[] = {
-    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "Hz", "1",    NULL },
+    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "Hz", "1",    NULL, "30", "200" },
     { PK_LENGTH,  "LENGTH",  "LEN",   UP_FLOAT, "%",  "0.01", NULL },
     { PK_CURVE,   "CURVE",   "CURVE", UP_FLOAT, "%",  "0.01", NULL },
 };

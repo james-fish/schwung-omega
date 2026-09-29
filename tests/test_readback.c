@@ -64,15 +64,15 @@ int main(void) {
     void *inst = api->create_instance("/tmp/omega", "{}");
     assert(inst);
 
-    /* 2. Bare create reports musical defaults, NOT 0. */
-    assert(approx(get_val(api, inst, PK_PITCH), 0.5f));
+    /* 2. Bare create reports musical defaults, NOT 0. PITCH is Hz now (~50). */
+    assert(approx(get_val(api, inst, PK_PITCH), 50.0f));
     assert(approx(get_val(api, inst, PK_MASTER_VOL), 1.0f));   /* main vol full */
     assert(approx(get_val(api, inst, PK_FX_TYPE), 0.0f));
-    printf("test_readback: create defaults OK (pitch=0.5, master=1.0)\n");
+    printf("test_readback: create defaults OK (pitch=50Hz, master=1.0)\n");
 
-    /* 1. set -> get echoes the value the host set. */
-    api->set_param(inst, PK_PITCH, "0.2500");
-    assert(approx(get_val(api, inst, PK_PITCH), 0.25f));
+    /* 1. set -> get echoes the value the host set. PITCH in Hz. */
+    api->set_param(inst, PK_PITCH, "45.0000");
+    assert(approx(get_val(api, inst, PK_PITCH), 45.0f));
     api->set_param(inst, PK_CURVE, "0.8000");
     assert(approx(get_val(api, inst, PK_CURVE), 0.8f));
     printf("test_readback: set->get echo OK\n");
@@ -88,21 +88,21 @@ int main(void) {
      * set its PITCH differently, switch back — each model must report its own
      * stored value. */
     api->set_param(inst, PK_MODEL, "0");            /* FM2 */
-    api->set_param(inst, PK_PITCH, "0.1000");
-    assert(approx(get_val(api, inst, PK_PITCH), 0.1f));
+    api->set_param(inst, PK_PITCH, "40.0000");
+    assert(approx(get_val(api, inst, PK_PITCH), 40.0f));
 
     api->set_param(inst, PK_MODEL, "1");            /* FM4 */
-    /* FM4 PITCH still at its default (0.5) — NOT reset to 0, NOT FM2's 0.1. */
-    assert(approx(get_val(api, inst, PK_PITCH), 0.5f));
-    api->set_param(inst, PK_PITCH, "0.9000");
-    assert(approx(get_val(api, inst, PK_PITCH), 0.9f));
+    /* FM4 PITCH still at its default (50 Hz) — NOT reset to 0, NOT FM2's 40. */
+    assert(approx(get_val(api, inst, PK_PITCH), 50.0f));
+    api->set_param(inst, PK_PITCH, "180.0000");
+    assert(approx(get_val(api, inst, PK_PITCH), 180.0f));
 
     api->set_param(inst, PK_MODEL, "0");            /* back to FM2 */
-    assert(approx(get_val(api, inst, PK_PITCH), 0.1f));   /* FM2 remembered */
+    assert(approx(get_val(api, inst, PK_PITCH), 40.0f));   /* FM2 remembered */
 
     api->set_param(inst, PK_MODEL, "1");            /* back to FM4 */
-    assert(approx(get_val(api, inst, PK_PITCH), 0.9f));   /* FM4 remembered */
-    printf("test_readback: per-model memory OK (FM2=0.1, FM4=0.9 across switches)\n");
+    assert(approx(get_val(api, inst, PK_PITCH), 180.0f));  /* FM4 remembered */
+    printf("test_readback: per-model memory OK (FM2=40Hz, FM4=180Hz across switches)\n");
 
     /* The MODEL key itself reports the current model index. */
     assert(approx(get_val(api, inst, PK_MODEL), 1.0f));

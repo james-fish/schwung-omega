@@ -117,15 +117,15 @@ void ana_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     if (strcmp(key, PK_PITCH) == 0) {
         /* ANA sits LOWER than the FM2 pocket — 808 sub territory. Exp map
          * [30,110] Hz, ~45 Hz default at v=0.5 (B-RESEARCH §ANA). */
-        a->f0 = 30.0f * powf(110.0f / 30.0f, v);
-        a->sweep_hz = clampf(a->f0 * (2.0f + a->curve * 4.0f), 0.0f, 480.0f);
+        a->f0 = omega_pitch_hz(val);
+        a->sweep_hz = clampf(a->f0 * (1.5f + a->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         a->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         a->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         a->curve = v;                                  /* 0 = 808 slow, 1 = 909 fast */
-        a->sweep_hz = clampf(a->f0 * (2.0f + a->curve * 4.0f), 0.0f, 480.0f);
+        a->sweep_hz = clampf(a->f0 * (1.5f + a->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         a->attack = v;                                 /* sample-thump amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {

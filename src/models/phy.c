@@ -78,7 +78,8 @@ typedef struct phy_state {
 
     /* Mode frequencies + shared decay (all precomputed in set_param; re-excited
      * at trigger). Stored as normalized param values; trigger maps to Hz/decay. */
-    float head_tens;          /* HEAD TENS [0,1] -> head freq */
+    float pitch_hz;           /* PITCH: head-mode base frequency (Hz), VOICE-01/06 */
+    float head_tens;          /* HEAD TENS [0,1] -> relative head detune */
     float shell;              /* SHELL SIZE [0,1] -> body-mode freqs */
     float damping;            /* DAMPING [0,1] -> decay of all modes */
 
@@ -129,16 +130,12 @@ void phy_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_PITCH) == 0) {
-        /* PITCH offsets the head mode's tension baseline via HEAD TENS coupling.
-         * For PHY, PITCH biases the overall body register; store into head_tens
-         * baseline through a shared field so PITCH still moves the fundamental
-         * (KICK-12: PITCH means the same "fundamental" for every model). Map onto
-         * head_tens if HEAD TENS is unset, but keep them independent: PITCH shifts
-         * a global multiplier applied in trigger. Simplest musical choice — treat
-         * PITCH as a coarse register and HEAD TENS as fine mode tension. Here we
-         * fold PITCH into head_tens's low end so the two combine. */
-        /* Recompute nothing per-sample; trigger reads head_tens + pitch bias. */
-        p->head_tens = v;   /* PITCH drives the dominant mode register (KICK-12) */
+        /* PITCH is the head mode's BASE frequency in Hz (VOICE-01/06). This is
+         * independent of HEAD TENS (which now only detunes RELATIVE to PITCH), so
+         * PITCH can reach the low register (down to 30 Hz) — fixing "PHY doesn't
+         * go low enough" and "HEAD TENS just pushes pitch up" (both used to write
+         * the same field and fight). Mapped to the head mode freq at trigger. */
+        p->pitch_hz = omega_pitch_hz(val);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         /* Exp map [50,1500] ms (same musical centering as FM2). */
         p->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
@@ -225,9 +222,12 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
                 env_coeff_from_ms(burst_ms));
 
     /* --- Map params -> mode frequencies (Hz) + shared decay --------------- */
-    /* HEAD TENS -> dominant pitched mode freq. Higher tension = higher freq.
-     * Range ~45..110 Hz (techno head register), exp map for even sweep. */
-    float head_f = 45.0f * powf(110.0f / 45.0f, p->head_tens);
+    /* Head mode freq = PITCH (Hz base) detuned by HEAD TENS (VOICE-06). PITCH
+     * sets the fundamental (30..200 Hz); HEAD TENS shifts it +/- ~25% around
+     * that, so the two controls are independent and PITCH reaches the low
+     * register. Guard a zero pitch_hz (pre-prime) with the 50 Hz default. */
+    float pbase = (p->pitch_hz > 0.0f) ? p->pitch_hz : 50.0f;
+    float head_f = pbase * (0.75f + 0.5f * p->head_tens);
 
     /* Downward head sweep: bias the excitation freq upward by the CURVE-blended
      * envelope amount so the head mode settles from a higher pitch. The modal

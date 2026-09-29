@@ -84,10 +84,10 @@ int main(void) {
     render_run(&inst, bufB, NBLOCKS);
     assert(memcmp(bufA, bufB, sizeof(bufA)) == 0);
 
-    /* T3 PITCH differs. */
-    reset_mid(&inst); fm2_set_param(&inst, PK_PITCH, "0.1");
+    /* T3 PITCH differs. PITCH is a Hz value now (B2, VOICE-01). */
+    reset_mid(&inst); fm2_set_param(&inst, PK_PITCH, "40");
     g_fm2_vtable.trigger(&inst, 36, 100); render_run(&inst, bufA, NBLOCKS);
-    reset_mid(&inst); fm2_set_param(&inst, PK_PITCH, "0.9");
+    reset_mid(&inst); fm2_set_param(&inst, PK_PITCH, "160");
     g_fm2_vtable.trigger(&inst, 36, 100); render_run(&inst, bufB, NBLOCKS);
     assert(memcmp(bufA, bufB, sizeof(bufA)) != 0);
 

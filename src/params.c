@@ -13,8 +13,8 @@ _Static_assert(GKI_COUNT == OMEGA_GKI_COUNT, "GKI_COUNT vs OMEGA_GKI_COUNT drift
  * the create-time prime; fx_type defaults to 0 (Diode). B2 tunes per-model
  * voicing defaults — this only establishes the readback baseline (UIX-01). */
 const float g_kick_defaults[PKI_COUNT] = {
-    /* shared */
-    [PKI_PITCH]=0.5f, [PKI_LENGTH]=0.5f, [PKI_SUSTAIN]=0.5f, [PKI_CURVE]=0.5f,
+    /* shared. PITCH is a Hz value now (VOICE-01): ~50 Hz techno pocket default. */
+    [PKI_PITCH]=50.0f, [PKI_LENGTH]=0.5f, [PKI_SUSTAIN]=0.5f, [PKI_CURVE]=0.5f,
     [PKI_ATTACK]=0.5f, [PKI_TRS_DEC]=0.5f, [PKI_TRS_TNE]=0.5f, [PKI_COLOR]=0.5f,
     [PKI_FX_TYPE]=0.0f, [PKI_FX_AMT]=0.0f,
     [PKI_FX_TONE]=0.5f, [PKI_FILTER_ROUTE]=0.0f,   /* tone centered; route=SYN */

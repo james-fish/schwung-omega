@@ -115,15 +115,15 @@ void usr_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_PITCH) == 0) {
-        u->f0 = 35.0f * powf(120.0f / 35.0f, v);       /* exp map [35,120] Hz */
-        u->sweep_hz = clampf(u->f0 * (2.0f + u->curve * 4.0f), 0.0f, 480.0f);
+        u->f0 = omega_pitch_hz(val);       /* exp map [35,120] Hz */
+        u->sweep_hz = clampf(u->f0 * (1.5f + u->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         u->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         u->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         u->curve = v;
-        u->sweep_hz = clampf(u->f0 * (2.0f + u->curve * 4.0f), 0.0f, 480.0f);
+        u->sweep_hz = clampf(u->f0 * (1.5f + u->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         u->trs_amp = v;
     } else if (strcmp(key, PK_TRS_DEC) == 0) {

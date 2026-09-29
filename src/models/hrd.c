@@ -134,15 +134,15 @@ void hrd_set_param(bohm_instance_t *inst, const char *key, const char *val) {
 
     if (strcmp(key, PK_PITCH) == 0) {
         /* Same exp map as FM2/DIG (D-B03): techno pocket ~50 Hz at v=0.5. */
-        h->f0 = 35.0f * powf(120.0f / 35.0f, v);
-        h->sweep_hz = clampf(h->f0 * (2.0f + h->curve * 4.0f), 0.0f, 480.0f);
+        h->f0 = omega_pitch_hz(val);
+        h->sweep_hz = clampf(h->f0 * (1.5f + h->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         h->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         h->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         h->curve = v;
-        h->sweep_hz = clampf(h->f0 * (2.0f + h->curve * 4.0f), 0.0f, 480.0f);
+        h->sweep_hz = clampf(h->f0 * (1.5f + h->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         h->attack = v;                                 /* sample-thump amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {

@@ -99,15 +99,15 @@ void trs_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_PITCH) == 0) {
-        t->f0 = 35.0f * powf(120.0f / 35.0f, v);       /* exp map [35,120] Hz */
-        t->sweep_hz = clampf(t->f0 * (2.0f + t->curve * 4.0f), 0.0f, 480.0f);
+        t->f0 = omega_pitch_hz(val);       /* exp map [35,120] Hz */
+        t->sweep_hz = clampf(t->f0 * (1.5f + t->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         t->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         t->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         t->curve = v;                                  /* Page-1 808<->909 */
-        t->sweep_hz = clampf(t->f0 * (2.0f + t->curve * 4.0f), 0.0f, 480.0f);
+        t->sweep_hz = clampf(t->f0 * (1.5f + t->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         t->trs_amp = v;                                /* transient amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {

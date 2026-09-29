@@ -88,11 +88,11 @@ int main(void) {
     render_energy(api, inst, bufB);
     assert(memcmp(bufA, bufB, sizeof(bufA)) == 0);
 
-    /* KICK-12 PITCH: low vs high yields different buffers. */
-    api->set_param(inst, PK_PITCH, "0.1"); render_energy(api, inst, bufA);
-    api->set_param(inst, PK_PITCH, "0.9"); render_energy(api, inst, bufB);
+    /* KICK-12 PITCH: low vs high yields different buffers. PITCH is Hz now (B2). */
+    api->set_param(inst, PK_PITCH, "40");  render_energy(api, inst, bufA);
+    api->set_param(inst, PK_PITCH, "160"); render_energy(api, inst, bufB);
     assert(memcmp(bufA, bufB, sizeof(bufA)) != 0);
-    api->set_param(inst, PK_PITCH, "0.5");   /* restore */
+    api->set_param(inst, PK_PITCH, "50");   /* restore (~50 Hz techno pocket) */
 
     /* KICK-12 LENGTH: short vs long decay -> later-half energy differs. */
     api->set_param(inst, PK_LENGTH, "0.05"); render_energy(api, inst, bufA);

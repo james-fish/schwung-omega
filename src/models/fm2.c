@@ -110,11 +110,11 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * with an exponential map over [35,120] Hz for an even musical sweep
          * (D-B03). At v=0.5 -> ~64.8 Hz center of the exp range; the fundamental
          * is pulled to ~50 Hz by the downward pitch sweep settling toward f0. */
-        fm->f0 = 35.0f * powf(120.0f / 35.0f, v);   /* exp map [35,120] Hz */
+        fm->f0 = omega_pitch_hz(val);   /* exp map [35,120] Hz */
         /* Sweep depth is recomputed in trigger from f0 AND curve (decoupled from
          * a pure f0*4): sweep_hz = clamp(f0*(2..6), <=480 Hz) so 909 sweeps
          * deeper. Store a curve-free baseline; trigger overrides with curve. */
-        fm->sweep_hz = clampf(fm->f0 * (2.0f + fm->curve * 4.0f), 0.0f, 480.0f);
+        fm->sweep_hz = clampf(fm->f0 * (1.5f + fm->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
         /* Exp map over [50,1500] ms so mid-knob is musically centered
          * (v=0.5 -> ~274 ms), avoiding all-the-action-in-last-5% (D-B02). */
@@ -124,7 +124,7 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     } else if (strcmp(key, PK_CURVE) == 0) {
         fm->curve = v;                            /* 0 = 808 slow, 1 = 909 fast */
         /* Curve changes the sweep depth (909-side sweeps deeper); recompute. */
-        fm->sweep_hz = clampf(fm->f0 * (2.0f + fm->curve * 4.0f), 0.0f, 480.0f);
+        fm->sweep_hz = clampf(fm->f0 * (1.5f + fm->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         fm->trs_amp = v;                          /* click amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {
