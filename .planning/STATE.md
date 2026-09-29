@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-07-phy-modal-physical-PLAN.md
-last_updated: "2026-09-29T12:57:45.706Z"
+stopped_at: Completed B-08-usr-gen-userload-generative-PLAN.md
+last_updated: "2026-09-29T16:57:38.938Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -32,12 +32,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 7 of 9 complete (B-01..B-07 done); next is B-08 (USR/GEN userload + generative)
+**Plan:** 8 of 9 complete (B-01..B-08 done); next is B-09 (Page-2 splice + on-device voicing audit)
 **Status:** Executing Phase B
-**Progress:** Phase B 7/9 plans complete
+**Progress:** Phase B 8/9 plans complete — all 10 kick models now registered
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 7/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 8/9 plans, all 10 models live)
 ```
 
 ---
@@ -49,7 +49,7 @@ progress:
 | Metric | Value |
 |--------|-------|
 | Phases complete | 0/7 |
-| Requirements delivered | 17/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/03/04/06/07/08/09/12/15) |
+| Requirements delivered | 20/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/03/04/05/06/07/08/09/10/11/12/15) |
 | On-device CPU (full chain) | Not yet measured (Phase D target: 10-15%) |
 
 | Plan | Duration | Tasks | Files |
@@ -66,6 +66,7 @@ progress:
 | Phase B-remaining-9-kick-models P05 | 6min | 3 tasks | 4 files |
 | Phase B-remaining-9-kick-models P06 | 7min | 3 tasks | 4 files |
 | Phase B-remaining-9-kick-models P07 | 4min | 2 tasks | 3 files |
+| Phase B-remaining-9-kick-models P08 | 12min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ progress:
 - **[B-06] HRD = bounded distortion + crush (KICK-06)** — hard-techno wavetable body (bright factory waves) + punchy SAMPLE LAYER blended by MIX + DRIVE reusing the shared `fx_process` SAT (v<0.6) / Fold (v>0.6, harder edge) at high amt as its ONLY distortion (no bespoke `fast_tanh` — STATE.md bug #2; the shared FX forms self-limit to [-1,1] at max drive) + CRUSH via the shared `crush()` (v->bits[16,4], default-OFF aggressive vs DIG's always-on bits[6,14] timbre; levels precomputed at control rate, render is a bounded roundf). Uses TWO separate `fx_state_t` fields (drive_fx + post-kick fx) so the two Crush sample-and-holds never collide, both reset on trigger. The loudest/most aggressive kick; HRD-vs-DIG split = distortion/loud vs lo-fi/digital-crunch.
 - **[B-06] FM4 = static routing tables, no per-sample algo branching (KICK-03)** — 4-op FM extending the FM2 core; the 4 OPL3-style algorithms are `static const uint8_t g_fm4_algo[4][NUM_OPS]` (modulator-source per op, FM4_NONE sentinel) + `g_fm4_carrier[4][NUM_OPS]` routing tables WALKED in render (CLAUDE.md — the active algo's two rows snapshotted once per block, ops evaluated op3->op0 in a single forward pass so each modulator is computed before its target; NO per-sample branching on algorithm). Per-op AM + FM-index envs; op3 self-FEEDBACK scaled + hard-clamped to <=0.7 (no runaway); OP RATIO spread + ALGO detune recomputed at control rate; carriers summed with 1/ncar normalization (self-limit <1.0). ALGORITHM (PK_FM4_ALGO) selects the table 0..3; ALGO (PK_FM4_ALGO2) is a per-op metallic detune morph (research disambiguation). Now 7 registered / 21 distinct pairs; test_switch 49 pairs. KICK-06 + KICK-03 delivered (commits 828f423, c04866c).
 - **[B-07] PHY = modal physical model (KICK-05)** — the ONLY non-oscillator engine: 3 damped complex-rotation `modal_t` modes (head dominant pitched mode + body1/body2 shell modes, amps 0.9/0.5/0.25, body decays 0.5x/0.3x head) excited by a short bright filtered-noise beater burst (`noise_t` + `tpt1_lp`). HEAD TENS -> head freq (exp 45..110 Hz) + a SWEPT-UP excitation start (`head_f*(1+0.8+1.2*curve)`, CURVE deepens the 909 drop; NO per-sample re-tune since modal_t is fixed-tune once excited — the beater carries the bright attack, the mode carries the settled tone); SHELL SIZE -> body mode freqs (bigger=lower); DAMPING -> shared decay (exp 400..60 ms, ms->decay clamped (0,1)); BEATER -> burst brightness LP + length. Defense-in-depth: every freq clamped [20,0.45*SR] + every decay via `modal_decay_from_ms` clamped (0,1) BEFORE modal_excite (which re-clamps) + a bounded `x/(1+|x|)` output self-limit — proven NaN-free/bounded at the worst-case corner (HEAD TENS=1.0/DAMPING=0.0/SHELL=1.0, explicit `assert_phy_extremes_no_nan`). Beater RESEEDED per trigger (the KICK-13 switch memset zeroes the xorshift seed; xorshift of 0 stays 0 -> silence otherwise). Render loop transcendental-free. Registered by replacing its NULL slot; 8 registered / 28 distinct pairs, test_switch 64 pairs. KICK-05 delivered (commits de84f82, 3e06d61).
+- **[B-08] USR = off-render user-content player + non-silent fallback (KICK-10)** — `usr_load_wav`/`usr_load_wavetable`/`usr_join_path` read `module_dir/user/kick.wav` (canonical 44-byte PCM16, 1..8 ch mono-downmixed, bounded to the buffer cap) + `user/wavetable.raw` (OMEGA_WT_LEN floats + guard) ONCE in `omega_create` — the ONLY `fopen/fread/fclose` in the module; `render_block`/`set_param`/`on_midi`/`get_param` stay file-I/O-free (the malloc trap guards render, create is off the hot path per B-RESEARCH Open Q2). The ~184 KB `usr_wavetable[OMEGA_WT_GUARD]` + `usr_sample[44100]` live BY VALUE in `bohm_instance` (single calloc grew, NOT `model_state[4096]`, NOT a per-file malloc; `_Static_assert(sizeof(struct bohm_instance) < 800000)` holds). When `usr_loaded==false` usr.c synthesises a built-in wavetable body so USR is never silent (D-B02). 4 P2 slots (SAMPLE SEL/WT MORPH/LAYER VOL/PITCH ENV); render transcendental-free.
+- **[B-08] GEN = deterministic self-clocking generative engine, Phase-B scope ONLY (KICK-11)** — xorshift64 `prng_t` seeded from SEED drives a repeatable pitch sequence, `scale_quantize`'d (SCALE), Euclidean DENSITY-gated; a `wt_read_bl` body renders each self-clocked step at a fixed internal rate. **Transport-sync via `get_beat_position` + the full Groove Page 2 UI (SEED/SCALE/SEQ LEN/LPF FREQ/LPF POLE/DENSITY) are Phase C (GRV-02/GRV-04)** — commented at the top of gen.c (Open Q3). Reseed-on-SEED + full env/phase zero on trigger => same seed byte-identical (determinism); the downbeat ALWAYS fires (immediate audibility), the Euclidean pattern gates subsequent steps. NO `rand()` (B-02 prng_t only). 3 P2 slots (SEED/SCALE/DENSITY); render transcendental-free.
+- **[B-08] Registry fully populated (10/10) + runtime no-NULL gate** — `[MODEL_USR]=&g_usr_vtable` and `[MODEL_GEN]=&g_gen_vtable` replace the LAST two NULL slots; the B-01 array-length `_Static_assert(==MODEL_COUNT)` stays but a NEW runtime loop in `test_gen.c` asserts every `g_models[m]` (and `->render`/`->trigger`) non-NULL because initializer NULL-ness is NOT compile-time inspectable. `ui.c` root Model enum now lists all 10 names in enum order (per-model Page-2 splice is B-09). `make test` green: 10 registered / 45 distinct pairs, test_switch 100 pairs, test_gen (determinism + USR fixture-load/fallback + complete-registry) all pass; cross-build/glibc gate deferred to CI (no local Docker). KICK-10 + KICK-11 delivered (commits 69d11a1, 3d2a5da, befb75b, e6ba5f0).
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -134,11 +138,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan B-08 (USR + GEN, KICK-10/KICK-11) — USR userload (off-thread WAV/wavetable at create_instance, dedicated pre-sized buffer since it won't fit model_state[4096]; SAMPLE SELECT/WT MORPH/LAYER VOL/PITCH ENV, built-in fallback so it's non-silent) + GEN generative engine (PRNG xorshift64 seeded from SEED + scale_quantize over g_scales + Euclidean density gating, self-clocking for offline audition; transport-sync to get_beat_position + full Groove Page 2 deferred to Phase C). Register both by replacing the final two NULL slots -> registry fully populated (10/10, test_distinct 10 registered / 45 pairs). Then B-09 splices Page 2 + runs the on-device voicing audit. (A-04 on-device validation still pending hardware — see Todos.)
+**Next action:** Execute Plan B-09 (final Phase-B plan) — splice each model's Page-2 `p2_slot_desc` into `ui.c` so the Kick Page 2 shows the active model's real params (currently only the root Model enum lists all 10 names) + run the on-device voicing audit (VOICING_AUDIT.md, the D-B02 manual / D-B04 ear round). All 10 kick models are now registered, distinct, non-silent, bounded, param-responsive across the full automated battery. (A-04 on-device validation still pending hardware — see Todos.)
 
-**Stopped at:** Completed B-07-phy-modal-physical-PLAN.md
+**Stopped at:** Completed B-08-usr-gen-userload-generative-PLAN.md
 
 **Recent activity:**
+
+- 2026-09-29: B-08 complete — the FINAL two models: USR (KICK-10, user-content player: usr_load_wav/usr_load_wavetable read module_dir/user/kick.wav + user/wavetable.raw ONCE in create_instance — the module's ONLY file I/O, off the malloc-trapped render path per B-RESEARCH Open Q2; the ~184 KB usr_wavetable+usr_sample live BY VALUE in bohm_instance so the single calloc grew, NOT model_state[4096] nor a per-file malloc, <800KB static_assert holds; usr_loaded==false -> built-in wavetable fallback so USR is never silent; 4 P2 slots) + GEN (KICK-11, deterministic self-clocking generative kick: xorshift64 prng_t seeded from SEED -> repeatable pitch seq, scale_quantize (SCALE), Euclidean DENSITY gating, wt_read_bl body per self-clocked step at a fixed internal rate; transport-sync via get_beat_position + full Groove Page 2 UI deferred to Phase C GRV-02/GRV-04, commented at top of gen.c; reseed-on-SEED + full env/phase zero on trigger => same seed byte-identical, downbeat always fires; NO rand(); 3 P2 slots). Both registered by replacing the LAST two NULL slots -> registry FULLY populated (10/10); B-01 array-length static_assert stays + a NEW runtime no-NULL-slot gate in test_gen.c; ui.c root Model enum now lists all 10 names (per-model Page-2 splice is B-09). Render loops transcendental-free (powf/tanf control-rate only). `make test` green — 10 registered / 45 distinct pairs, test_switch 100 pairs, test_gen determinism + USR fixture-load/fallback + complete-registry all pass; cross-build/glibc gate deferred to CI (no local Docker). KICK-10 + KICK-11 delivered (commits 69d11a1, 3d2a5da, befb75b, e6ba5f0)
 
 - 2026-09-29: B-07 complete — PHY (KICK-05, the only non-oscillator engine: an organic/woody modal kick from 3 damped complex-rotation modal_t modes — head dominant pitched mode + 2 shell body modes — excited by a bright filtered-noise beater burst; HEAD TENS->head freq + swept-UP excitation start so the fixed mode settles down without per-sample re-tune, SHELL SIZE->body mode freqs, DAMPING->shared decay ms->decay clamped (0,1), BEATER->burst brightness/length) as a thin recipe over the B-02 modal_t/noise primitives + FM2 dual-env CURVE; defense-in-depth freq/decay clamps + x/(1+|x|) self-limit proven NaN-free/bounded at the worst-case corner (explicit assert_phy_extremes_no_nan: HEAD TENS=1.0/DAMPING=0.0/SHELL=1.0); beater reseeded per trigger (memset zeroes the xorshift seed otherwise); registered by replacing its NULL slot; render transcendental-free; `make test` green — 8 registered / 28 distinct pairs, test_switch 64 pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-05 delivered (commits de84f82, 3e06d61)
 
