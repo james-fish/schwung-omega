@@ -94,8 +94,13 @@ GROOVE_TEST_SRCS = tests/test_groove.c tests/mock_host.c tests/wav.c \
 READBACK_TEST_SRCS = tests/test_readback.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
+# Sample infrastructure harness (B3, SMPL-01/02/03): enumeration + picker enum +
+# selection + absent-dir graceful. Writes WAVs into a temp module_dir/samples/.
+SAMPLES_TEST_SRCS = tests/test_samples.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback fixtures wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -134,7 +139,7 @@ dsp.so: | src/wavetables.h
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -191,6 +196,11 @@ test-readback: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(READBACK_TEST_SRCS) -o build/test_readback $(LDLIBS)
 	./build/test_readback
+
+test-samples: | src/wavetables.h
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(SAMPLES_TEST_SRCS) -o build/test_samples $(LDLIBS)
+	./build/test_samples
 
 clean:
 	rm -rf build tests/output

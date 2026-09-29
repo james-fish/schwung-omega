@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>   /* USR (KICK-10): bounded one-time WAV read in create ONLY */
+#include <dirent.h>  /* B3 (SMPL-01): sample-folder enumeration in create ONLY */
 
 /* ---- Host handle + returned plugin vtable -------------------------------- */
 static const host_api_v1_t *g_host = NULL;
@@ -86,41 +87,105 @@ static uint32_t rd_u32le(const unsigned char *p) {
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-/* Read a canonical PCM16 WAV (as written by tests/wav.c) from `path` into
- * inst->usr_sample, bounded to the buffer cap. Mono-downmixes multi-channel to
- * a single one-shot. Sets usr_sample_len + usr_loaded on success. Bounded reads
- * only; ignores malformed/oversized content gracefully. */
-static void usr_load_wav(bohm_instance_t *inst, const char *path) {
+/* Read a canonical PCM16 WAV (as written by tests/wav.c) from `path` into `buf`,
+ * bounded to `cap` frames. Mono-downmixes multi-channel. Returns the frame count
+ * loaded (0 on any absence/malformed/empty). Bounded reads only; the ONE file
+ * read path in the module (create_instance, off the audio thread). */
+static int load_wav_into(const char *path, float *buf, int cap) {
     FILE *f = fopen(path, "rb");
-    if (!f) return;
-
+    if (!f) return 0;
     unsigned char hdr[44];
-    if (fread(hdr, 1, sizeof hdr, f) != sizeof hdr) { fclose(f); return; }
+    if (fread(hdr, 1, sizeof hdr, f) != sizeof hdr) { fclose(f); return 0; }
     if (memcmp(hdr + 0, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0 ||
         memcmp(hdr + 12, "fmt ", 4) != 0 || memcmp(hdr + 36, "data", 4) != 0) {
-        fclose(f); return;   /* not the canonical 44-byte PCM16 layout */
+        fclose(f); return 0;
     }
-    uint16_t fmt      = rd_u16le(hdr + 20);   /* 1 = PCM */
+    uint16_t fmt      = rd_u16le(hdr + 20);
     uint16_t channels = rd_u16le(hdr + 22);
     uint16_t bits     = rd_u16le(hdr + 34);
-    if (fmt != 1 || bits != 16 || channels < 1 || channels > 8) { fclose(f); return; }
-
-    const int CAP = (int)(sizeof inst->usr_sample / sizeof inst->usr_sample[0]);
+    if (fmt != 1 || bits != 16 || channels < 1 || channels > 8) { fclose(f); return 0; }
     int nframes = 0;
     int16_t frame[8];
-    /* Bounded loop: never write past CAP; one downmixed float per source frame. */
-    while (nframes < CAP) {
+    while (nframes < cap) {
         size_t got = fread(frame, sizeof(int16_t), channels, f);
-        if (got != channels) break;   /* EOF or short read */
+        if (got != channels) break;
         float acc = 0.0f;
         for (int c = 0; c < channels; c++) acc += (float)frame[c] / 32768.0f;
-        inst->usr_sample[nframes++] = acc / (float)channels;
+        buf[nframes++] = acc / (float)channels;
     }
     fclose(f);
+    return nframes;
+}
 
-    if (nframes > 0) {
-        inst->usr_sample_len = nframes;
-        inst->usr_loaded     = true;
+/* Load module_dir/user/kick.wav into inst->usr_sample (KICK-10, backward compat). */
+static void usr_load_wav(bohm_instance_t *inst, const char *path) {
+    int n = load_wav_into(path, inst->usr_sample,
+                          (int)(sizeof inst->usr_sample / sizeof inst->usr_sample[0]));
+    if (n > 0) { inst->usr_sample_len = n; inst->usr_loaded = true; }
+}
+
+/* Case-insensitive ".wav" suffix test. */
+static bool ends_with_wav(const char *nm, size_t l) {
+    if (l < 5) return false;
+    const char *e = nm + l - 4;
+    return e[0] == '.' && (e[1]=='w'||e[1]=='W') && (e[2]=='a'||e[2]=='A') && (e[3]=='v'||e[3]=='V');
+}
+
+/* Enumerate *.wav in `dir` into the sample bank (B3, SMPL-01/03), bounded to
+ * OMEGA_MAX_SAMPLES total across all calls. Off the audio thread (create only).
+ * Names are the basename without extension, JSON-sanitized (alnum/_/-/space);
+ * results appended, then the caller sorts for a stable picker index. Missing
+ * dir => no-op (opendir fails), so calling it for an absent SD path is safe. */
+static void enumerate_samples(bohm_instance_t *inst, const char *dir) {
+    DIR *d = opendir(dir);
+    if (!d) return;
+    struct dirent *ent;
+    char path[600];
+    while (inst->sample_count < OMEGA_MAX_SAMPLES && (ent = readdir(d)) != NULL) {
+        const char *nm = ent->d_name;
+        size_t l = strlen(nm);
+        if (!ends_with_wav(nm, l)) continue;
+        size_t dl = strlen(dir);
+        if (dl + 1 + l + 1 > sizeof path) continue;      /* bounded join */
+        memcpy(path, dir, dl); path[dl] = '/';
+        memcpy(path + dl + 1, nm, l); path[dl + 1 + l] = '\0';
+
+        int idx = inst->sample_count;
+        int nf = load_wav_into(path, inst->sample_bank[idx], OMEGA_SAMPLE_CAP);
+        if (nf <= 0) continue;
+        inst->sample_len[idx] = nf;
+        /* Name = basename minus ".wav", sanitized + bounded. */
+        int cn = (int)(l - 4);
+        if (cn > OMEGA_SAMPLE_NAMELEN - 1) cn = OMEGA_SAMPLE_NAMELEN - 1;
+        int w = 0;
+        for (int i = 0; i < cn; i++) {
+            char c = nm[i];
+            int ok = (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c==' ';
+            inst->sample_name[idx][w++] = ok ? c : '_';
+        }
+        inst->sample_name[idx][w] = '\0';
+        inst->sample_count++;
+    }
+    closedir(d);
+}
+
+/* Stable sort the bank by name (insertion sort — tiny N, off-thread) so a given
+ * SAMPLE SELECT index maps to the same sample across runs (preset-safe). */
+static void sort_samples(bohm_instance_t *inst) {
+    for (int i = 1; i < inst->sample_count; i++) {
+        for (int j = i; j > 0 && strcmp(inst->sample_name[j-1], inst->sample_name[j]) > 0; j--) {
+            char tn[OMEGA_SAMPLE_NAMELEN];
+            memcpy(tn, inst->sample_name[j], OMEGA_SAMPLE_NAMELEN);
+            memcpy(inst->sample_name[j], inst->sample_name[j-1], OMEGA_SAMPLE_NAMELEN);
+            memcpy(inst->sample_name[j-1], tn, OMEGA_SAMPLE_NAMELEN);
+            int tl = inst->sample_len[j]; inst->sample_len[j] = inst->sample_len[j-1]; inst->sample_len[j-1] = tl;
+            /* swap the audio rows */
+            for (int k = 0; k < OMEGA_SAMPLE_CAP; k++) {
+                float tf = inst->sample_bank[j][k];
+                inst->sample_bank[j][k] = inst->sample_bank[j-1][k];
+                inst->sample_bank[j-1][k] = tf;
+            }
+        }
     }
 }
 
@@ -197,6 +262,19 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
             usr_load_wav(inst, path);
         if (usr_join_path(path, sizeof path, module_dir, "wavetable.raw"))
             usr_load_wavetable(inst, path);
+
+        /* B3 (SMPL-01/03): enumerate the module's samples/ folder, then an
+         * optional SD-card location, into the bounded bank — off the audio
+         * thread. Missing dirs are skipped (opendir fails). Sorted for a stable
+         * SAMPLE SELECT index. The SD path is a best-guess to confirm on-device. */
+        size_t dl = strlen(module_dir);
+        if (dl + 9 < sizeof path) {
+            memcpy(path, module_dir, dl);
+            memcpy(path + dl, "/samples", 9);   /* includes NUL */
+            enumerate_samples(inst, path);
+        }
+        enumerate_samples(inst, "/media/sdcard/samples");   /* optional SD (SMPL-03) */
+        sort_samples(inst);
     }
 
     /* Groove rumble voice (Phase C): seed the tempo clock + Page-1 middles so

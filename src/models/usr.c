@@ -31,6 +31,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <stdio.h>   /* B3: snprintf for the dynamic SAMPLE SEL enum descriptor */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -60,7 +61,8 @@ typedef struct usr_state {
     float length_ms;          /* amp decay time (from LENGTH) */
 
     /* User-content playback controls */
-    float sample_sel;         /* SAMPLE SELECT: built-in body(0) <-> user sample(1) source bias */
+    int   sample_idx;         /* SAMPLE SELECT (B3): 0=None, 1..N = bank slot */
+    float sample_sel;         /* body-morph fallback when the bank is empty */
     float wt_morph;           /* WT MORPH: morph the wavetable timbre [0,1] */
     float layer_vol;          /* LAYER VOL: body<->sample layer mix [0,1] */
     float sample_pos;         /* user-sample playback cursor (frames, fractional) */
@@ -139,10 +141,20 @@ void usr_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc = 200.0f + v * (18000.0f - 200.0f);
         u->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_USR_SAMPLE) == 0) {
-        /* SAMPLE SELECT: bias the source between the built-in/user body (0) and
-         * the user one-shot sample (1). With no user sample loaded this still
-         * changes the body voicing (blended below). */
-        u->sample_sel = v;
+        /* SAMPLE SELECT (B3, SMPL-02): a picker into the enumerated sample bank.
+         * 0 = None, 1..N = bank slot. When the bank is EMPTY it falls back to an
+         * always-audible body morph so the control still shapes the sound (and
+         * the voicing battery stays green with no samples installed). */
+        if (inst->sample_count > 0) {
+            int idx = (int)(parse_f(val) + 0.5f);
+            if (idx < 0) idx = 0;
+            if (idx > inst->sample_count) idx = inst->sample_count;
+            u->sample_idx = idx;
+            u->sample_sel = 0.0f;
+        } else {
+            u->sample_idx = 0;
+            u->sample_sel = v;   /* body-morph fallback (no bank) */
+        }
     } else if (strcmp(key, PK_USR_WTMORPH) == 0) {
         /* WT MORPH: morph the wavetable timbre — for a user table it lerps
          * toward a folded/brighter variant; for the built-in fallback it selects
@@ -196,9 +208,19 @@ static void usr_trigger(bohm_instance_t *inst, int note, int velocity) {
 static void usr_render(bohm_instance_t *inst, float *out_l, float *out_r, int frames) {
     usr_state *u = (usr_state *)inst->model_state;
 
-    const bool have_sample = inst->usr_loaded && inst->usr_sample_len > 0;
+    /* Sample-layer source (B3): the SAMPLE SELECT bank slot if chosen, else the
+     * legacy user/kick.wav one-shot (backward compat). */
+    const float *src = NULL; int src_len = 0;
+    if (u->sample_idx > 0 && u->sample_idx <= inst->sample_count) {
+        src = inst->sample_bank[u->sample_idx - 1];
+        src_len = inst->sample_len[u->sample_idx - 1];
+    } else if (inst->usr_loaded && inst->usr_sample_len > 0) {
+        src = inst->usr_sample;
+        src_len = inst->usr_sample_len;
+    }
+    const bool have_sample = (src && src_len > 0);
     const bool have_usr_wt = inst->usr_wt_loaded;
-    const float slen = (float)inst->usr_sample_len;
+    const float slen = (float)src_len;
 
     for (int n = 0; n < frames; n++) {
         float p_fast = env_tick(&u->pitch_env_fast);
@@ -236,13 +258,12 @@ static void usr_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float samp = 0.0f;
         if (have_sample) {
             int i = (int)u->sample_pos;
-            if (i < inst->usr_sample_len - 1) {
+            if (i < src_len - 1) {
                 float fr = u->sample_pos - (float)i;
-                samp = inst->usr_sample[i] +
-                       fr * (inst->usr_sample[i + 1] - inst->usr_sample[i]);
+                samp = src[i] + fr * (src[i + 1] - src[i]);
                 u->sample_pos += 1.0f;
             } else if ((float)i < slen) {
-                samp = inst->usr_sample[i];
+                samp = src[i];
                 u->sample_pos = slen;   /* hold at end (one-shot, no loop) */
             }
         }
@@ -297,18 +318,30 @@ static void usr_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 }
 
 /* ---- Page-2 slot descriptor (full JSON objects; Pattern 3) --------------- */
+/* SAMPLE SEL is a DYNAMIC enum (B3, SMPL-02): its options are ["None", <bank
+ * names...>] built from the samples enumerated at create_instance. The other
+ * three slots are fixed floats. Bounded write into buf; returns 0 on overflow. */
 static int usr_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
-    (void)inst;
-    static const char json[] =
-        "{\"key\":\"" PK_USR_SAMPLE   "\",\"name\":\"SAMPLE SEL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+    int off = 0;
+    /* SAMPLE SEL enum head + options. */
+    int w = snprintf(buf + off, (size_t)(buf_len - off),
+        "{\"key\":\"" PK_USR_SAMPLE "\",\"name\":\"SAMPLE SEL\",\"type\":\"enum\",\"options\":[\"None\"");
+    if (w < 0 || w >= buf_len - off) return 0;
+    off += w;
+    int n = inst ? inst->sample_count : 0;
+    for (int i = 0; i < n; i++) {
+        w = snprintf(buf + off, (size_t)(buf_len - off), ",\"%s\"", inst->sample_name[i]);
+        if (w < 0 || w >= buf_len - off) return 0;
+        off += w;
+    }
+    w = snprintf(buf + off, (size_t)(buf_len - off),
+        "],\"default\":0},"
         "{\"key\":\"" PK_USR_WTMORPH  "\",\"name\":\"WT MORPH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_USR_LAYERVOL "\",\"name\":\"LAYER VOL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_USR_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
-    int len = (int)(sizeof(json) - 1);
-    if (buf_len <= len) return 0;        /* bounded: no overflow */
-    memcpy(buf, json, (size_t)len);
-    buf[len] = '\0';
-    return len;
+        "{\"key\":\"" PK_USR_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}");
+    if (w < 0 || w >= buf_len - off) return 0;
+    off += w;
+    return off;
 }
 
 /* ---- Vtable ------------------------------------------------------------- */

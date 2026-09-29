@@ -96,11 +96,12 @@ static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
             assert((int)strlen(buf) == len);      /* no embedded NUL / matches */
 
             /* 2. Balanced JSON: models emit a bare comma-separated object list
-             * (no outer [] wrap), so braces balance and there are no stray
-             * brackets in the interior. */
+             * (no outer [] wrap), so braces balance. Brackets balance too — a
+             * model may emit an enum with an "options":[...] array (B3: USR
+             * SAMPLE SEL), so brackets are no longer required to be absent, only
+             * balanced. */
             assert(count_char(buf, '{') == count_char(buf, '}'));
             assert(count_char(buf, '[') == count_char(buf, ']'));
-            assert(count_char(buf, '[') == 0);    /* interior is bracket-free */
 
             /* 3. Slot count matches the documented per-model count. */
             int nkeys = count_substr(buf, "\"key\"");

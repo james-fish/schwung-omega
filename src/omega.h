@@ -27,6 +27,14 @@
 #define OMEGA_WT_LEN    2048
 #define OMEGA_WT_GUARD  (OMEGA_WT_LEN + 1)
 
+/* Sample bank (B3, SMPL-01..03). A bounded set of one-shot samples enumerated
+ * and loaded from module_dir/samples/ (and optionally an SD path) at
+ * create_instance — the ONLY place file I/O is allowed. SAMPLE SELECT picks a
+ * bank slot by index; the names feed the picker enum (SMPL-02). */
+#define OMEGA_MAX_SAMPLES     8
+#define OMEGA_SAMPLE_CAP      22050   /* 0.5 s @44.1k per bank slot */
+#define OMEGA_SAMPLE_NAMELEN  24
+
 /* Param-cache dimensions (B1, UIX-01/04). Sized here so the cache arrays can
  * live on bohm_instance without pulling in params.h (which includes THIS
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
@@ -185,6 +193,15 @@ struct bohm_instance {
      * the kick voice in render: neutral at 0.5, darker below, brighter above.
      * Zeroed by the calloc. */
     float fx_tone_lp_l, fx_tone_lp_r;
+
+    /* --- Sample bank (B3, SMPL-01..03) — loaded off-thread in create -------
+     * Enumerated one-shots (mono, bounded). sample_count is how many loaded;
+     * sample_name[i] is the display name (basename, no extension) for the
+     * picker; sample_len[i] the valid frame count. ~705 KB. */
+    float sample_bank[OMEGA_MAX_SAMPLES][OMEGA_SAMPLE_CAP];
+    int   sample_len[OMEGA_MAX_SAMPLES];
+    char  sample_name[OMEGA_MAX_SAMPLES][OMEGA_SAMPLE_NAMELEN];
+    int   sample_count;
 };
 
 /* Size assert RAISED for the Phase-C groove delay rings. The two 131072-float
@@ -192,7 +209,7 @@ struct bohm_instance {
  * buffers (usr_wavetable 2049*4 + usr_sample 44100*4 ~= 184 KB) + small fields
  * the real sizeof is ~1.24 MB. Bound set just above at 1,300,000 (DC-08's
  * 1,100,000 was illustrative; sized to the TRUE mask footprint, no padding). */
-_Static_assert(sizeof(struct bohm_instance) < 1300000, "instance under 1.3MB");
+_Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 
 /* --- Param key macros (D-08) — must match set_param/get_param dispatch -- */
 #define PK_PITCH      "pitch"
