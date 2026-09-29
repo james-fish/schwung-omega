@@ -74,7 +74,7 @@
 
 Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/REFINEMENT-FEEDBACK.md`.
 
-### Param/UI Infrastructure (Phase B.1)
+### Param/UI Infrastructure (Phase B1)
 
 - [ ] **UIX-01**: `get_param(key, buf, buf_len)` returns the current value (locale-independent string) for every individual param key, not just `ui_hierarchy` — so the host reads back knob positions (fixes knobs/model-box/vol displaying 0). Unknown keys still return -1.
 - [ ] **UIX-02**: Param schema in `ui_hierarchy` carries rich metadata per control: `type` (`float`/`int`/`enum`), `options` (string list for enums), `default`, `min`, `max`, `step`, `unit`, `short_name`, and `display_format` where useful — matching the reference module.json format.
@@ -83,7 +83,7 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 - [ ] **UIX-05**: Each control declares an appropriate UI element and sweep: bidirectional/centered where meaningful, discrete where meaningful, and real-world units where meaningful (e.g. PITCH in Hz).
 - [ ] **UIX-06**: Drive/distortion amount applies automatic output-gain compensation so raising drive does not simply increase level.
 
-### Kick Voicing & Page Reorg (Phase B.2)
+### Kick Voicing & Page Reorg (Phase B2)
 
 - [ ] **VOICE-01**: Global PITCH range lowered — floor and ceiling both dropped so a musical kick fundamental is reachable without maxing CURVE; PITCH exposed in Hz.
 - [ ] **VOICE-02**: CURVE has a stronger pitch-envelope shape (more curve) so it does more of the 808↔909 work.
@@ -92,13 +92,13 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 - [ ] **VOICE-05**: Post-kick FX exposes a discrete type selector + amount + a third tone/mix control.
 - [ ] **VOICE-06**: Per-model voicing fixes — WTR (raise WTSEL/BODYPIT defaults), FM2 (lower default ratio/index), PHY (reach lower pitch, fix HEAD TENS direction), TRS (blend between distinct transient sources, not just noise), ANA (SUB LEVEL/SUB DECAY/SMP audibly functional), USR (smooth WMORP jumps) — each audibly kick-like at defaults.
 
-### Sample Infrastructure (Phase B.3)
+### Sample Infrastructure (Phase B3)
 
 - [ ] **SMPL-01**: A samples folder inside the module hosts sample content, enumerated off the audio thread at `create_instance`.
 - [ ] **SMPL-02**: Sample selection is a string list-picker (enum) showing sample names — never a knob — for USR SAMPLE SELECT and any sample-select control.
 - [ ] **SMPL-03**: Optionally browse the SD card for samples (bounded, off audio thread).
 
-### Groove Redesign (Phase C.1)
+### Groove Redesign (Phase C1)
 
 - [ ] **GRVX-01**: Groove has a discrete Type selector (TAPS / GEN) that swaps the groove control set; GEN groove is decoupled from the base kick model and pairs with any model.
 - [ ] **GRVX-02**: Groove voice redesigned to a resonant/feedback rumble (not a dry 4-tap echo) — audibly a continuous rumble, not gated/bit-crushed, at usable levels.
@@ -176,28 +176,51 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | GRV-03 | Phase C | Complete |
 | GRV-04 | Phase C | Complete |
 | GRV-05 | Phase C | Complete |
-| PERF-01 | Phase D | Pending |
-| PERF-02 | Phase D | Pending |
-| PERF-03 | Phase D | Pending |
-| PERF-04 | Phase D | Pending |
-| PERF-05 | Phase D | Pending |
-| UI-01 | Phase E | Pending |
-| UI-02 | Phase F | Pending |
-| UI-03 | Phase F | Pending |
-| UI-04 | Phase G | Pending |
-| UI-05 | Phase G | Pending |
-| UI-06 | Phase E | Pending |
-| PRST-01 | Phase G | Pending |
-| PRST-02 | Phase G | Pending |
-| PRST-03 | Phase G | Pending |
-| PRST-04 | Phase G | Pending |
-| PRST-05 | Phase G | Pending |
+| UIX-01 | Phase B1 (v1.1) | Pending |
+| UIX-02 | Phase B1 (v1.1) | Pending |
+| UIX-03 | Phase B1 (v1.1) | Pending |
+| UIX-04 | Phase B1 (v1.1) | Pending |
+| UIX-05 | Phase B1 (v1.1) | Pending |
+| UIX-06 | Phase B1 (v1.1) | Pending |
+| VOICE-01 | Phase B2 (v1.1) | Pending |
+| VOICE-02 | Phase B2 (v1.1) | Pending |
+| VOICE-03 | Phase B2 (v1.1) | Pending |
+| VOICE-04 | Phase B2 (v1.1) | Pending |
+| VOICE-05 | Phase B2 (v1.1) | Pending |
+| VOICE-06 | Phase B2 (v1.1) | Pending |
+| SMPL-01 | Phase B3 (v1.1) | Pending |
+| SMPL-02 | Phase B3 (v1.1) | Pending |
+| SMPL-03 | Phase B3 (v1.1) | Pending |
+| GRVX-01 | Phase C1 (v1.1) | Pending |
+| GRVX-02 | Phase C1 (v1.1) | Pending |
+| GRVX-03 | Phase C1 (v1.1) | Pending |
+| GRVX-04 | Phase C1 (v1.1) | Pending |
+| GRVX-05 | Phase C1 (v1.1) | Pending |
+| PERF-01 | Phase D (v1.1) | Pending |
+| PERF-02 | Phase D (v1.1) | Pending |
+| PERF-03 | Phase D (v1.1) | Pending |
+| PERF-04 | Phase D (v1.1) | Pending |
+| PERF-05 | Phase D (v1.1) | Pending |
+| UI-01 | Phase E (FUTURE) | Pending |
+| UI-02 | Phase F (FUTURE) | Pending |
+| UI-03 | Phase F (FUTURE) | Pending |
+| UI-04 | Phase G (FUTURE) | Pending |
+| UI-05 | Phase G (FUTURE) | Pending |
+| UI-06 | Phase E (FUTURE) | Pending |
+| PRST-01 | Phase G (FUTURE) | Pending |
+| PRST-02 | Phase G (FUTURE) | Pending |
+| PRST-03 | Phase G (FUTURE) | Pending |
+| PRST-04 | Phase G (FUTURE) | Pending |
+| PRST-05 | Phase G (FUTURE) | Pending |
 
 **Coverage:**
-- v1 requirements: 42 total
-- Mapped to phases: 42 ✓
+- v1 requirements: 42 total → 42 mapped ✓
+- v1.1 refinement requirements (UIX/VOICE/SMPL/GRVX): 20 total → 20 mapped ✓
+- PERF (carried into v1.1 as Phase D): 5 total → 5 mapped ✓
 - Unmapped: 0
+
+**v1.1 milestone scope (25 reqs):** UIX-01..06 → B1, VOICE-01..06 → B2, SMPL-01..03 → B3, GRVX-01..05 → C1, PERF-01..05 → D.
 
 ---
 *Requirements defined: 2026-09-28*
-*Last updated: 2026-09-28 after roadmap creation*
+*Last updated: 2026-09-30 — v1.1 Refinement roadmap (B1/B2/B3/C1/D) mapped*
