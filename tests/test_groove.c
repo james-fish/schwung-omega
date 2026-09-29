@@ -521,6 +521,58 @@ static void test_groove_fx(void) {
     printf("test_groove: GRVX-03 groove FX (drive/reverb/LFO/filter) responsive + bounded OK\n");
 }
 
+/* ---- GRVX-04/05 (C1-03): GEN groove type decoupled from the kick model ----- */
+static void test_gen_groove_type(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+    static int16_t a[NSAMP], b[NSAMP];
+    double dbeat = dbeat_for_bpm(128.0);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+
+    /* FM2 kick model + GEN groove TYPE (decoupled — GRVX-01/04). */
+    select_model(api, inst, MODEL_FM2);
+    api->set_param(inst, PK_GRV_TYPE, "1");     /* GEN groove */
+    api->set_param(inst, PK_GRV_VOL,  "0.9");
+    api->set_param(inst, PK_GRV_GSEED, "0.2");
+    api->on_midi(inst, noteon, 3, 0);
+    double e = render_driven(api, inst, dbeat, a);
+    for (int i = 0; i < NSAMP; i++) assert(a[i] >= -32768 && a[i] <= 32767);
+    assert(e > 1e3);   /* generative rumble audible with a non-GEN kick model */
+
+    /* SEED changes the sequence -> different output. */
+    api->set_param(inst, PK_GRV_GSEED, "0.85");
+    api->on_midi(inst, noteon, 3, 0);
+    render_driven(api, inst, dbeat, b);
+    assert(memcmp(a, b, sizeof a) != 0);
+
+    /* UI: GEN groove type exposes the Gen Seq + Gen Tone pages (GRVX-04). */
+    char ui[8192];
+    int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+    assert(n > 0);
+    assert(strstr(ui, PK_GRV_GSCALE) != NULL);
+    assert(strstr(ui, PK_GRV_GRETRIG) != NULL);
+    assert(strstr(ui, "\"groove3\"") != NULL);   /* two GEN pages */
+
+    /* Transport STOP: with no beat advance the sequencer stops and the voice
+     * decays (GRVX-05). Render several blocks with a static beat -> near silence. */
+    mock_host_set_beat(4.0);   /* set but do NOT advance */
+    static int16_t q[NSAMP];
+    for (int blk = 0; blk < (NSAMP/(BLOCK*2)); blk++)
+        api->render_block(inst, q + blk*BLOCK*2, BLOCK);   /* no advance_beat */
+    /* Render again (still no advance): the tail must have decayed low. */
+    for (int blk = 0; blk < (NSAMP/(BLOCK*2)); blk++)
+        api->render_block(inst, q + blk*BLOCK*2, BLOCK);
+    double eq = buf_rms(q, NSAMP);
+    assert(eq < 0.05);   /* stopped transport -> sequencer silent */
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRVX-04/05 GEN groove type decoupled + stop-on-stop OK (e=%.0f)\n", e);
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -541,6 +593,7 @@ int main(void) {
     test_mono_sum();
     test_feedback_rumble();   /* GRVX-02: continuous rumble, not gated echo */
     test_groove_fx();         /* GRVX-03: groove drive/filter/LFO/reverb */
+    test_gen_groove_type();   /* GRVX-04/05: GEN groove decoupled + retrigger/stop */
 
     /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
      * LPF POLE 2/4-pole cascade toggle. Requires GEN registered. */

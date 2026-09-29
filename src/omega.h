@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 19   /* == GKI_COUNT (master/model + groove type + 8 groove + 8 groove FX) */
+#define OMEGA_GKI_COUNT 28   /* master/model + grv type + 8 groove + 8 grv FX + 9 GEN groove */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -257,6 +257,17 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_GRV_RVDECAY "grv_rvdecay"
 #define PK_GRV_RVTONE  "grv_rvtone"
 #define PK_GRV_RVTYPE  "grv_rvtype"
+
+/* --- GEN groove-type keys (C1-03, GRVX-04/05) — decoupled from MODEL_GEN --- */
+#define PK_GRV_GSCALE   "grv_gscale"
+#define PK_GRV_GSEED    "grv_gseed"
+#define PK_GRV_GSEQLEN  "grv_gseqlen"
+#define PK_GRV_GDENSITY "grv_gdensity"
+#define PK_GRV_GROTATE  "grv_grotate"
+#define PK_GRV_GSWING   "grv_gswing"
+#define PK_GRV_GWAVE    "grv_gwave"
+#define PK_GRV_GFOLD    "grv_gfold"
+#define PK_GRV_GRETRIG  "grv_gretrig"
 
 /* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
 /* Each key is unique across all models (dispatch is a flat strcmp chain).

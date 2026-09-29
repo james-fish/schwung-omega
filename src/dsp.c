@@ -308,21 +308,20 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
         /* NULL-guard: an unimplemented (NULL) model slot ignores triggers. */
         if (g_models[inst->model] && g_models[inst->model]->trigger)
             g_models[inst->model]->trigger(inst, msg[1], msg[2]);
+        /* GEN groove RETRIG=On Note: restart the generative sequence on each kick
+         * (GRVX-05). Other retrigger modes are bar-based / free-run. */
+        if (inst->groove.type == GROOVE_TYPE_GEN &&
+            inst->groove.gen_retrig == GRV_RETRIG_NOTE)
+            groove_gen_restart(&inst->groove);
     }
 }
 
 /* Groove Page-1 keys are model-independent (Phase C): they dispatch to
  * groove_set_param, never the kick model vtable. */
+/* All groove keys share the "grv_" prefix (never a kick-model key), so route any
+ * grv_* key to groove_set_param. The kick keys have no such prefix. */
 static bool is_groove_key(const char *key) {
-    return strcmp(key, PK_GRV_TYPE)   == 0 ||
-           strcmp(key, PK_GRV_VOL)    == 0 || strcmp(key, PK_GRV_LENGTH) == 0 ||
-           strcmp(key, PK_GRV_COLOR)  == 0 || strcmp(key, PK_GRV_TAP1)   == 0 ||
-           strcmp(key, PK_GRV_TAP2)   == 0 || strcmp(key, PK_GRV_TAP3)   == 0 ||
-           strcmp(key, PK_GRV_TAP4)   == 0 || strcmp(key, PK_GRV_MONO)   == 0 ||
-           strcmp(key, PK_GRV_DRIVE)  == 0 || strcmp(key, PK_GRV_FILTYPE)== 0 ||
-           strcmp(key, PK_GRV_LFOSPD) == 0 || strcmp(key, PK_GRV_LFOAMT) == 0 ||
-           strcmp(key, PK_GRV_RVMIX)  == 0 || strcmp(key, PK_GRV_RVDECAY)== 0 ||
-           strcmp(key, PK_GRV_RVTONE) == 0 || strcmp(key, PK_GRV_RVTYPE) == 0;
+    return strncmp(key, "grv_", 4) == 0;
 }
 
 static void omega_set_param(void *instance, const char *key, const char *val) {

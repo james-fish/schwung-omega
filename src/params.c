@@ -64,6 +64,10 @@ const float g_global_defaults[GKI_COUNT] = {
      * the user opens them. */
     [GKI_GRV_DRIVE]=0.0f, [GKI_GRV_FILTYPE]=0.0f, [GKI_GRV_LFOSPD]=0.3f, [GKI_GRV_LFOAMT]=0.0f,
     [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
+    /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
+    [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
+    [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,
+    [GKI_GRV_GRETRIG]=0.0f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -109,6 +113,11 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_GRV_LFOSPD]=PK_GRV_LFOSPD, [GKI_GRV_LFOAMT]=PK_GRV_LFOAMT,
     [GKI_GRV_RVMIX]=PK_GRV_RVMIX, [GKI_GRV_RVDECAY]=PK_GRV_RVDECAY,
     [GKI_GRV_RVTONE]=PK_GRV_RVTONE, [GKI_GRV_RVTYPE]=PK_GRV_RVTYPE,
+    [GKI_GRV_GSCALE]=PK_GRV_GSCALE, [GKI_GRV_GSEED]=PK_GRV_GSEED,
+    [GKI_GRV_GSEQLEN]=PK_GRV_GSEQLEN, [GKI_GRV_GDENSITY]=PK_GRV_GDENSITY,
+    [GKI_GRV_GROTATE]=PK_GRV_GROTATE, [GKI_GRV_GSWING]=PK_GRV_GSWING,
+    [GKI_GRV_GWAVE]=PK_GRV_GWAVE, [GKI_GRV_GFOLD]=PK_GRV_GFOLD,
+    [GKI_GRV_GRETRIG]=PK_GRV_GRETRIG,
 };
 
 int pk_kick_index(const char *key) {

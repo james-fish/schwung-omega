@@ -110,6 +110,9 @@ static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
 static const char OPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
 static const char OPT_GFILT[]   = "[\"LP\",\"HP\",\"Off\"]";
 static const char OPT_RVTYPE[]  = "[\"Room\",\"Hall\",\"Plate\"]";
+static const char OPT_SCALE[]   = "[\"Chromatic\",\"Major\",\"Minor\",\"Penta\"]";
+static const char OPT_GWAVE[]   = "[\"Sine\",\"Tri\",\"Saw\",\"Square\",\"Digital\",\"Analog\"]";
+static const char OPT_RETRIG[]  = "[\"None\",\"1 Bar\",\"2 Bar\",\"4 Bar\",\"8 Bar\",\"On Note\"]";
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
@@ -177,6 +180,36 @@ static const uiparam_t P_GROOVE2_TAPS[] = {
 static const char KN_GROOVE2_TAPS[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_FILTYPE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
     "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
+
+/* GEN groove type (C1-03, GRVX-04/05), decoupled from MODEL_GEN. Page 1 = the
+ * sequence controls; Page 2 = tone-shaping + retrigger + the shared groove FX. */
+static const uiparam_t P_GROOVE_GEN1[] = {
+    { PK_GRV_GSCALE,   "SCALE",   "SCALE", UP_ENUM,  "",  "0",    OPT_SCALE },
+    { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.01", NULL },
+    { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.01", NULL },
+    { PK_GRV_GSWING,   "SWING",   "SWING", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_ENUM,  "",  "0",    OPT_GWAVE },
+    { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_GROOVE_GEN1[] =
+    "[\"" PK_GRV_GSCALE "\",\"" PK_GRV_GSEED "\",\"" PK_GRV_GSEQLEN "\",\"" PK_GRV_GDENSITY
+    "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE "\",\"" PK_GRV_GFOLD "\"]";
+
+static const uiparam_t P_GROOVE_GEN2[] = {
+    { PK_GRV_GRETRIG, "RETRIG",  "RETRIG",UP_ENUM,  "",  "0",    OPT_RETRIG },
+    { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_FILTYPE, "FILTER",  "FILT",  UP_ENUM,  "",  "0",    OPT_GFILT },
+    { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVMIX,   "RV MIX",  "RVMIX", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_GROOVE_GEN2[] =
+    "[\"" PK_GRV_GRETRIG "\",\"" PK_GRV_DRIVE "\",\"" PK_GRV_FILTYPE "\",\"" PK_GRV_LFOSPD
+    "\",\"" PK_GRV_LFOAMT "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\"]";
 
 static const uiparam_t P_GROOVE2[] = {
     { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },
@@ -280,6 +313,12 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     if (inst && inst->model == MODEL_GEN) {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove2", "Groove 2", P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2);
+    } else if (inst && inst->groove.type == GROOVE_TYPE_GEN) {
+        /* GEN groove type (C1-03): two pages — sequence + tone/FX/retrigger. */
+        ui_puts(buf, buf_len, &off, ",");
+        ui_emit_level(buf, buf_len, &off, "groove2", "Gen Seq", P_GROOVE_GEN1, NELEM(P_GROOVE_GEN1), KN_GROOVE_GEN1);
+        ui_puts(buf, buf_len, &off, ",");
+        ui_emit_level(buf, buf_len, &off, "groove3", "Gen Tone", P_GROOVE_GEN2, NELEM(P_GROOVE_GEN2), KN_GROOVE_GEN2);
     } else if (inst && inst->groove.type == GROOVE_TYPE_TAPS) {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove2", "Groove FX", P_GROOVE2_TAPS, NELEM(P_GROOVE2_TAPS), KN_GROOVE2_TAPS);

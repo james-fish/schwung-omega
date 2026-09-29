@@ -70,10 +70,43 @@ typedef struct groove_state {
     float rv_fb;                  /* comb feedback (from DECAY) */
     float rv_damp;                /* comb damping coeff (from TONE) */
     float rv_mix;                 /* dry/wet mix */
+
+    /* --- GEN groove voice (C1-03, GRVX-04/05) — decoupled from the kick model.
+     * A transport-clocked, scale-quantized step sequencer driving a wavetable
+     * oscillator + wavefolder, feeding the shared groove FX tail. Runs when
+     * type==GEN regardless of which kick model is selected. */
+    int   gen_scale;              /* SCALE index (0 = off/chromatic..) */
+    int   gen_seqlen;             /* SEQ LEN 1..32 (16th steps) */
+    int   gen_wave;               /* WAVE type index into g_wavetables */
+    int   gen_retrig;             /* RETRIG: 0 none,1/2/4/8 bars,5 on-note */
+    float gen_density;            /* DENSITY 0..1 (Euclidean gate) */
+    float gen_rotate;             /* ROTATE -1..1 (bidirectional step rotate) */
+    float gen_swing;              /* SWING 0..1 */
+    float gen_fold;               /* WAVEFOLDER 0..1 */
+    float gen_base_hz;            /* base pitch (Hz) for degree 0 */
+    unsigned long long gen_rng;   /* xorshift64 PRNG (seeded from SEED) */
+    unsigned gen_seed_raw;        /* raw SEED (for reseed-on-change) */
+    signed char gen_seq[32];      /* per-step scale degree */
+    unsigned char gen_gate[32];   /* per-step on/off (Euclidean) */
+    int   gen_step;               /* current step index */
+    int   gen_step_ctr;           /* samples remaining in the current step */
+    float gen_osc_phase;          /* oscillator phase [0,1) */
+    float gen_env;                /* per-note amplitude env (decaying) */
+    float gen_env_coef;           /* env decay coefficient */
+    float gen_freq;               /* current note frequency (Hz) */
+    int   gen_bar16;              /* 16th counter for bar-based retrigger */
+    bool  gen_running;            /* transport running (stop when it stops) */
 } groove_state_t;
 
 enum { GROOVE_TYPE_TAPS = 0, GROOVE_TYPE_GEN = 1 };
 enum { GRV_FILT_LP = 0, GRV_FILT_HP = 1, GRV_FILT_OFF = 2 };
+enum { GRV_RETRIG_NONE = 0, GRV_RETRIG_1BAR, GRV_RETRIG_2BAR,
+       GRV_RETRIG_4BAR, GRV_RETRIG_8BAR, GRV_RETRIG_NOTE };
+
+/* Rebuild the GEN sequence from SEED/SEQ LEN/DENSITY/ROTATE (control-rate). */
+void groove_gen_rebuild(groove_state_t *g);
+/* Reset the GEN sequencer to step 0 (retrigger). */
+void groove_gen_restart(groove_state_t *g);
 
 /* Groove API (implemented in src/groove.c). host_api_v1 is defined in omega.h;
  * this header is included by omega.h AFTER host_api_v1 is declared, so the type

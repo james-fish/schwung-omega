@@ -60,6 +60,45 @@ static inline float tpt_g_from_hz(float fc) {
     return tanf((float)M_PI * fc / OMEGA_SR);   /* control-rate only */
 }
 
+/* ---- GEN groove sequencer (C1-03, GRVX-04/05) ---------------------------- */
+static inline unsigned long long grv_xorshift(unsigned long long *s) {
+    unsigned long long x = *s ? *s : 0x9E3779B97F4A7C15ull;
+    x ^= x << 13; x ^= x >> 7; x ^= x << 17;
+    *s = x; return x;
+}
+
+/* Rebuild the step sequence + Euclidean gate from SEED/SEQ LEN/DENSITY/ROTATE.
+ * Control-rate (set_param). Deterministic for a given SEED (reseeds the PRNG). */
+void groove_gen_rebuild(groove_state_t *g) {
+    g->gen_rng = 0x2545F4914F6CDD1Dull ^ ((unsigned long long)g->gen_seed_raw * 0x9E3779B1u + 1u);
+    int len = g->gen_seqlen; if (len < 1) len = 1; if (len > 32) len = 32;
+    /* Random scale degrees in a ~2-octave span. */
+    for (int i = 0; i < 32; i++)
+        g->gen_seq[i] = (signed char)(grv_xorshift(&g->gen_rng) % 15u);   /* 0..14 degrees */
+    /* Euclidean gate: DENSITY -> npulses of len, spread evenly (Bresenham). */
+    int npulse = (int)(g->gen_density * (float)len + 0.5f);
+    if (npulse < 1) npulse = 1; if (npulse > len) npulse = len;
+    int bucket = 0;
+    for (int i = 0; i < 32; i++) {
+        if (i < len) { bucket += npulse; if (bucket >= len) { bucket -= len; g->gen_gate[i] = 1; } else g->gen_gate[i] = 0; }
+        else g->gen_gate[i] = 0;
+    }
+    /* ROTATE: bidirectional rotate of the gate pattern within [0,len). */
+    int rot = (int)(g->gen_rotate * (float)len);
+    if (rot != 0 && len > 0) {
+        unsigned char tmp[32];
+        for (int i = 0; i < len; i++) { int j = ((i - rot) % len + len) % len; tmp[i] = g->gen_gate[j]; }
+        for (int i = 0; i < len; i++) g->gen_gate[i] = tmp[i];
+    }
+}
+
+void groove_gen_restart(groove_state_t *g) {
+    g->gen_step = 0;
+    g->gen_step_ctr = 0;   /* fire step 0 on the next tick */
+    g->gen_bar16 = 0;
+    g->gen_env = 0.0f;
+}
+
 /* ---- groove_init: seed a valid tap interval + musical Page-1 middles ----- */
 /* Called from create_instance (off the audio thread). The calloc already
  * zeroed everything; seed the tempo clock so the very FIRST render block has a
@@ -102,6 +141,22 @@ void groove_init(groove_state_t *g) {
     g->rv_fb       = 0.7f;
     g->rv_damp     = 0.3f;
     g->rv_mix      = 0.0f;
+
+    /* GEN groove voice defaults (C1-03). */
+    g->gen_scale   = 1;            /* a musical scale by default */
+    g->gen_seqlen  = 16;
+    g->gen_wave    = 0;            /* sine */
+    g->gen_retrig  = GRV_RETRIG_NONE;   /* free-run by default (GRVX-05) */
+    g->gen_density = 0.6f;
+    g->gen_rotate  = 0.0f;
+    g->gen_swing   = 0.0f;
+    g->gen_fold    = 0.0f;
+    g->gen_base_hz = 55.0f;        /* low rumble register */
+    g->gen_seed_raw = 12345u;
+    g->gen_env_coef = 0.9995f;
+    g->gen_running = false;
+    groove_gen_rebuild(g);
+    groove_gen_restart(g);
 }
 
 /* ---- groove_update_tempo (VERBATIM C-RESEARCH §Pattern 2, GRV-02) -------- */
@@ -112,6 +167,7 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
                          int frames) {
     const host_api_v1_t *host = (const host_api_v1_t *)host_fwd;
     float bpm = 0.0f;
+    bool running = false;   /* GRVX-05: GEN sequencer stops when transport stops */
 
     /* (1) PRIMARY: beat-delta from get_beat_position (GRV-02). */
     if (host && host->get_beat_position) {
@@ -121,6 +177,7 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
                 double dbeat = beat - g->prev_beat;
                 if (dbeat > 0.0 && dbeat < 4.0) {   /* sane per-block advance */
                     bpm = (float)(dbeat * 60.0 * (double)OMEGA_SR / (double)frames);
+                    running = true;                 /* beat advanced => transport live */
                 }
             }
             g->prev_beat = beat;
@@ -149,6 +206,12 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
         if (spq * 4 > (int)(GRV_DELAY_MASK)) spq = (int)(GRV_DELAY_MASK) / 4;  /* clamp reach */
         g->samples_per_16th = spq;
     }
+
+    /* If the host exposes NO transport at all, treat the GEN sequencer as free-
+     * running (so it plays under the null-transport fallback); otherwise gate it
+     * on real beat advance so it STOPS when the transport stops (GRVX-05). */
+    if (!host || (!host->get_beat_position && !host->get_bpm)) running = true;
+    g->gen_running = running;
 }
 
 /* ---- groove_tick (VERBATIM C-RESEARCH §Pattern 1 + §Pattern 3) ----------- */
@@ -157,30 +220,81 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
  * applies the COLOR lowpass + MONO force-sum + VOL. NO transcendental here. */
 void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                  float *out_gl, float *out_gr) {
-    /* FEEDBACK RUMBLE (GRVX-02): recirculate the signal one 16th behind into the
-     * write head, darkened by a one-pole LP and bounded by a gentle saturator, so
-     * the ring sustains a continuous resonant rumble instead of a dry gated echo.
-     * The LP keeps the rumble low/warm; the saturator prevents runaway (fb<0.9 +
-     * loss guarantees stability). All algebraic — no transcendental per sample. */
-    unsigned rp1 = (g->write_pos - (unsigned)g->samples_per_16th) & GRV_DELAY_MASK;
-    const float FB_LP_A = 0.20f;                 /* ~1.5 kHz one-pole in the loop */
-    g->fb_lp_l_s += FB_LP_A * (g->buf_l[rp1] - g->fb_lp_l_s);
-    g->fb_lp_r_s += FB_LP_A * (g->buf_r[rp1] - g->fb_lp_r_s);
-    float wl = kick_l + g->fb_amount * g->fb_lp_l_s;
-    float wr = kick_r + g->fb_amount * g->fb_lp_r_s;
-    wl = wl / (1.0f + 0.25f * (wl < 0.0f ? -wl : wl));   /* bounded feedback */
-    wr = wr / (1.0f + 0.25f * (wr < 0.0f ? -wr : wr));
-    g->buf_l[g->write_pos] = wl;
-    g->buf_r[g->write_pos] = wr;
-
     float gl = 0.0f, gr = 0.0f;
-    for (int t = 0; t < 4; t++) {
-        unsigned rp = (g->write_pos - (unsigned)((t + 1) * g->samples_per_16th)) & GRV_DELAY_MASK;
-        float w = g->tap_level[t] * g->tap_decay[t];   /* TAP level * LENGTH decay weight */
-        gl += g->buf_l[rp] * w;
-        gr += g->buf_r[rp] * w;
+
+    if (g->type == GROOVE_TYPE_GEN) {
+        /* GEN groove voice (C1-03): a transport-clocked scale-quantized step
+         * sequencer -> wavetable osc + wavefolder. Decoupled from the kick model
+         * (kick_l/r are ignored). Advances only while the transport runs (GRVX-05). */
+        if (g->gen_running) {
+            if (g->gen_step_ctr <= 0) {
+                int len = g->gen_seqlen < 1 ? 1 : (g->gen_seqlen > 32 ? 32 : g->gen_seqlen);
+                int step = g->gen_step % len;
+                if (g->gen_gate[step]) {
+                    int semi = scale_quantize(g->gen_scale, g->gen_seq[step]);
+                    g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);  /* per-step only */
+                    g->gen_env = 1.0f;
+                    g->gen_osc_phase = 0.0f;
+                }
+                /* SWING: delay odd steps by up to ~60% of a 16th. */
+                int dur = g->samples_per_16th;
+                if (step & 1) dur += (int)(g->gen_swing * 0.6f * (float)g->samples_per_16th);
+                g->gen_step_ctr = dur > 1 ? dur : 1;
+                g->gen_step++;
+                if (++g->gen_bar16 >= 16) g->gen_bar16 = 0;
+                /* Bar-based retrigger: restart at the top of the bar window. */
+                int bars = 0;
+                switch (g->gen_retrig) {
+                    case GRV_RETRIG_1BAR: bars = 1; break;
+                    case GRV_RETRIG_2BAR: bars = 2; break;
+                    case GRV_RETRIG_4BAR: bars = 4; break;
+                    case GRV_RETRIG_8BAR: bars = 8; break;
+                    default: break;
+                }
+                if (bars && g->gen_step >= 16 * bars) g->gen_step = 0;
+            }
+            g->gen_step_ctr--;
+        }
+        float osc = wt_read_bl(g->gen_wave, 0, g->gen_osc_phase);
+        /* WAVEFOLDER: fold the osc for extra harmonics as FOLD rises. */
+        if (g->gen_fold > 0.0f) {
+            float d = 1.0f + g->gen_fold * 3.0f;
+            float v = osc * d;
+            v = v - 4.0f * floorf(v * 0.25f + 0.5f);   /* fold into ~[-2,2] */
+            osc = osc + g->gen_fold * (0.5f * v - osc);
+        }
+        float s = osc * g->gen_env;
+        g->gen_env *= g->gen_env_coef;
+        g->gen_osc_phase += g->gen_freq / OMEGA_SR;
+        if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
+        gl = gr = s;
+        /* Keep the ring write-head advancing so a later TAPS switch is coherent. */
+        g->buf_l[g->write_pos] = 0.0f; g->buf_r[g->write_pos] = 0.0f;
+        g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
+    } else {
+        /* TAPS: FEEDBACK RUMBLE (GRVX-02): recirculate the signal one 16th behind
+         * into the write head, darkened by a one-pole LP and bounded by a gentle
+         * saturator, so the ring sustains a continuous resonant rumble instead of
+         * a dry gated echo. All algebraic — no transcendental per sample. */
+        unsigned rp1 = (g->write_pos - (unsigned)g->samples_per_16th) & GRV_DELAY_MASK;
+        const float FB_LP_A = 0.20f;                 /* ~1.5 kHz one-pole in the loop */
+        g->fb_lp_l_s += FB_LP_A * (g->buf_l[rp1] - g->fb_lp_l_s);
+        g->fb_lp_r_s += FB_LP_A * (g->buf_r[rp1] - g->fb_lp_r_s);
+        float wl = kick_l + g->fb_amount * g->fb_lp_l_s;
+        float wr = kick_r + g->fb_amount * g->fb_lp_r_s;
+        wl = wl / (1.0f + 0.25f * (wl < 0.0f ? -wl : wl));   /* bounded feedback */
+        wr = wr / (1.0f + 0.25f * (wr < 0.0f ? -wr : wr));
+        g->buf_l[g->write_pos] = wl;
+        g->buf_r[g->write_pos] = wr;
+
+        for (int t = 0; t < 4; t++) {
+            unsigned rp = (g->write_pos - (unsigned)((t + 1) * g->samples_per_16th)) & GRV_DELAY_MASK;
+            float w = g->tap_level[t] * g->tap_decay[t];   /* TAP level * LENGTH decay weight */
+            gl += g->buf_l[rp] * w;
+            gr += g->buf_r[rp] * w;
+        }
+        g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
     }
-    g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
 
     /* FILTER (C1-02): the COLOR one-pole gives LP; HP = input - LP; Off bypasses.
      * The LP state is always advanced so toggling type is click-free. */
@@ -248,7 +362,9 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_GRV_TYPE) == 0) {
-        g->type = (v >= 0.5f) ? GROOVE_TYPE_GEN : GROOVE_TYPE_TAPS;
+        int nt = (v >= 0.5f) ? GROOVE_TYPE_GEN : GROOVE_TYPE_TAPS;
+        if (nt != g->type && nt == GROOVE_TYPE_GEN) groove_gen_restart(g);
+        g->type = nt;
     } else if (strcmp(key, PK_GRV_VOL) == 0) {
         g->vol = v;
     } else if (strcmp(key, PK_GRV_LENGTH) == 0) {
@@ -286,6 +402,32 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_RVTYPE) == 0) {
         /* Reserved: type scales comb tunings (Room/Hall/Plate). Stored via the
          * cache; current tunings are fixed — a musical default across types. */
+    } else if (strcmp(key, PK_GRV_GSCALE) == 0) {
+        g->gen_scale = (int)(v * 3.99f);            /* 0..3 scale index */
+        if (g->gen_scale < 0) g->gen_scale = 0; if (g->gen_scale > 3) g->gen_scale = 3;
+    } else if (strcmp(key, PK_GRV_GSEED) == 0) {
+        g->gen_seed_raw = (unsigned)(v * 65535.0f);
+        groove_gen_rebuild(g);
+    } else if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
+        g->gen_seqlen = 1 + (int)(v * 31.0f + 0.5f);   /* 1..32 (GRVX-04) */
+        if (g->gen_seqlen < 1) g->gen_seqlen = 1; if (g->gen_seqlen > 32) g->gen_seqlen = 32;
+        groove_gen_rebuild(g);
+    } else if (strcmp(key, PK_GRV_GDENSITY) == 0) {
+        g->gen_density = v;
+        groove_gen_rebuild(g);
+    } else if (strcmp(key, PK_GRV_GROTATE) == 0) {
+        g->gen_rotate = v * 2.0f - 1.0f;            /* bidirectional -1..1 */
+        groove_gen_rebuild(g);
+    } else if (strcmp(key, PK_GRV_GSWING) == 0) {
+        g->gen_swing = v;
+    } else if (strcmp(key, PK_GRV_GWAVE) == 0) {
+        g->gen_wave = (int)(v * 5.99f);             /* 0..5 factory waves */
+        if (g->gen_wave < 0) g->gen_wave = 0; if (g->gen_wave > 5) g->gen_wave = 5;
+    } else if (strcmp(key, PK_GRV_GFOLD) == 0) {
+        g->gen_fold = v;
+    } else if (strcmp(key, PK_GRV_GRETRIG) == 0) {
+        int m = (int)(parse_f(val) + 0.5f);
+        g->gen_retrig = (m < 0) ? 0 : (m > 5 ? 5 : m);
     }
     /* Unknown keys ignored. */
 }
