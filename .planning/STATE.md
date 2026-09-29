@@ -3,13 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-02-shared-primitives-and-fx-chain-PLAN.md
-last_updated: "2026-09-29T12:05:06.843Z"
+stopped_at: Completed B-03-fm2-revoice-and-voicing-harness-PLAN.md
+last_updated: "2026-09-29T12:14:58.675Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Omega
@@ -31,12 +32,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 2 of 9 complete (B-01, B-02 done); next is B-03 (FM2 re-voice + voicing harness)
+**Plan:** 3 of 9 complete (B-01, B-02, B-03 done); next is B-04 (WTR/TRS wavetable + transient)
 **Status:** Executing Phase B
-**Progress:** Phase B 2/9 plans complete
+**Progress:** Phase B 3/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 2/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 3/9 plans)
 ```
 
 ---
@@ -60,6 +61,7 @@ progress:
 | Phase A-foundation-fm2-model P04 | 2min | 2 tasks | 2 files |
 | Phase B-remaining-9-kick-models P01 | 4min | 3 tasks | 5 files |
 | Phase B-remaining-9-kick-models P02 | 8min | 3 tasks | 6 files |
+| Phase B-remaining-9-kick-models P03 | 6min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -72,6 +74,9 @@ progress:
 - **[B-02] All 5 FX modes dry/wet-blend by amt** — Diode/Clip/SAT/Fold/Crush each do `y=(1-amt)*x+amt*wet`, so amt=0 is transparent (must-have) and amt=1 is full effect, every branch bounded to [-1,1]. The plan's raw forms (Diode 0.9->0.59, Clip 0.9->0.47) are non-transparent at amt=0, hence the blend. The unbounded reference `fast_tanh` (`x/(1-x)`) is avoided (STATE.md bug #2).
 - **[B-02] Shared synthesis primitives added to `dsp_primitives.*`** — `modal_t` complex-rotation resonator (freq/decay clamped in excite, transcendental-free tick), `prng_t` xorshift64 (nonzero-seed forced, deterministic — NOT the libc PRNG), `noise_t` burst, `scale_quantize` over `g_scales[4][12]` in `.rodata`, and `wt_read_bl` band-limited read. Each model plan (B-03..B-08) is now a thin recipe over these; no model hand-rolls a clipper/resonator/PRNG/table.
 - **[B-02] Wavetables generated into `.rodata` at build time (KICK-15)** — `tools/gen_wavetables.c` emits `g_wavetables[6][1][2049]` `_Alignas(16)` (sine/tri/saw/square/digital/analog, 2048+1 guard, `%.9e` literals), mirroring the `sine_table.h` pattern; committed header, Makefile order-only prereq regenerates only when missing. BANDS=1 to start (kicks rarely alias at 40-200 Hz); add bands only if the voicing harness detects aliasing.
+- **[B-03] FM2 re-voiced to the reference bar (D-B03)** — PITCH uses an exponential map `35*(120/35)^v` over [35,120] Hz (default ~50 Hz techno pocket, replaces linear 30-200); sweep decoupled from `f0*4` to a curve-coupled `clamp(f0*(2+curve*4), <=480 Hz)` recomputed on both PITCH and CURVE changes; LENGTH exp map [50,1500] ms; FM INDEX narrowed 0-8 (was 0-12; tail buzzy past 8); CURVE keeps the dual-env OUTPUT blend with tuned 15 ms (909) / 300 ms (808) constants. FM2 is the reference bar for B-04..B-08.
+- **[B-03] FM2 routes final output through fx_process (KICK-14)** — `fx_state_t fx` added to `fm2_state` (static_assert <=4096 holds); `fm2_set_param` calls `fx_config` at control rate on FX_TYPE/FX_AMT (Crush's powf runs there, not render); `fm2_render` applies `fx_process(fx_type*4, s, amt, &fm->fx)` as the final per-sample stage; render verified free of sinf/expf/tanf/tanhf/powf. Trigger resets the FX sample-and-hold but preserves precomputed crush_levels. FX chain now proven inside a real model.
+- **[B-03] Reusable automated voicing battery (D-B02)** — `tests/test_params.c` `assert_param_responsive(api,inst,model_idx,keys,nkeys)` proves non-silent default + each-param-lo-vs-hi-differs + bounded-at-extremes; `tests/test_distinct.c` computes pairwise RMS-envelope+spectral-ZCR distinctness. Both loop MODEL_COUNT + skip NULL slots so B-04..B-08 reuse them by passing their own P2 keys (distinctness empty-trivial in Wave 2, a real gate as models land). The 'measurably changes' metric is RMS-envelope OR spectral-ZCR (whole-buffer + 30 ms attack window) so transient/brightness params (e.g. TRS TNE) register — the plan's RMS-OR-spectral-centroid behavior.
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -119,12 +124,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan A-04 (on-device validation) — deploy `dsp.so` to Move, load in all 3 host contexts (Schwung slot, DR32 pad, Movy track), read the `[host] ui_buflen=<v>` log per host (resolves the buf_len open question, unblocks Phase E sizing), read `/proc/cpuinfo` for the `-mcpu` decision (D-15), confirm FM2 sounds on-device.
+**Next action:** Execute Plan B-04 (WTR/TRS wavetable + transient models) — reuse the FM2 reference voicing + the B-03 voicing battery (add WTR/TRS assert_param_responsive calls with their P2 keys); register the vtables so test_distinct becomes a live 2/3-model gate. (A-04 on-device validation still pending hardware — see Todos.)
 
-**Stopped at:** Completed B-02-shared-primitives-and-fx-chain-PLAN.md
+**Stopped at:** Completed B-03-fm2-revoice-and-voicing-harness-PLAN.md
 
 **Recent activity:**
 
+- 2026-09-29: B-03 complete — re-voiced FM2 to the reference bar (D-B03): exp PITCH map [35,120] Hz (~50 Hz default), curve-coupled sweep clamp(f0*(2+curve*4),<=480 Hz), exp LENGTH [50,1500] ms, narrowed FM INDEX 0-8, tuned CURVE 15ms/300ms; wired KICK-14 FX into fm2_render (fx_config control-rate, fx_process render, powf/expf/tanf-free); reusable voicing battery (test_params.c) + pairwise distinctness (test_distinct.c) — both loop MODEL_COUNT + skip NULL, reusable by B-04..B-08; `make test` green (commits 440c6a5, dc37820, cf2dacf)
 - 2026-09-29: Quick task 260929-cjj — fixed Phase A on-device load crash: `host_api_v1_t` was missing 3 fields (`mapped_memory`/`audio_out_offset`/`audio_in_offset`), shifting `g_host->log` onto a data pointer → segfault when the D-10 spike fired on first `get_param`. Also corrected `module.json` (nested `capabilities`) and `ui_hierarchy` (real `levels` schema) to match Context/01 verbatim. `make test` green (commits ce99134, f10d3b5, 5f799a7)
 - 2026-09-29: A-03 complete — real `ui_hierarchy` (ui.c, D-08/D-09): static Page 1 (8 keyed slots) + dynamic FM2 Page 2 spliced from `p2_slot_desc` + FX TYPE/AMT; dsp.c wired to ui.c (fallback removed), D-10 one-shot locale-independent buf_len log; CI cross-build flipped to blocking; harness proves the get_param contract; `make test` green (commits 98e62a0, 3ac9e54, e8802b7)
 - 2026-09-29: A-02 complete — FM2 engine (fm2.c), plugin entry points (dsp.c), model registry, module.json; real move_plugin_init_v2 lifecycle harness; `make test` green (commits bccf4e9, c4d028c, 3cac29b)
