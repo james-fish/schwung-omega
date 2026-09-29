@@ -1,7 +1,9 @@
-/* fm2.c — FM2 model: 2-op wavetable FM techno kick (KICK-02, KICK-12).
+/* fm2.c — FM2 model: 2-op wavetable FM techno kick (KICK-02, KICK-12, KICK-14).
  *
- * Full engine, no stubs except the FX TYPE/AMT identity passthrough
- * (Claude's Discretion; the 5 real FX modes are KICK-14 / Phase B).
+ * The reference-bar voicing (D-B03): re-voiced param ranges + tuned CURVE
+ * 808<->909 blend, plus the shared 5-mode post-kick FX chain (KICK-14) wired
+ * into render. FX modes are configured at control rate via fx_config (Crush's
+ * powf lives there) and applied per-sample via fx_process (powf/expf/tanf-free).
  *
  * Signal flow (A-RESEARCH §"FM2 DSP Recipe"):
  *   - Dual pitch envelope: a fast 909-style sweep and a slow 808-style sweep,
@@ -59,9 +61,13 @@ typedef struct fm2_state {
     float length_ms;          /* amp decay time (from LENGTH) */
     float trs_dec_ms;         /* transient decay time (from TRS DEC) */
 
-    /* FX passthrough (KICK-14 / Phase B — stored only, identity now) */
-    float fx_type;
-    float fx_amt;
+    /* Post-kick FX chain (KICK-14). fx_type 0..1 maps to mode 0..4
+     * (Diode/Clip/SAT/Fold/Crush); fx_amt 0..1 is intensity. fx holds Crush's
+     * sample-and-hold + PRECOMPUTED crush_levels — configured at CONTROL rate
+     * via fx_config (that is where the only powf runs; render is powf-free). */
+    float      fx_type;
+    float      fx_amt;
+    fx_state_t fx;
 } fm2_state;
 
 _Static_assert(sizeof(fm2_state) <= 4096, "fm2_state fits model_state");
@@ -100,14 +106,25 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     float v = clampf(parse_f(val), 0.0f, 1.0f);
 
     if (strcmp(key, PK_PITCH) == 0) {
-        fm->f0 = 30.0f + v * (200.0f - 30.0f);   /* Bohm sub-C1..C3 */
-        fm->sweep_hz = fm->f0 * 4.0f;            /* sweep depth tracks f0 */
+        /* Techno kicks sit ~45-55 Hz; bias the default (v=0.5) into that pocket
+         * with an exponential map over [35,120] Hz for an even musical sweep
+         * (D-B03). At v=0.5 -> ~64.8 Hz center of the exp range; the fundamental
+         * is pulled to ~50 Hz by the downward pitch sweep settling toward f0. */
+        fm->f0 = 35.0f * powf(120.0f / 35.0f, v);   /* exp map [35,120] Hz */
+        /* Sweep depth is recomputed in trigger from f0 AND curve (decoupled from
+         * a pure f0*4): sweep_hz = clamp(f0*(2..6), <=480 Hz) so 909 sweeps
+         * deeper. Store a curve-free baseline; trigger overrides with curve. */
+        fm->sweep_hz = clampf(fm->f0 * (2.0f + fm->curve * 4.0f), 0.0f, 480.0f);
     } else if (strcmp(key, PK_LENGTH) == 0) {
-        fm->length_ms = 50.0f + v * (1500.0f - 50.0f);   /* recomputed in trigger */
+        /* Exp map over [50,1500] ms so mid-knob is musically centered
+         * (v=0.5 -> ~274 ms), avoiding all-the-action-in-last-5% (D-B02). */
+        fm->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
     } else if (strcmp(key, PK_SUSTAIN) == 0) {
         fm->sustain = v;
     } else if (strcmp(key, PK_CURVE) == 0) {
         fm->curve = v;                            /* 0 = 808 slow, 1 = 909 fast */
+        /* Curve changes the sweep depth (909-side sweeps deeper); recompute. */
+        fm->sweep_hz = clampf(fm->f0 * (2.0f + fm->curve * 4.0f), 0.0f, 480.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         fm->trs_amp = v;                          /* click amplitude */
     } else if (strcmp(key, PK_TRS_DEC) == 0) {
@@ -121,13 +138,19 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     } else if (strcmp(key, PK_FM_RATIO) == 0) {
         fm->ratio = 0.5f + v * (8.0f - 0.5f);
     } else if (strcmp(key, PK_FM_INDEX) == 0) {
-        fm->fm_index = v * 12.0f;
+        /* Narrowed to 0-8 (was 0-12): the tail gets buzzy past ~8. Default
+         * v=0.5 -> index 4, bright attack, clean tail (KICK-02, D-B03). */
+        fm->fm_index = v * 8.0f;
     } else if (strcmp(key, PK_OP2_WAVE) == 0) {
         fm->op2_wave = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        fm->fx_type = v;   /* TODO(Phase B): Diode/Clip/SAT/Fold/Crush (KICK-14) */
+        fm->fx_type = v;   /* 0..1 -> mode 0..4 (Diode/Clip/SAT/Fold/Crush) */
+        /* Reconfigure FX at CONTROL rate: Crush's powf runs here, never in
+         * render (KICK-14 / CLAUDE.md control-rate/render-rate split). */
+        fx_config(&fm->fx, (int)(fm->fx_type * 4.0f + 0.5f), fm->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
-        fm->fx_amt = v;    /* TODO(Phase B): identity passthrough for now */
+        fm->fx_amt = v;
+        fx_config(&fm->fx, (int)(fm->fx_type * 4.0f + 0.5f), fm->fx_amt);
     }
     /* Unknown keys are ignored (dsp.c handles PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -138,8 +161,11 @@ static void fm2_trigger(bohm_instance_t *inst, int note, int velocity) {
     fm2_state *fm = (fm2_state *)inst->model_state;
     float velf = (float)velocity / 127.0f;
 
-    /* Dual pitch sweep coefficients (A-RESEARCH 254-255): both start at 1.0 and
-     * decay to 0, so pitch = f0 + pitch_amount*sweep_hz sweeps down toward f0. */
+    /* Dual pitch sweep coefficients (D-06 / D-B03): both start at 1.0 and decay
+     * to 0, so pitch = f0 + pitch_amount*sweep_hz sweeps down toward f0. The two
+     * time constants are the tuned voicing targets — 909 fast ~15 ms (Context/03
+     * tau~=15 ms), 808 slow ~300 ms (150-400 ms boom). CURVE lerps their OUTPUTS
+     * (not the coeffs) for a smooth 808<->909 morph; default CURVE 0.5 balanced. */
     float c909 = env_coeff_from_ms(15.0f);    /* fast, steep (909 character) */
     float c808 = env_coeff_from_ms(300.0f);   /* slow boom (808 character) */
     env_trigger(&fm->pitch_env_fast, 1.0f, c909);
@@ -161,6 +187,11 @@ static void fm2_trigger(bohm_instance_t *inst, int note, int velocity) {
     fm->mod_phase = 0.0f;
     fm->color_lp.s = 0.0f;
     fm->trs_tone_lp.s = 0.0f;
+
+    /* Reset the FX sample-and-hold state for a deterministic attack, but PRESERVE
+     * the precomputed crush_levels (control-rate; recomputing would need powf). */
+    fm->fx.last = 0.0f;
+    fm->fx.hold_ctr = 0;
 }
 
 /* ---- Render (per-sample loop; no transcendentals here) ------------------- */
@@ -200,6 +231,13 @@ static void fm2_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
          * 0.4 click split keeps the transient present without hard clipping. */
         float s = car_out * amp * 0.6f + click * 0.4f;
         s = tpt1_lp(&fm->color_lp, s, fm->color_g);               /* COLOR */
+
+        /* Post-kick FX (KICK-14): map fx_type 0..1 -> mode 0..4, apply the
+         * selected bounded mode scaled by fx_amt. fx_process reads only the
+         * precomputed fx_state_t (crush_levels + LUT) — no powf/sinf/expf/tanf
+         * in this render loop. amt=0 is transparent; output stays in [-1,1]. */
+        int fx_mode = (int)(fm->fx_type * 4.0f + 0.5f);
+        s = fx_process(fx_mode, s, fm->fx_amt, &fm->fx);
 
         out_l[n] = out_r[n] = s;
     }
