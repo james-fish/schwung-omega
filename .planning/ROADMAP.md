@@ -51,7 +51,7 @@ Plans:
 **Plans**: 9 plans
 Plans:
 - [x] B-01-vtable-dispatch-and-switch-reinit-PLAN.md — fix the 2 blocking bugs (vtable-dispatched set_param + clean model-switch re-init) + KICK-13 switch test scaffold
-- [ ] B-02-shared-primitives-and-fx-chain-PLAN.md — shared primitives (modal/PRNG/scale/noise/band-limited wt) + 5-mode FX chain (KICK-14) + wavetables.h generator
+- [x] B-02-shared-primitives-and-fx-chain-PLAN.md — shared primitives (modal/PRNG/scale/noise/band-limited wt) + 5-mode FX chain (KICK-14) + wavetables.h generator
 - [ ] B-03-fm2-revoice-and-voicing-harness-PLAN.md — FM2 re-voice (D-B03) + wire FX into FM2 + reusable automated voicing battery (param-responsiveness + distinctness)
 - [ ] B-04-wtr-trs-wavetable-transient-PLAN.md — WTR (KICK-04) + TRS (KICK-08) wavetable-body + transient family
 - [ ] B-05-ana-dig-analog-digital-PLAN.md — ANA (KICK-09) + DIG (KICK-07) analog-morph/sub + digital/bitcrush family

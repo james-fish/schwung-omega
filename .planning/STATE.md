@@ -3,14 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-01-vtable-dispatch-and-switch-reinit-PLAN.md
-last_updated: "2026-09-29T09:34:43.218Z"
+stopped_at: Completed B-02-shared-primitives-and-fx-chain-PLAN.md
+last_updated: "2026-09-29T12:05:06.843Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: Omega
@@ -32,12 +31,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 1 of 9 complete (B-01 done); next is B-02 (shared primitives + FX chain)
+**Plan:** 2 of 9 complete (B-01, B-02 done); next is B-03 (FM2 re-voice + voicing harness)
 **Status:** Executing Phase B
-**Progress:** Phase B 1/9 plans complete
+**Progress:** Phase B 2/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 1/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 2/9 plans)
 ```
 
 ---
@@ -60,6 +59,7 @@ progress:
 | Phase A-foundation-fm2-model P03 | 3min | 3 tasks | 6 files |
 | Phase A-foundation-fm2-model P04 | 2min | 2 tasks | 2 files |
 | Phase B-remaining-9-kick-models P01 | 4min | 3 tasks | 5 files |
+| Phase B-remaining-9-kick-models P02 | 8min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -68,6 +68,10 @@ progress:
 - **[B-01] Internal vtable extended, not the ABI** — `kick_model_vtable_t` gained a `set_param` fn ptr (no `_Static_assert` binds it; internal, not host ABI). dsp.c now dispatches all kick keys through `g_models[inst->model]->set_param` instead of the hardcoded `fm2_set_param` (Pitfall 2 fix). The locked `host_api_v1_t`/`plugin_api_v2_t` `+120`/`+56` asserts were left untouched.
 - **[B-01] Designated-initializer registry (intermediate-compilation contract)** — `model_id_t` grown append-only to `MODEL_COUNT=10`; `g_models[]` uses designated initializers with `[MODEL_FM2]` set and 9 slots C-zero-init to NULL, guarded by `_Static_assert(len == MODEL_COUNT)`. The array links at every wave; each later model plan replaces its own NULL WITH the `.c` that defines its vtable symbol. dsp.c + the switch harness treat NULL slots as silence (no NULL deref).
 - **[B-01] Clean model-switch re-init (KICK-13)** — `PK_MODEL` change memsets `model_state[4096]` and re-primes defaults through the incoming model's `set_param`, killing the stale-state/NaN hazard when a new model reinterprets the shared overlay bytes. `tests/test_switch.c` is the automated KICK-13 gate (A->B->A + trigger, finite/bounded/non-stale, registry-length + NULL-slot-silence asserts); forward-compatible via NULL-slot skip.
+- **[B-02] FX chain (KICK-14) control-rate/render-rate split** — `fx_config` (control rate) precomputes ALL transcendentals: Crush's `powf` bit-level count into `fx_state_t.crush_levels` and the Diode `1-exp(-z)` shaping LUT (the only `expf`). `fx_process` (render) reads only precomputed state + the LUT — verified `powf`/`sinf`/`expf`/`tanf`-free. Shared `crush(x,levels)` for HRD/DIG (caller precomputes levels).
+- **[B-02] All 5 FX modes dry/wet-blend by amt** — Diode/Clip/SAT/Fold/Crush each do `y=(1-amt)*x+amt*wet`, so amt=0 is transparent (must-have) and amt=1 is full effect, every branch bounded to [-1,1]. The plan's raw forms (Diode 0.9->0.59, Clip 0.9->0.47) are non-transparent at amt=0, hence the blend. The unbounded reference `fast_tanh` (`x/(1-x)`) is avoided (STATE.md bug #2).
+- **[B-02] Shared synthesis primitives added to `dsp_primitives.*`** — `modal_t` complex-rotation resonator (freq/decay clamped in excite, transcendental-free tick), `prng_t` xorshift64 (nonzero-seed forced, deterministic — NOT the libc PRNG), `noise_t` burst, `scale_quantize` over `g_scales[4][12]` in `.rodata`, and `wt_read_bl` band-limited read. Each model plan (B-03..B-08) is now a thin recipe over these; no model hand-rolls a clipper/resonator/PRNG/table.
+- **[B-02] Wavetables generated into `.rodata` at build time (KICK-15)** — `tools/gen_wavetables.c` emits `g_wavetables[6][1][2049]` `_Alignas(16)` (sine/tri/saw/square/digital/analog, 2048+1 guard, `%.9e` literals), mirroring the `sine_table.h` pattern; committed header, Makefile order-only prereq regenerates only when missing. BANDS=1 to start (kicks rarely alias at 40-200 Hz); add bands only if the voicing harness detects aliasing.
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -117,7 +121,7 @@ None.
 
 **Next action:** Execute Plan A-04 (on-device validation) — deploy `dsp.so` to Move, load in all 3 host contexts (Schwung slot, DR32 pad, Movy track), read the `[host] ui_buflen=<v>` log per host (resolves the buf_len open question, unblocks Phase E sizing), read `/proc/cpuinfo` for the `-mcpu` decision (D-15), confirm FM2 sounds on-device.
 
-**Stopped at:** Completed B-01-vtable-dispatch-and-switch-reinit-PLAN.md
+**Stopped at:** Completed B-02-shared-primitives-and-fx-chain-PLAN.md
 
 **Recent activity:**
 
