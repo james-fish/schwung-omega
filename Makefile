@@ -41,8 +41,12 @@ LDLIBS = -lm
 DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
 # Full-lifecycle harness (A-02 Task 3): drives move_plugin_init_v2 through the
 # real dsp.c / fm2.c / registry (create -> on_midi -> render x512 -> destroy).
+# Uses the src/models/*.c wildcard so each model TU (fm2 + every B-04..B-08
+# model) is compiled and its vtable symbol resolves once its registry NULL slot
+# is replaced (avoids an undefined-symbol link error when the registry names a
+# model whose .c is not in this list).
 TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.c \
-            src/dsp.c src/ui.c src/models/fm2.c src/models/model_registry.c \
+            src/dsp.c src/ui.c $(wildcard src/models/*.c) \
             src/dsp_primitives.c
 # Focused FM2 engine unit test (A-02 Task 1): exercises fm2_* directly against
 # a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.

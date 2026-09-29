@@ -47,6 +47,20 @@ static const char *k_fm2_p2_keys[] = {
 };
 #define N_FM2_P2 (int)(sizeof(k_fm2_p2_keys) / sizeof(k_fm2_p2_keys[0]))
 
+/* WTR Kick Page 2 keys (4 + FX TYPE/AMT) — B-04. */
+static const char *k_wtr_p2_keys[] = {
+    PK_WTR_WAVE, PK_WTR_BODYPITCH, PK_WTR_TRANSDEC, PK_WTR_TRANSCOL,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_WTR_P2 (int)(sizeof(k_wtr_p2_keys) / sizeof(k_wtr_p2_keys[0]))
+
+/* TRS Kick Page 2 keys (4 + FX TYPE/AMT) — B-04. */
+static const char *k_trs_p2_keys[] = {
+    PK_TRS_TONE, PK_TRS_TDEC, PK_TRS_WTCOL, PK_TRS_CURVE,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_TRS_P2 (int)(sizeof(k_trs_p2_keys) / sizeof(k_trs_p2_keys[0]))
+
 /* Trigger note-on then render NBLOCKS into buf (interleaved int16). Asserts
  * every int16 sample is in range (finite + bounded, since omega_to_i16 clamps
  * and the engine self-limits). Returns the RMS-envelope: sqrt(mean(x^2)). */
@@ -209,6 +223,9 @@ int main(void) {
 
     /* Wave 2: FM2 (model 0). Later plans add their own calls with their P2 keys. */
     assert_param_responsive(api, inst, MODEL_FM2, k_fm2_p2_keys, N_FM2_P2);
+
+    /* Wave 3 (B-04): WTR (KICK-04) + TRS (KICK-08). */
+    assert_param_responsive(api, inst, MODEL_WTR, k_wtr_p2_keys, N_WTR_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
