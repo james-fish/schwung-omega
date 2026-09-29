@@ -24,6 +24,7 @@ extern const kick_model_vtable_t g_fm4_vtable;   /* defined in fm4.c (B-06) */
 
 const kick_model_vtable_t *g_models[MODEL_COUNT] = {
     [MODEL_FM2] = &g_fm2_vtable,   /* implemented (Phase A) */
+    [MODEL_FM4] = &g_fm4_vtable,   /* implemented (B-06) */
     [MODEL_WTR] = &g_wtr_vtable,   /* implemented (B-04) */
     [MODEL_TRS] = &g_trs_vtable,   /* implemented (B-04) */
     [MODEL_ANA] = &g_ana_vtable,   /* implemented (B-05) */

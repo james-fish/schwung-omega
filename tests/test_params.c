@@ -263,6 +263,7 @@ int main(void) {
 
     /* Wave 5 (B-06): HRD (KICK-06) + FM4 (KICK-03). */
     assert_param_responsive(api, inst, MODEL_HRD, k_hrd_p2_keys, N_HRD_P2);
+    assert_param_responsive(api, inst, MODEL_FM4, k_fm4_p2_keys, N_FM4_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
