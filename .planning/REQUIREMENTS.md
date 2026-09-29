@@ -40,7 +40,7 @@
 - [x] **GRV-01**: 4-tap 16th-note multi-tap delay engine fed from kick signal; circular delay buffer pre-allocated at `create_instance` (88,200 frame max, 2s at 44.1kHz)
 - [x] **GRV-02**: BPM derived from `get_beat_position()` beat-delta across blocks — NOT hardcoded 120 BPM; `samples_per_16th = (60/bpm) × sr / 4`; integer tap positions for v1
 - [x] **GRV-03**: Groove Page 1 (8 encoders): VOL, LENGTH (tap decay), COLOR (TPT SVF low-pass timbre), TAP1, TAP2, TAP3, TAP4, MONO toggle
-- [ ] **GRV-04**: Groove Page 2 (GEN model only, hidden for all other models): SEED, SCALE (key/scale selector or free-freq mode), SEQ LEN, LPF FREQ, LPF POLE (2-pole / 4-pole toggle), DENSITY
+- [x] **GRV-04**: Groove Page 2 (GEN model only, hidden for all other models): SEED, SCALE (key/scale selector or free-freq mode), SEQ LEN, LPF FREQ, LPF POLE (2-pole / 4-pole toggle), DENSITY
 - [x] **GRV-05**: MONO toggle force-sums L+R channels to mono for sub-bass club routing (mono sum below 150 Hz is standard techno production practice)
 
 ### Performer
@@ -136,7 +136,7 @@
 | GRV-01 | Phase C | Complete |
 | GRV-02 | Phase C | Complete |
 | GRV-03 | Phase C | Complete |
-| GRV-04 | Phase C | Pending |
+| GRV-04 | Phase C | Complete |
 | GRV-05 | Phase C | Complete |
 | PERF-01 | Phase D | Pending |
 | PERF-02 | Phase D | Pending |
