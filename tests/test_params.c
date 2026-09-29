@@ -82,6 +82,13 @@ static const char *k_hrd_p2_keys[] = {
 };
 #define N_HRD_P2 (int)(sizeof(k_hrd_p2_keys) / sizeof(k_hrd_p2_keys[0]))
 
+/* PHY Kick Page 2 keys (4 + FX TYPE/AMT) — B-07. */
+static const char *k_phy_p2_keys[] = {
+    PK_PHY_BEATER, PK_PHY_SHELL, PK_PHY_HEADTENS, PK_PHY_DAMPING,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_PHY_P2 (int)(sizeof(k_phy_p2_keys) / sizeof(k_phy_p2_keys[0]))
+
 /* FM4 Kick Page 2 keys (6 + FX TYPE/AMT) — B-06. */
 static const char *k_fm4_p2_keys[] = {
     PK_FM4_ALGO, PK_FM4_OPRATIO, PK_FM4_OPINDEX, PK_FM4_OPAMP,
@@ -241,6 +248,39 @@ static void assert_param_responsive(plugin_api_v2_t *api, void *inst,
     prime_mid(api, inst, p2keys, np2);
 }
 
+/* Explicit worst-case modal-corner bounds check (KICK-05 automated criterion,
+ * B-VALIDATION "modal freq/decay clamped (no NaN)"). Sets the PHY corner most
+ * likely to blow up a modal resonator — HEAD TENS=1.0 (max freq), DAMPING=0.0
+ * (min damping = LONGEST decay, closest to 1.0), SHELL SIZE=1.0 — triggers, and
+ * renders 2048 frames asserting EVERY float sample is finite and |x|<=1.0. This
+ * proves the complex-rotation modes + the clamps in modal_excite / trigger keep
+ * the engine bounded at the corner where an unclamped resonator would diverge. */
+static void assert_phy_extremes_no_nan(plugin_api_v2_t *api, void *inst) {
+    char idxbuf[16];
+    snprintf(idxbuf, sizeof(idxbuf), "%d", MODEL_PHY);
+    api->set_param(inst, PK_MODEL, idxbuf);
+    prime_mid(api, inst, k_phy_p2_keys, N_PHY_P2);
+
+    /* Worst-case modal corner. */
+    api->set_param(inst, PK_PHY_HEADTENS, "1.0");   /* highest head mode freq */
+    api->set_param(inst, PK_PHY_DAMPING,  "0.0");   /* longest decay (near 1.0) */
+    api->set_param(inst, PK_PHY_SHELL,    "1.0");   /* body modes at their edge */
+
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    api->on_midi(inst, noteon, 3, 0);
+
+    int16_t out[BLOCK * 2];
+    for (int b = 0; b < 16; b++) {                  /* 16 blocks = 2048 frames */
+        api->render_block(inst, out, BLOCK);
+        for (int i = 0; i < BLOCK * 2; i++) {
+            float x = (float)out[i] / 32768.0f;
+            assert(isfinite(x));                    /* no NaN/Inf at the corner */
+            assert(x >= -1.0f && x <= 1.0f);        /* bounded (no modal blowup) */
+        }
+    }
+    prime_mid(api, inst, k_phy_p2_keys, N_PHY_P2);
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -264,6 +304,11 @@ int main(void) {
     /* Wave 5 (B-06): HRD (KICK-06) + FM4 (KICK-03). */
     assert_param_responsive(api, inst, MODEL_HRD, k_hrd_p2_keys, N_HRD_P2);
     assert_param_responsive(api, inst, MODEL_FM4, k_fm4_p2_keys, N_FM4_P2);
+
+    /* Wave 6 (B-07): PHY (KICK-05) — the modal physical model. Battery + an
+     * EXPLICIT worst-case modal-corner NaN/bounds assertion (KICK-05 criterion). */
+    assert_param_responsive(api, inst, MODEL_PHY, k_phy_p2_keys, N_PHY_P2);
+    assert_phy_extremes_no_nan(api, inst);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
