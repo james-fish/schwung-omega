@@ -75,6 +75,21 @@ static const char *k_dig_p2_keys[] = {
 };
 #define N_DIG_P2 (int)(sizeof(k_dig_p2_keys) / sizeof(k_dig_p2_keys[0]))
 
+/* HRD Kick Page 2 keys (4 + FX TYPE/AMT) — B-06. */
+static const char *k_hrd_p2_keys[] = {
+    PK_HRD_SAMPLE, PK_HRD_MIX, PK_HRD_DRIVE, PK_HRD_CRUSH,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_HRD_P2 (int)(sizeof(k_hrd_p2_keys) / sizeof(k_hrd_p2_keys[0]))
+
+/* FM4 Kick Page 2 keys (6 + FX TYPE/AMT) — B-06. */
+static const char *k_fm4_p2_keys[] = {
+    PK_FM4_ALGO, PK_FM4_OPRATIO, PK_FM4_OPINDEX, PK_FM4_OPAMP,
+    PK_FM4_FEEDBACK, PK_FM4_ALGO2,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_FM4_P2 (int)(sizeof(k_fm4_p2_keys) / sizeof(k_fm4_p2_keys[0]))
+
 /* Trigger note-on then render NBLOCKS into buf (interleaved int16). Asserts
  * every int16 sample is in range (finite + bounded, since omega_to_i16 clamps
  * and the engine self-limits). Returns the RMS-envelope: sqrt(mean(x^2)). */
@@ -245,6 +260,9 @@ int main(void) {
     /* Wave 4 (B-05): ANA (KICK-09) + DIG (KICK-07). */
     assert_param_responsive(api, inst, MODEL_ANA, k_ana_p2_keys, N_ANA_P2);
     assert_param_responsive(api, inst, MODEL_DIG, k_dig_p2_keys, N_DIG_P2);
+
+    /* Wave 5 (B-06): HRD (KICK-06) + FM4 (KICK-03). */
+    assert_param_responsive(api, inst, MODEL_HRD, k_hrd_p2_keys, N_HRD_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
