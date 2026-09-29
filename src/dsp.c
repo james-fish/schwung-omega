@@ -15,6 +15,7 @@
  */
 #include "omega.h"
 #include "dsp_primitives.h"
+#include "groove.h"   /* Phase C: groove rumble voice (kick+groove sum) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -184,6 +185,11 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
             usr_load_wavetable(inst, path);
     }
 
+    /* Groove rumble voice (Phase C): seed the tempo clock + Page-1 middles so
+     * the first render block has a valid tap interval (no div-by-zero) and the
+     * rumble is audible. The delay rings live by value in this single calloc. */
+    groove_init(&inst->groove);
+
     /* Prime all kick params to mid so a bare create -> trigger is audible.
      * Route through the active model's vtable (NULL-guarded), not a hardcoded
      * fm2_set_param, so every model receives its primed defaults. */
@@ -207,6 +213,15 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
         if (g_models[inst->model] && g_models[inst->model]->trigger)
             g_models[inst->model]->trigger(inst, msg[1], msg[2]);
     }
+}
+
+/* Groove Page-1 keys are model-independent (Phase C): they dispatch to
+ * groove_set_param, never the kick model vtable. */
+static bool is_groove_key(const char *key) {
+    return strcmp(key, PK_GRV_VOL)    == 0 || strcmp(key, PK_GRV_LENGTH) == 0 ||
+           strcmp(key, PK_GRV_COLOR)  == 0 || strcmp(key, PK_GRV_TAP1)   == 0 ||
+           strcmp(key, PK_GRV_TAP2)   == 0 || strcmp(key, PK_GRV_TAP3)   == 0 ||
+           strcmp(key, PK_GRV_TAP4)   == 0 || strcmp(key, PK_GRV_MONO)   == 0;
 }
 
 static void omega_set_param(void *instance, const char *key, const char *val) {
@@ -233,6 +248,10 @@ static void omega_set_param(void *instance, const char *key, const char *val) {
         if (v < 0.0f) v = 0.0f;
         if (v > 1.0f) v = 1.0f;
         inst->main_volume = v;
+    } else if (is_groove_key(key)) {
+        /* Groove Page-1 keys are model-independent (Phase C) — they must NOT go
+         * through the kick model vtable. Route to groove_set_param directly. */
+        groove_set_param(&inst->groove, key, val);
     } else {
         /* All kick keys (Page 1 + Page 2) dispatch through the active model's
          * vtable (Pitfall 2 fix). NULL-guarded so an unimplemented slot is a
@@ -278,6 +297,20 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
         memset(l, 0, sizeof(float) * (size_t)frames);
         memset(r, 0, sizeof(float) * (size_t)frames);
     }
+
+    /* Groove rumble (Phase C). GEN's own output IS the rumble (DC-05, wired in
+     * C-03); for now every model feeds the kick-fed multitap. Update the tempo
+     * clock ONCE per block (Pattern 2 — never per sample), then tick the groove
+     * voice per sample and SUM it with the kick. No clamp here: the sum may
+     * exceed 1.0 and is bounded only at the int16 boundary below (FNDTN-07);
+     * headroom management (duck/DJ filter/soft clip) is Phase D. */
+    groove_update_tempo(&inst->groove, (const struct host_api_v1 *)g_host, frames);
+    for (int n = 0; n < frames; n++) {
+        float gl, gr;
+        groove_tick(&inst->groove, l[n], r[n], &gl, &gr);
+        l[n] += gl;  r[n] += gr;                           /* kick + groove sum */
+    }
+    /* <<< PHASE D INSERTION POINT: duck -> DJ filter -> soft clip go HERE, on l[]/r[] >>> */
 
     for (int n = 0; n < frames; n++) {
         out_lr[n * 2]     = omega_to_i16(l[n] * inst->main_volume);   /* FNDTN-07 */
