@@ -16,6 +16,7 @@
 #include "omega.h"
 #include "dsp_primitives.h"
 #include "groove.h"   /* Phase C: groove rumble voice (kick+groove sum) */
+#include "params.h"   /* B1: central raw-value param cache (UIX-01/04) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -156,11 +157,24 @@ static bool usr_join_path(char *buf, size_t buflen,
 
 /* ---- vtable functions ---------------------------------------------------- */
 
-/* All 11 kick param keys, defaulted to mid on create. */
-static const char *const k_kick_keys[] = {
-    PK_PITCH, PK_LENGTH, PK_SUSTAIN, PK_CURVE, PK_ATTACK,
-    PK_TRS_DEC, PK_TRS_TNE, PK_COLOR, PK_FM_RATIO, PK_FM_INDEX, PK_OP2_WAVE
-};
+/* Re-init a model's DSP state from the param cache (B1, UIX-04). Zeroes the
+ * shared model_state region, then replays every kick param's cached raw value
+ * (seeded to defaults in omega_create) through the model's set_param so both the
+ * SOUND and the reported knob positions match the cache. The model ignores keys
+ * it does not own (unknown-key = no-op), so replaying the full key list is safe.
+ * Control-rate only (create + model switch), never per render. */
+static void omega_prime_model(bohm_instance_t *inst, model_id_t m) {
+    memset(inst->model_state, 0, sizeof inst->model_state);
+    const kick_model_vtable_t *vt = g_models[m];
+    if (!vt || !vt->set_param) return;
+    char vbuf[24];
+    for (int i = 0; i < PKI_COUNT; i++) {
+        const char *k = pk_kick_key(i);
+        if (!k) continue;
+        pk_format_value(inst->kick_cache[m][i], 4, vbuf, (int)sizeof vbuf);
+        vt->set_param(inst, k, vbuf);
+    }
+}
 
 static void *omega_create(const char *module_dir, const char *json_defaults) {
     (void)json_defaults;
@@ -190,12 +204,16 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
      * rumble is audible. The delay rings live by value in this single calloc. */
     groove_init(&inst->groove);
 
-    /* Prime all kick params to mid so a bare create -> trigger is audible.
-     * Route through the active model's vtable (NULL-guarded), not a hardcoded
-     * fm2_set_param, so every model receives its primed defaults. */
-    if (g_models[inst->model] && g_models[inst->model]->set_param)
-        for (size_t i = 0; i < sizeof(k_kick_keys) / sizeof(k_kick_keys[0]); i++)
-            g_models[inst->model]->set_param(inst, k_kick_keys[i], "0.5");
+    /* Seed the param cache (B1, UIX-01) so a bare create reports musical values
+     * rather than 0: every model's row starts at the schema defaults, and the
+     * globals (master/model + groove) match groove_init + main_volume. Then
+     * prime the active model's DSP from its cache row (UIX-04). */
+    for (int m = 0; m < MODEL_COUNT; m++)
+        for (int i = 0; i < PKI_COUNT; i++)
+            inst->kick_cache[m][i] = g_kick_defaults[i];
+    for (int i = 0; i < GKI_COUNT; i++)
+        inst->global_cache[i] = g_global_defaults[i];
+    omega_prime_model(inst, inst->model);
     return inst;
 }
 
@@ -226,22 +244,32 @@ static bool is_groove_key(const char *key) {
 
 static void omega_set_param(void *instance, const char *key, const char *val) {
     bohm_instance_t *inst = instance;
+
+    /* Record the raw value into the cache (B1, UIX-01/04) BEFORE dispatch so
+     * get_param can echo it and a model switch can replay it. Kick keys are
+     * stored per-model; master/model/groove are global. */
+    int gi = pk_global_index(key);
+    if (gi >= 0) inst->global_cache[gi] = dsp_parse_f(val);
+    else {
+        int ki = pk_kick_index(key);
+        if (ki >= 0) {
+            inst->kick_cache[inst->model][ki] = dsp_parse_f(val);
+            inst->kick_cache_set[inst->model][ki] = true;
+        }
+    }
+
     if (strcmp(key, PK_MODEL) == 0) {
         int m = (int)dsp_parse_f(val);
         if (m < 0) m = 0;
         if (m >= MODEL_COUNT) m = MODEL_COUNT - 1;
         /* Only act on an actual change. Clean re-init on switch (Pitfall 1 /
-         * KICK-13): the incoming model reinterprets the SAME model_state[4096]
-         * bytes the previous model left. Zero them, then re-prime defaults
-         * through the incoming model so it starts from a known-good state.
-         * NULL-guard the re-prime so a switch to an unimplemented (NULL) slot
-         * clears state and renders silence — never a NULL deref. */
+         * KICK-13). Instead of blindly re-priming to 0.5 (which lost per-model
+         * state and left the UI showing 0), replay the incoming model's cached
+         * values so both its sound AND its knob positions are restored (UIX-04).
+         * omega_prime_model NULL-guards an unimplemented slot -> silence. */
         if ((model_id_t)m != inst->model) {
             inst->model = (model_id_t)m;
-            memset(inst->model_state, 0, sizeof inst->model_state);
-            if (g_models[inst->model] && g_models[inst->model]->set_param)
-                for (size_t i = 0; i < sizeof(k_kick_keys) / sizeof(k_kick_keys[0]); i++)
-                    g_models[inst->model]->set_param(inst, k_kick_keys[i], "0.5");
+            omega_prime_model(inst, inst->model);
         }
     } else if (strcmp(key, PK_MASTER_VOL) == 0) {
         float v = dsp_parse_f(val);
@@ -270,6 +298,14 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
          * wide audio dropouts. Capture buf_len off-thread in a later phase. */
         return omega_build_ui(inst, buf, buf_len);
     }
+    /* Per-key value readback (B1, UIX-01): the host reads each param's current
+     * value to position its knobs/selectors. Format the cached raw value back
+     * out (locale-independent). Global keys first, then the active model's kick
+     * keys, so switching models reports THAT model's stored values (UIX-04). */
+    int gi = pk_global_index(key);
+    if (gi >= 0) return pk_format_value(inst->global_cache[gi], 4, buf, buf_len);
+    int ki = pk_kick_index(key);
+    if (ki >= 0) return pk_format_value(inst->kick_cache[inst->model][ki], 4, buf, buf_len);
     return -1;   /* unhandled key (Pitfall 4) */
 }
 

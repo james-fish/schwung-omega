@@ -27,6 +27,13 @@
 #define OMEGA_WT_LEN    2048
 #define OMEGA_WT_GUARD  (OMEGA_WT_LEN + 1)
 
+/* Param-cache dimensions (B1, UIX-01/04). Sized here so the cache arrays can
+ * live on bohm_instance without pulling in params.h (which includes THIS
+ * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
+ * counts with a _Static_assert so they can never drift. */
+#define OMEGA_PKI_COUNT 53   /* == PKI_COUNT (every kick param) */
+#define OMEGA_GKI_COUNT 10   /* == GKI_COUNT (master/model + 8 groove) */
+
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
  * the host/module call through garbage (device-wide crash / boot-loop). The
@@ -161,6 +168,18 @@ struct bohm_instance {
      * a separate malloc. This is the member that raises the size assert below
      * from the pre-C ~0.2 MB to the true ~1.3 MB mask footprint. */
     groove_state_t groove;
+
+    /* --- Central raw-value param cache (B1, UIX-01/04) --------------------
+     * The single source of truth for readback and per-model memory. kick_cache
+     * stores the last raw normalized value of every kick param PER MODEL, so a
+     * model switch restores that model's knob positions; global_cache holds the
+     * non-per-model keys (master/model + the 8 groove keys). set_param records
+     * here at control rate; get_param formats these back; a model switch replays
+     * kick_cache[model][*]. All zero from the calloc; seeded to defaults in
+     * omega_create. ~2.7 KB — negligible against the ~1.24 MB groove rings. */
+    float kick_cache[MODEL_COUNT][OMEGA_PKI_COUNT];
+    bool  kick_cache_set[MODEL_COUNT][OMEGA_PKI_COUNT];
+    float global_cache[OMEGA_GKI_COUNT];
 };
 
 /* Size assert RAISED for the Phase-C groove delay rings. The two 131072-float

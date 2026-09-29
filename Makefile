@@ -46,7 +46,7 @@ DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
 # is replaced (avoids an undefined-symbol link error when the registry names a
 # model whose .c is not in this list).
 TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.c \
-            src/dsp.c src/groove.c src/ui.c $(wildcard src/models/*.c) \
+            src/dsp.c src/groove.c src/ui.c src/params.c $(wildcard src/models/*.c) \
             src/dsp_primitives.c
 # Focused FM2 engine unit test (A-02 Task 1): exercises fm2_* directly against
 # a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.
@@ -61,35 +61,41 @@ FX_TEST_SRCS = tests/test_fx.c tests/malloc_trap.c src/dsp_primitives.c
 # src/models/*.c wildcard so each new model TU is picked up automatically as
 # later plans replace registry NULL slots.
 SWITCH_TEST_SRCS = tests/test_switch.c tests/mock_host.c tests/wav.c \
-                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 # Reusable per-model voicing battery (B-03 Task 2, D-B02): drives the real
 # lifecycle and asserts non-silent default + each param measurably changes the
 # output + bounded-at-extremes. Uses the src/models/*.c wildcard so later model
 # TUs are picked up automatically as they register.
 PARAMS_TEST_SRCS = tests/test_params.c tests/mock_host.c tests/wav.c \
-                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 # Pairwise distinctness metric across registered models (B-03 Task 3, D-B02):
 # renders each registered model's default and asserts pairwise feature deltas.
 DISTINCT_TEST_SRCS = tests/test_distinct.c tests/mock_host.c tests/wav.c \
-                     tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c \
+                     tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                      $(wildcard src/models/*.c) src/dsp_primitives.c
 # GEN determinism + USR off-render load + complete-registry gate (B-08 Task 3):
 # KICK-11 seed-stable/seed-differ/density; KICK-10 fixture-load + fallback; and
 # a runtime assert that all MODEL_COUNT registry slots are non-NULL.
 GEN_TEST_SRCS = tests/test_gen.c tests/mock_host.c tests/wav.c \
-                tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c \
+                tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                 $(wildcard src/models/*.c) src/dsp_primitives.c
 # Groove rumble engine harness (C-01, GRV-01/02/03/05): drives the real
 # lifecycle through the tempo-DRIVABLE mock host and asserts tap positions track
 # driven BPM (120/128/174), Page-1 responsiveness, and MONO channel equality.
 # EXPECTED to fail RED until C-02 lands the groove engine; goes green then.
 GROOVE_TEST_SRCS = tests/test_groove.c tests/mock_host.c tests/wav.c \
-                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
+# Param value readback + per-model memory harness (B1, UIX-01/04): set->get
+# echo, create defaults, per-model state memory across switches, global
+# round-trip, unknown-key -1, locale-independent formatter.
+READBACK_TEST_SRCS = tests/test_readback.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove fixtures wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -128,7 +134,7 @@ dsp.so: | src/wavetables.h
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -180,6 +186,11 @@ test-groove: | src/wavetables.h
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(GROOVE_TEST_SRCS) -o build/test_groove $(LDLIBS)
 	./build/test_groove
+
+test-readback: | src/wavetables.h
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(READBACK_TEST_SRCS) -o build/test_readback $(LDLIBS)
+	./build/test_readback
 
 clean:
 	rm -rf build tests/output
