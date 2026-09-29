@@ -107,6 +107,22 @@ int main(void) {
     /* The MODEL key itself reports the current model index. */
     assert(approx(get_val(api, inst, PK_MODEL), 1.0f));
 
+    /* Rich schema present (UIX-02/03/05): enum types, options, defaults, units,
+     * short_names all emitted in the hierarchy. */
+    {
+        char ui[8192];
+        int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+        assert(n > 0 && ui[n] == '\0');
+        assert(strstr(ui, "\"type\":\"enum\"") != NULL);       /* discrete selectors */
+        assert(strstr(ui, "\"options\":[\"FM2\"") != NULL);    /* MODEL enum options */
+        assert(strstr(ui, "\"Diode\",\"Clip\",\"SAT\"") != NULL); /* FX TYPE enum */
+        assert(strstr(ui, "\"default\":") != NULL);            /* knob start position */
+        assert(strstr(ui, "\"short_name\":") != NULL);         /* OLED label */
+        assert(strstr(ui, "\"unit\":") != NULL);               /* real-world unit */
+        assert(strstr(ui, "\"step\":") != NULL);
+        printf("test_readback: rich schema OK (enum/options/default/short_name/unit/step)\n");
+    }
+
     /* 5. Unknown key -> -1, no write. */
     char kb[8]; kb[0] = '#';
     assert(api->get_param(inst, "no_such_key", kb, (int)sizeof kb) == -1);

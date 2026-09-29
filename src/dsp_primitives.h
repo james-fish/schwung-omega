@@ -182,7 +182,7 @@ enum { FX_DIODE = 0, FX_CLIP = 1, FX_SAT = 2, FX_FOLD = 3, FX_CRUSH = 4 };
 /* Crush is the only stateful mode: it holds the last quantized sample and a
  * sample-and-hold counter, plus the PRECOMPUTED bit-reduction level count
  * (crush_levels), so fx_process never calls powf. */
-typedef struct { float last; int hold_ctr; float crush_levels; } fx_state_t;
+typedef struct { float last; int hold_ctr; float crush_levels; float out_gain; } fx_state_t;
 
 /* fx_config — CONTROL-RATE configurator. Call from each model's set_param /
  * FX-param path (NOT per sample). Precomputes any per-amt transcendental into

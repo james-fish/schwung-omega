@@ -71,7 +71,6 @@ static inline float diode_shape(float z) {
 
 /* fx_config — CONTROL RATE. All powf/expf live HERE, never in fx_process. */
 void fx_config(fx_state_t *st, int mode, float amt) {
-    (void)mode;
     if (!g_diode_lut_ready) {
         for (int i = 0; i <= FX_DIODE_LUT_N; i++) {
             float z = (float)i * (FX_DIODE_LUT_ZMAX / (float)FX_DIODE_LUT_N);
@@ -85,6 +84,22 @@ void fx_config(fx_state_t *st, int mode, float amt) {
     st->crush_levels = powf(2.0f, 16.0f - amt * 12.0f);   /* 16 bits -> 4 bits */
     st->last = 0.0f;
     st->hold_ctr = 0;
+
+    /* Output makeup gain (UIX-06): the drive-like modes raise pre-gain with amt,
+     * which just makes the signal louder. Precompute a compensating attenuation
+     * (control rate) so turning up drive changes CHARACTER, not level. out_gain
+     * is 1.0 at amt=0 (transparent preserved) and drops as amt rises; the per-
+     * mode factor tracks how much energy that mode's pre-gain adds. Crush is
+     * level-neutral (bit reduction) so it stays at 1.0. */
+    float comp = 0.0f;
+    switch (mode) {
+        case FX_CLIP:  comp = 0.6f; break;
+        case FX_FOLD:  comp = 0.8f; break;
+        case FX_DIODE: comp = 0.4f; break;
+        case FX_SAT:   comp = 0.2f; break;
+        default:       comp = 0.0f; break;   /* Crush: no makeup */
+    }
+    st->out_gain = 1.0f / (1.0f + amt * comp);
 }
 
 /* fx_process — per-sample render stage. Reads only PRECOMPUTED state.
@@ -95,27 +110,30 @@ void fx_config(fx_state_t *st, int mode, float amt) {
 float fx_process(int mode, float x, float amt, fx_state_t *st) {
     if (amt < 0.0f) amt = 0.0f;
     if (amt > 1.0f) amt = 1.0f;
+    /* Makeup gain (UIX-06), precomputed at control rate. Guard an unconfigured
+     * state (out_gain==0 from calloc before any fx_config) as transparent. */
+    float og = (st->out_gain > 0.0f) ? st->out_gain : 1.0f;
     switch (mode) {
         case FX_DIODE: {  /* back-to-back diode rounding; asymptotes to +/-1 */
             float k = 1.0f + amt * FX_DIODE_K;
             float wet = copysignf(diode_shape(fabsf(x) * k), x);  /* LUT lookup */
-            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+            return og * ((1.0f - amt) * x + amt * wet);   /* dry at amt=0 */
         }
         case FX_CLIP: {   /* symmetric bounded soft clip gx/(1+|gx|) */
             float gx = (1.0f + amt * FX_CLIP_G) * x;
             float wet = gx / (1.0f + fabsf(gx));
-            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+            return og * ((1.0f - amt) * x + amt * wet);   /* dry at amt=0 */
         }
         case FX_SAT: {    /* warm parallel saturation (bounded by construction) */
             float sat = x / (1.0f + fabsf(x));
-            return (1.0f - amt) * x + amt * sat;   /* dry at amt=0 */
+            return og * ((1.0f - amt) * x + amt * sat);   /* dry at amt=0 */
         }
         case FX_FOLD: {   /* triangle wavefolder -> [-1,1] */
             float g = 1.0f + amt * FX_FOLD_F;
             float v = g * x + 1.0f;
             v = v - 4.0f * floorf(v * 0.25f);      /* mod 4 into [0,4) */
             float wet = fabsf(v - 2.0f) - 1.0f;
-            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+            return og * ((1.0f - amt) * x + amt * wet);   /* dry at amt=0 */
         }
         case FX_CRUSH: {  /* bit + sample-rate reduction (PRECOMPUTED levels) */
             float levels = (st->crush_levels > 0.0f) ? st->crush_levels : 1.0f;

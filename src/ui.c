@@ -1,145 +1,193 @@
-/* ui.c — The real levels-based ui_hierarchy (D-08/D-09).
+/* ui.c — Metadata-driven ui_hierarchy (v1.1 B1: UIX-02/03/05).
  *
- * Owns omega_build_ui: emits the host's real ui_hierarchy schema (Context/01
- * lines 109-162) into the caller's buffer with ZERO allocation (D-09).
+ * Emits the host's ui_hierarchy schema into the caller's buffer with ZERO
+ * allocation. v1.1 upgrade over the A-03 static fragments: every param now
+ * carries rich metadata (type, short_name, default, min/max, step, unit) and
+ * discrete params (MODEL, FX TYPE, groove MONO, GEN LPF POLE) render as `enum`
+ * string selectors with an `options` array — matching the reference module.json
+ * format the host expects, so knobs pick the right UI element and start position.
  *
- * Layout (pre-serialized static fragments, no JSON library):
- *   {
- *     "pad_layout":"drums",
- *     "child_index_param":"current_pad",
- *     "levels":{
- *       "root":  { name "Omega", model+master_vol knobs, kick1/kick2 sub-pages },
- *       "kick1": { name "Kick 1", the 8 Page-1 params },
- *       "kick2": { name "Kick 2", the ACTIVE model's Page-2 slots + FX TYPE/AMT }
- *     }
- *   }
+ * Defaults are pulled from the params.c defaults tables (single source of truth,
+ * no drift with the value cache). Numbers are formatted with pk_format_value
+ * (locale-independent — never libc %f). Formatting into the caller buffer is
+ * CPU-only (no malloc / IO / blocking), safe on the audio/UI thread.
  *
- * The wrapper + root + kick1 levels are fixed .rodata strings. The kick2 level
- * is assembled DYNAMICALLY (B-09, KICK-13 SC3): it splices the ACTIVE model's
- * `p2_slot_desc` interior (the vtable emits a bare comma-separated list of full
- * {"key","name","type","min","max"} slot objects — uniform across all 10 models
- * after the B-09 fm2.c reconciliation) between the static kick2 prefix and the
- * static FX TYPE/AMT suffix. Switching MODEL and re-querying ui_hierarchy thus
- * shows that model's own slots. The model owns its slot list; ui.c owns page
- * structure. The splice goes through a fixed local scratch (no allocation).
- *
- * Every write is bounded to the remaining buf_len (A-RESEARCH Pitfall 3): a
- * running offset + a bounded-append helper that never writes past buf_len and
- * always leaves room for the null terminator. Returns bytes written (excluding
- * the terminator) to match the get_param contract (A-RESEARCH 311-314); on any
- * overflow it returns what fit, still null-terminated — never overruns.
- *
- * No allocation, no file I/O, no logging here — all six entry points run on the
- * audio thread (A-RESEARCH Pitfall 1). The D-10 buf_len log lives in dsp.c.
+ * Page structure is owned here; the active model's Kick Page 2 interior is still
+ * spliced from its vtable p2_slot_desc (B-09) between a fixed prefix and the FX
+ * suffix. Groove Page 2 (`groove2`) is emitted ONLY for GEN (GRV-04). Every
+ * write is bounded to buf_len; on overflow it returns what fit, null-terminated.
  */
 #include "omega.h"
+#include "params.h"
 
+#include <stdio.h>
 #include <string.h>
 
-/* Top-level wrapper: pad_layout + child_index_param + open the levels map. */
-static const char UI_OPEN[] =
-    "{\"pad_layout\":\"drums\",\"child_index_param\":\"current_pad\",\"levels\":{";
-
-/* root level: Model enum + Volume float, then the two kick sub-page links. */
-static const char UI_ROOT[] =
-    "\"root\":{\"name\":\"Omega\",\"params\":["
-      "{\"key\":\"" PK_MODEL "\",\"name\":\"Model\",\"type\":\"enum\",\"options\":"
-        "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\",\"GEN\"]},"
-      "{\"key\":\"" PK_MASTER_VOL "\",\"name\":\"Volume\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"level\":\"kick1\",\"label\":\"Kick 1\"},"
-      "{\"level\":\"kick2\",\"label\":\"Kick 2\"}"
-    "],\"knobs\":[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]},";
-
-/* kick1 level: the 8 Page-1 params (Bohm order), each a 0..1 float. */
-static const char UI_KICK1[] =
-    "\"kick1\":{\"name\":\"Kick 1\",\"params\":["
-      "{\"key\":\"" PK_PITCH   "\",\"name\":\"PITCH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_LENGTH  "\",\"name\":\"LENGTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_SUSTAIN "\",\"name\":\"SUSTAIN\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_CURVE   "\",\"name\":\"CURVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_ATTACK  "\",\"name\":\"ATTACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_TRS_DEC "\",\"name\":\"TRS DEC\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_TRS_TNE "\",\"name\":\"TRS TNE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_COLOR   "\",\"name\":\"COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
-    "],\"knobs\":[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_SUSTAIN "\",\"" PK_CURVE
-      "\",\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR "\"]},";
-
-/* kick2 level PREFIX: opens the level + params array. The active model's
- * p2_slot_desc interior (a bare comma-separated list of full slot objects) is
- * spliced in after this, then UI_KICK2_FX closes the params + adds knobs. */
-static const char UI_KICK2_PREFIX[] =
-    "\"kick2\":{\"name\":\"Kick 2\",\"params\":[";
-
-/* kick2 level SUFFIX: the two always-present post-kick FX slots (KICK-14),
- * appended AFTER the spliced model slots with a leading comma, then the params
- * array closes and a knobs array (the FX macros) + the level close. The model's
- * own slots vary per model; FX TYPE/AMT are constant across all 10. */
-static const char UI_KICK2_FX[] =
-      ",{\"key\":\"" PK_FX_TYPE "\",\"name\":\"FX TYPE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_FX_AMT  "\",\"name\":\"FX AMT\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
-    "],\"knobs\":[\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\"]}";
-
-/* groove1 level: the 8 always-present Groove Page-1 params (GRV-01/03/05).
- * LEADING comma (it follows kick2, which ends `...}` with no trailing comma);
- * NO trailing comma of its own (the following level or UI_CLOSE supplies the
- * separator / closes the map). This leading-comma discipline keeps the levels
- * map brace-balanced with no dangling comma before `}}` (C-RESEARCH Pitfall 6). */
-static const char UI_GROOVE1[] =
-    ",\"groove1\":{\"name\":\"Groove 1\",\"params\":["
-      "{\"key\":\"" PK_GRV_VOL    "\",\"name\":\"VOL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_LENGTH "\",\"name\":\"LENGTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_COLOR  "\",\"name\":\"COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_TAP1   "\",\"name\":\"TAP1\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_TAP2   "\",\"name\":\"TAP2\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_TAP3   "\",\"name\":\"TAP3\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_TAP4   "\",\"name\":\"TAP4\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GRV_MONO   "\",\"name\":\"MONO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
-    "],\"knobs\":[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR "\",\"" PK_GRV_TAP1
-      "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\",\"" PK_GRV_MONO "\"]}";
-
-/* groove2 level: the 6 Groove Page-2 controls (GRV-04). Emitted ONLY when the
- * active model is GEN (DC-05); hidden for FM2..USR. Same LEADING-comma / no-
- * trailing-comma discipline (it follows groove1). */
-static const char UI_GROOVE2[] =
-    ",\"groove2\":{\"name\":\"Groove 2\",\"params\":["
-      "{\"key\":\"" PK_GEN_SEED    "\",\"name\":\"SEED\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GEN_SCALE   "\",\"name\":\"SCALE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GEN_SEQLEN  "\",\"name\":\"SEQ LEN\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GEN_LPFFREQ "\",\"name\":\"LPF FREQ\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GEN_LPFPOLE "\",\"name\":\"LPF POLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-      "{\"key\":\"" PK_GEN_DENSITY "\",\"name\":\"DENSITY\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
-    "],\"knobs\":[\"" PK_GEN_SEED "\",\"" PK_GEN_SCALE "\",\"" PK_GEN_SEQLEN "\",\"" PK_GEN_LPFFREQ
-      "\",\"" PK_GEN_LPFPOLE "\",\"" PK_GEN_DENSITY "\"]}";
-
-/* Close the levels map + the top-level object. */
-static const char UI_CLOSE[] = "}}";
-
-/* Bounded append: copy up to `remaining` bytes of `src` (len bytes) into
- * buf+off, never writing past buf_len-1 (reserving a byte for the terminator).
- * Advances *off by the number of bytes actually written. Safe when buf is full:
- * copies 0 and leaves *off unchanged so the final terminator still lands. */
+/* ---- bounded append (A-RESEARCH Pitfall 3) ------------------------------- */
 static void ui_append(char *buf, int buf_len, int *off, const char *src, int len) {
-    if (*off >= buf_len - 1) return;               /* no room (reserve terminator) */
-    int room = (buf_len - 1) - *off;               /* bytes we may still write */
-    int n = len < room ? len : room;               /* min(len, room) */
+    if (*off >= buf_len - 1) return;
+    int room = (buf_len - 1) - *off;
+    int n = len < room ? len : room;
     memcpy(buf + *off, src, (size_t)n);
     *off += n;
 }
+static void ui_puts(char *buf, int buf_len, int *off, const char *s) {
+    ui_append(buf, buf_len, off, s, (int)strlen(s));
+}
 
-/* Assemble the full hierarchy into `buf`, bounded to buf_len, null-terminated.
- * Returns bytes written excluding the terminator (get_param contract).
- *
- * The kick2 level is spliced from the ACTIVE model's p2_slot_desc (B-09): all
- * ten vtables emit a bare comma-separated interior of full slot objects, so
- * ui.c just wraps it between UI_KICK2_PREFIX and UI_KICK2_FX. The FX suffix
- * begins with a comma (it follows the model slots); if the model produced no
- * interior (unimplemented slot, or scratch too small), the comma is dropped so
- * the emitted params array stays valid JSON (just FX TYPE/AMT). */
+/* ---- param metadata ------------------------------------------------------ */
+typedef enum { UP_FLOAT, UP_ENUM } up_type_t;
+typedef struct {
+    const char *key;
+    const char *name;
+    const char *shortn;      /* <=6 chars for the OLED */
+    up_type_t   type;
+    const char *unit;        /* "", "%", "Hz", "ms" ... */
+    const char *step;        /* JSON number literal, e.g. "0.01" */
+    const char *options;     /* enum: pre-serialized JSON array; else NULL */
+} uiparam_t;
+
+/* Default lookup: reuse the value-cache key->index so schema defaults never
+ * drift from the runtime defaults (params.c). */
+static float ui_default_for(const char *key) {
+    int gi = pk_global_index(key);
+    if (gi >= 0) return g_global_defaults[gi];
+    int ki = pk_kick_index(key);
+    if (ki >= 0) return g_kick_defaults[ki];
+    return 0.0f;
+}
+
+/* Emit one param object into buf (bounded). Float params carry min/max/step/
+ * unit; enum params carry options. Default comes from the params tables. */
+static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) {
+    char defbuf[24];
+    char obj[320];
+    if (p->type == UP_ENUM) {
+        pk_format_value(ui_default_for(p->key), 0, defbuf, (int)sizeof defbuf);
+        snprintf(obj, sizeof obj,
+            "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
+            "\"type\":\"enum\",\"options\":%s,\"default\":%s}",
+            p->key, p->name, p->shortn, p->options, defbuf);
+    } else {
+        pk_format_value(ui_default_for(p->key), 4, defbuf, (int)sizeof defbuf);
+        snprintf(obj, sizeof obj,
+            "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
+            "\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"default\":%s,"
+            "\"step\":%s,\"unit\":\"%s\"}",
+            p->key, p->name, p->shortn, defbuf, p->step, p->unit);
+    }
+    ui_puts(buf, buf_len, off, obj);
+}
+
+/* Emit a full level object: "<id>":{"name":"<name>","params":[...],"knobs":[...]}.
+ * `knobs` is a pre-serialized JSON array literal. Params are comma-separated. */
+static void ui_emit_level(char *buf, int buf_len, int *off,
+                          const char *id, const char *name,
+                          const uiparam_t *params, int nparams,
+                          const char *knobs) {
+    char head[96];
+    snprintf(head, sizeof head, "\"%s\":{\"name\":\"%s\",\"params\":[", id, name);
+    ui_puts(buf, buf_len, off, head);
+    for (int i = 0; i < nparams; i++) {
+        if (i) ui_puts(buf, buf_len, off, ",");
+        ui_emit_param(buf, buf_len, off, &params[i]);
+    }
+    ui_puts(buf, buf_len, off, "],\"knobs\":");
+    ui_puts(buf, buf_len, off, knobs);
+    ui_puts(buf, buf_len, off, "}");
+}
+
+/* ---- enum option lists (.rodata) ----------------------------------------- */
+static const char OPT_MODEL[] =
+    "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\",\"GEN\"]";
+static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush\"]";
+static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
+static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
+
+/* ---- level tables -------------------------------------------------------- */
+static const uiparam_t P_ROOT[] = {
+    { PK_MODEL,      "Model",  "MODEL", UP_ENUM,  "",  "0", OPT_MODEL },
+    { PK_MASTER_VOL, "Volume", "VOL",   UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_ROOT[] = "[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]";
+
+static const uiparam_t P_KICK1[] = {
+    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "%", "0.01", NULL },
+    { PK_LENGTH,  "LENGTH",  "LEN",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_SUSTAIN, "SUSTAIN", "SUS",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_CURVE,   "CURVE",   "CURVE", UP_FLOAT, "%", "0.01", NULL },
+    { PK_ATTACK,  "ATTACK",  "ATK",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_DEC, "TRS DEC", "TRSDEC",UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_TNE, "TRS TNE", "TRSTNE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_COLOR,   "COLOR",   "COLOR", UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_KICK1[] =
+    "[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_SUSTAIN "\",\"" PK_CURVE
+    "\",\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR "\"]";
+
+/* Kick Page 2 FX suffix params (appended after the model splice). */
+static const uiparam_t P_FX[] = {
+    { PK_FX_TYPE, "FX TYPE", "FXTYPE", UP_ENUM,  "",  "0",    OPT_FX },
+    { PK_FX_AMT,  "FX AMT",  "FXAMT",  UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_FX[] = "[\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\"]";
+
+static const uiparam_t P_GROOVE1[] = {
+    { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_COLOR,  "COLOR",  "COLOR",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP1,   "TAP1",   "TAP1", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP2,   "TAP2",   "TAP2", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP3,   "TAP3",   "TAP3", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP4,   "TAP4",   "TAP4", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_MONO,   "MONO",   "MONO", UP_ENUM,  "",  "0",    OPT_MONO },
+};
+static const char KN_GROOVE1[] =
+    "[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR "\",\"" PK_GRV_TAP1
+    "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\",\"" PK_GRV_MONO "\"]";
+
+static const uiparam_t P_GROOVE2[] = {
+    { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },
+    { PK_GEN_SCALE,   "SCALE",   "SCALE", UP_FLOAT, "",  "0.01", NULL },
+    { PK_GEN_SEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.01", NULL },
+    { PK_GEN_LPFFREQ, "LPF FREQ","LPFFRQ",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GEN_LPFPOLE, "LPF POLE","LPFPOL",UP_ENUM,  "",  "0",    OPT_POLE },
+    { PK_GEN_DENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_GROOVE2[] =
+    "[\"" PK_GEN_SEED "\",\"" PK_GEN_SCALE "\",\"" PK_GEN_SEQLEN "\",\"" PK_GEN_LPFFREQ
+    "\",\"" PK_GEN_LPFPOLE "\",\"" PK_GEN_DENSITY "\"]";
+
+/* ---- wrapper fragments --------------------------------------------------- */
+static const char UI_OPEN[] =
+    "{\"pad_layout\":\"drums\",\"child_index_param\":\"current_pad\",\"levels\":{";
+/* root has two nav links to the kick sub-pages appended before its knobs; keep
+ * them as fixed fragments spliced into the root level. */
+static const char UI_ROOT_LINKS[] =
+    ",{\"level\":\"kick1\",\"label\":\"Kick 1\"},"
+    "{\"level\":\"kick2\",\"label\":\"Kick 2\"}";
+static const char UI_KICK2_PREFIX[] = "\"kick2\":{\"name\":\"Kick 2\",\"params\":[";
+static const char UI_CLOSE[] = "}}";
+
+#define NELEM(a) ((int)(sizeof(a)/sizeof((a)[0])))
+
+/* Emit the root level by hand (it mixes params with two nav-link objects). */
+static void ui_emit_root(char *buf, int buf_len, int *off) {
+    ui_puts(buf, buf_len, off, "\"root\":{\"name\":\"Omega\",\"params\":[");
+    for (int i = 0; i < NELEM(P_ROOT); i++) {
+        if (i) ui_puts(buf, buf_len, off, ",");
+        ui_emit_param(buf, buf_len, off, &P_ROOT[i]);
+    }
+    ui_puts(buf, buf_len, off, UI_ROOT_LINKS);
+    ui_puts(buf, buf_len, off, "],\"knobs\":");
+    ui_puts(buf, buf_len, off, KN_ROOT);
+    ui_puts(buf, buf_len, off, "}");
+}
+
 int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     if (!buf || buf_len <= 0) return 0;
 
-    /* Fixed local scratch for the model's Page-2 interior — no allocation
-     * (audio thread, CLAUDE.md). All ten fragments are well under 1 KB. */
+    /* Active model's Kick Page 2 interior (bare comma-separated slot objects). */
     char scratch[1024];
     int  slot_len = 0;
     if (inst) {
@@ -151,35 +199,37 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     }
 
     int off = 0;
+    ui_puts(buf, buf_len, &off, UI_OPEN);
 
-    ui_append(buf, buf_len, &off, UI_OPEN,   (int)(sizeof(UI_OPEN)   - 1));
-    ui_append(buf, buf_len, &off, UI_ROOT,   (int)(sizeof(UI_ROOT)   - 1));
-    ui_append(buf, buf_len, &off, UI_KICK1,  (int)(sizeof(UI_KICK1)  - 1));
+    ui_emit_root(buf, buf_len, &off);
 
-    /* kick2 = prefix + spliced model interior + FX suffix. */
-    ui_append(buf, buf_len, &off, UI_KICK2_PREFIX, (int)(sizeof(UI_KICK2_PREFIX) - 1));
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "kick1", "Kick 1", P_KICK1, NELEM(P_KICK1), KN_KICK1);
+
+    /* kick2 = prefix + model splice + FX suffix (with leading comma iff the
+     * model emitted an interior). */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_puts(buf, buf_len, &off, UI_KICK2_PREFIX);
     if (slot_len > 0) {
         ui_append(buf, buf_len, &off, scratch, slot_len);
-        /* UI_KICK2_FX leads with a comma to separate FX from the model slots. */
-        ui_append(buf, buf_len, &off, UI_KICK2_FX, (int)(sizeof(UI_KICK2_FX) - 1));
-    } else {
-        /* No model interior: drop the leading comma of the FX suffix so the
-         * params array is `[{FX TYPE},{FX AMT}]` — still valid JSON. */
-        ui_append(buf, buf_len, &off, UI_KICK2_FX + 1, (int)(sizeof(UI_KICK2_FX) - 2));
+        ui_puts(buf, buf_len, &off, ",");
+    }
+    ui_emit_param(buf, buf_len, &off, &P_FX[0]);   /* FX TYPE */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_param(buf, buf_len, &off, &P_FX[1]);   /* FX AMT */
+    ui_puts(buf, buf_len, &off, "],\"knobs\":");
+    ui_puts(buf, buf_len, &off, KN_FX);
+    ui_puts(buf, buf_len, &off, "}");
+
+    /* Groove Page 1 always; Groove Page 2 only for GEN (GRV-04). */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1", P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1);
+    if (inst && inst->model == MODEL_GEN) {
+        ui_puts(buf, buf_len, &off, ",");
+        ui_emit_level(buf, buf_len, &off, "groove2", "Groove 2", P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2);
     }
 
-    /* Groove Page 1 always follows kick2 (leading comma inside the fragment).
-     * Groove Page 2 is emitted ONLY for GEN (DC-05/GRV-04) — hidden otherwise.
-     * Both fragments carry a leading comma and no trailing comma, so the levels
-     * map closes cleanly with no dangling comma before UI_CLOSE `}}`. */
-    ui_append(buf, buf_len, &off, UI_GROOVE1, (int)(sizeof(UI_GROOVE1) - 1));
-    if (inst && inst->model == MODEL_GEN)
-        ui_append(buf, buf_len, &off, UI_GROOVE2, (int)(sizeof(UI_GROOVE2) - 1));
-
-    ui_append(buf, buf_len, &off, UI_CLOSE, (int)(sizeof(UI_CLOSE) - 1));
-
-    /* Always null-terminate within bounds (Pitfall 3). off <= buf_len-1 by
-     * construction, so buf[off] is a valid slot. */
+    ui_puts(buf, buf_len, &off, UI_CLOSE);
     buf[off] = '\0';
     return off;
 }
