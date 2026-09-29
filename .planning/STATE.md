@@ -118,6 +118,7 @@ None.
 
 **Recent activity:**
 
+- 2026-09-29: Quick task 260929-cjj — fixed Phase A on-device load crash: `host_api_v1_t` was missing 3 fields (`mapped_memory`/`audio_out_offset`/`audio_in_offset`), shifting `g_host->log` onto a data pointer → segfault when the D-10 spike fired on first `get_param`. Also corrected `module.json` (nested `capabilities`) and `ui_hierarchy` (real `levels` schema) to match Context/01 verbatim. `make test` green (commits ce99134, f10d3b5, 5f799a7)
 - 2026-09-29: A-03 complete — real `ui_hierarchy` (ui.c, D-08/D-09): static Page 1 (8 keyed slots) + dynamic FM2 Page 2 spliced from `p2_slot_desc` + FX TYPE/AMT; dsp.c wired to ui.c (fallback removed), D-10 one-shot locale-independent buf_len log; CI cross-build flipped to blocking; harness proves the get_param contract; `make test` green (commits 98e62a0, 3ac9e54, e8802b7)
 - 2026-09-29: A-02 complete — FM2 engine (fm2.c), plugin entry points (dsp.c), model registry, module.json; real move_plugin_init_v2 lifecycle harness; `make test` green (commits bccf4e9, c4d028c, 3cac29b)
 - 2026-09-29: A-01 complete — shared contracts (omega.h), .rodata sine table, dsp_primitives, full offline test harness + glibc gate + CI; `make test` green (commits 205e0c4, 0ac3a38, 07a33ed)
