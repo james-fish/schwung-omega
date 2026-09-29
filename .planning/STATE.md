@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-06-hrd-fm4-distortion-fm-PLAN.md
-last_updated: "2026-09-29T12:49:44.326Z"
+stopped_at: Completed B-07-phy-modal-physical-PLAN.md
+last_updated: "2026-09-29T12:57:45.706Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -32,12 +32,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 6 of 9 complete (B-01..B-06 done); next is B-07 (PHY modal physical)
+**Plan:** 7 of 9 complete (B-01..B-07 done); next is B-08 (USR/GEN userload + generative)
 **Status:** Executing Phase B
-**Progress:** Phase B 6/9 plans complete
+**Progress:** Phase B 7/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 6/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 7/9 plans)
 ```
 
 ---
@@ -65,6 +65,7 @@ progress:
 | Phase B-remaining-9-kick-models P04 | 9min | 3 tasks | 5 files |
 | Phase B-remaining-9-kick-models P05 | 6min | 3 tasks | 4 files |
 | Phase B-remaining-9-kick-models P06 | 7min | 3 tasks | 4 files |
+| Phase B-remaining-9-kick-models P07 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,7 @@ progress:
 - **[B-05] DIG = digital body + BIT DEPTH as timbre (KICK-07)** — digital-character `wt_read_bl` body (bright saw/square/digital factory waves via WAVE IDX) + BIT DEPTH applying the shared `crush()` as a TIMBRAL control (v->bits[6,14], `powf(2,bits)`->levels precomputed at control rate; render is a bounded `roundf` only — no per-sample powf), contrasting HRD's future aggressive CRUSH. Warm-ANA-vs-crunchy-DIG split on the wavetable-source axis (ANA morphs sine/analog, DIG selects saw/square/digital) on top of ANA's sub-osc / DIG's crush. DIG's Page-1 TRS TNE reworked from a dead bit-level nudge to a body-brightness wave morph after the battery flagged it (rms_delta 9e-5, zcr_delta 0) — a spectral lever, not a subtle attenuation (same lesson as B-04). Now 5 registered / 10 distinct pairs; test_switch 25 pairs.
 - **[B-06] HRD = bounded distortion + crush (KICK-06)** — hard-techno wavetable body (bright factory waves) + punchy SAMPLE LAYER blended by MIX + DRIVE reusing the shared `fx_process` SAT (v<0.6) / Fold (v>0.6, harder edge) at high amt as its ONLY distortion (no bespoke `fast_tanh` — STATE.md bug #2; the shared FX forms self-limit to [-1,1] at max drive) + CRUSH via the shared `crush()` (v->bits[16,4], default-OFF aggressive vs DIG's always-on bits[6,14] timbre; levels precomputed at control rate, render is a bounded roundf). Uses TWO separate `fx_state_t` fields (drive_fx + post-kick fx) so the two Crush sample-and-holds never collide, both reset on trigger. The loudest/most aggressive kick; HRD-vs-DIG split = distortion/loud vs lo-fi/digital-crunch.
 - **[B-06] FM4 = static routing tables, no per-sample algo branching (KICK-03)** — 4-op FM extending the FM2 core; the 4 OPL3-style algorithms are `static const uint8_t g_fm4_algo[4][NUM_OPS]` (modulator-source per op, FM4_NONE sentinel) + `g_fm4_carrier[4][NUM_OPS]` routing tables WALKED in render (CLAUDE.md — the active algo's two rows snapshotted once per block, ops evaluated op3->op0 in a single forward pass so each modulator is computed before its target; NO per-sample branching on algorithm). Per-op AM + FM-index envs; op3 self-FEEDBACK scaled + hard-clamped to <=0.7 (no runaway); OP RATIO spread + ALGO detune recomputed at control rate; carriers summed with 1/ncar normalization (self-limit <1.0). ALGORITHM (PK_FM4_ALGO) selects the table 0..3; ALGO (PK_FM4_ALGO2) is a per-op metallic detune morph (research disambiguation). Now 7 registered / 21 distinct pairs; test_switch 49 pairs. KICK-06 + KICK-03 delivered (commits 828f423, c04866c).
+- **[B-07] PHY = modal physical model (KICK-05)** — the ONLY non-oscillator engine: 3 damped complex-rotation `modal_t` modes (head dominant pitched mode + body1/body2 shell modes, amps 0.9/0.5/0.25, body decays 0.5x/0.3x head) excited by a short bright filtered-noise beater burst (`noise_t` + `tpt1_lp`). HEAD TENS -> head freq (exp 45..110 Hz) + a SWEPT-UP excitation start (`head_f*(1+0.8+1.2*curve)`, CURVE deepens the 909 drop; NO per-sample re-tune since modal_t is fixed-tune once excited — the beater carries the bright attack, the mode carries the settled tone); SHELL SIZE -> body mode freqs (bigger=lower); DAMPING -> shared decay (exp 400..60 ms, ms->decay clamped (0,1)); BEATER -> burst brightness LP + length. Defense-in-depth: every freq clamped [20,0.45*SR] + every decay via `modal_decay_from_ms` clamped (0,1) BEFORE modal_excite (which re-clamps) + a bounded `x/(1+|x|)` output self-limit — proven NaN-free/bounded at the worst-case corner (HEAD TENS=1.0/DAMPING=0.0/SHELL=1.0, explicit `assert_phy_extremes_no_nan`). Beater RESEEDED per trigger (the KICK-13 switch memset zeroes the xorshift seed; xorshift of 0 stays 0 -> silence otherwise). Render loop transcendental-free. Registered by replacing its NULL slot; 8 registered / 28 distinct pairs, test_switch 64 pairs. KICK-05 delivered (commits de84f82, 3e06d61).
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -132,11 +134,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan B-07 (PHY modal physical model, KICK-05) — the only non-oscillator engine: 2-3 damped resonant modes via the B-02 `modal_t` complex-rotation resonator, excited by a short filtered-noise/click burst at trigger; map BEATER (excitation character), HEAD TENS (dominant mode freq + downward pitch env), SHELL SIZE (1-2 lower body modes), DAMPING (decay). Clamp mode freq to [20, 0.45*SR] + decay to (0,1) (Pitfall). Register [MODEL_PHY] (replace its NULL slot) so test_distinct grows to an 8-model gate; add its assert_param_responsive call. (A-04 on-device validation still pending hardware — see Todos.)
+**Next action:** Execute Plan B-08 (USR + GEN, KICK-10/KICK-11) — USR userload (off-thread WAV/wavetable at create_instance, dedicated pre-sized buffer since it won't fit model_state[4096]; SAMPLE SELECT/WT MORPH/LAYER VOL/PITCH ENV, built-in fallback so it's non-silent) + GEN generative engine (PRNG xorshift64 seeded from SEED + scale_quantize over g_scales + Euclidean density gating, self-clocking for offline audition; transport-sync to get_beat_position + full Groove Page 2 deferred to Phase C). Register both by replacing the final two NULL slots -> registry fully populated (10/10, test_distinct 10 registered / 45 pairs). Then B-09 splices Page 2 + runs the on-device voicing audit. (A-04 on-device validation still pending hardware — see Todos.)
 
-**Stopped at:** Completed B-06-hrd-fm4-distortion-fm-PLAN.md
+**Stopped at:** Completed B-07-phy-modal-physical-PLAN.md
 
 **Recent activity:**
+
+- 2026-09-29: B-07 complete — PHY (KICK-05, the only non-oscillator engine: an organic/woody modal kick from 3 damped complex-rotation modal_t modes — head dominant pitched mode + 2 shell body modes — excited by a bright filtered-noise beater burst; HEAD TENS->head freq + swept-UP excitation start so the fixed mode settles down without per-sample re-tune, SHELL SIZE->body mode freqs, DAMPING->shared decay ms->decay clamped (0,1), BEATER->burst brightness/length) as a thin recipe over the B-02 modal_t/noise primitives + FM2 dual-env CURVE; defense-in-depth freq/decay clamps + x/(1+|x|) self-limit proven NaN-free/bounded at the worst-case corner (explicit assert_phy_extremes_no_nan: HEAD TENS=1.0/DAMPING=0.0/SHELL=1.0); beater reseeded per trigger (memset zeroes the xorshift seed otherwise); registered by replacing its NULL slot; render transcendental-free; `make test` green — 8 registered / 28 distinct pairs, test_switch 64 pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-05 delivered (commits de84f82, 3e06d61)
 
 - 2026-09-29: B-06 complete — HRD (KICK-06, the loudest/most aggressive kick: bright wavetable body + punchy SAMPLE LAYER blended by MIX + DRIVE reusing shared fx_process SAT<0.6/Fold>0.6 at high amt as its ONLY distortion — no bespoke fast_tanh, STATE.md bug #2 — + CRUSH via shared crush() default-off aggressive; TWO separate fx_state fields so the drive + post-kick Crush s&h never collide) + FM4 (KICK-03, complex 4-op FM: 4 OPL3-style algorithms as static const g_fm4_algo + g_fm4_carrier routing tables WALKED in render with NO per-sample algo branching, ops evaluated op3->op0 single forward pass; per-op AM/index envs; op3 self-FEEDBACK hard-clamped <=0.7; OP RATIO spread + ALGO detune at control rate) as thin recipes over B-02 FX/crush + the FM2 FM core; both registered by replacing their NULL slots; both render loops transcendental-free; `make test` green — 7 registered / 21 distinct pairs, test_switch 49 pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-06 + KICK-03 delivered (commits 828f423, c04866c)
 - 2026-09-29: B-05 complete — ANA (KICK-09, the warm 808 sub-boom king: 2-table analog WAVE MORPH body + dedicated independently-enveloped SUB-OSC at un-swept f0 with long SUB DECAY + sample thump; PITCH lowered to [30,110] Hz) + DIG (KICK-07, the digital/retro kick: bright saw/square/digital body via WAVE IDX + BIT DEPTH as timbre via shared crush() with control-rate level precompute + PITCH ENV) as thin recipes over B-02 primitives + FM2 voicing; both registered by replacing their NULL slots; DIG's Page-1 TRS TNE reworked from a dead bit-nudge to a body-brightness wave morph after the battery flagged it (rms 9e-5, zcr 0); `make test` green — 5 registered / 10 distinct pairs, test_switch 25 pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-09 + KICK-07 delivered (commits 49dccdd, acec86a)
