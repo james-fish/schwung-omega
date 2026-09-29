@@ -15,6 +15,9 @@ host_api_v1_t make_mock_host(void) {
     h.api_version         = 1;
     h.sample_rate         = 44100;
     h.frames_per_block    = 128;
+    h.mapped_memory       = NULL;
+    h.audio_out_offset    = 0;
+    h.audio_in_offset     = 0;
     h.log                 = mock_log;
     h.midi_send_internal  = mock_midi;
     h.midi_send_external  = mock_midi;

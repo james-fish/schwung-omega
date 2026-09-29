@@ -22,10 +22,20 @@
 #define OMEGA_MAX_BLOCK 256
 
 /* --- Host ABI (Context/01 lines 30-50) — VERBATIM ---------------------- */
+/* The three Memory-Mapped Direct Access fields (mapped_memory/audio_out_offset/
+ * audio_in_offset) sit BETWEEN frames_per_block and log — omitting them shifts
+ * log onto the host's mapped_memory (a data pointer) and segfaults the D-10
+ * spike on the first get_param. Do NOT alter field order or types. */
 typedef struct {
-    int api_version;             /* = 1 */
+    uint32_t api_version;        /* = 1 */
     int sample_rate;             /* Fixed at 44100 Hz */
     int frames_per_block;        /* typically 128 */
+
+    /* Memory Mapped Direct Access */
+    uint8_t *mapped_memory;
+    int audio_out_offset;
+    int audio_in_offset;
+
     void (*log)(const char *msg);
     int (*midi_send_internal)(const uint8_t *msg, int len);
     int (*midi_send_external)(const uint8_t *msg, int len);
@@ -35,7 +45,7 @@ typedef struct {
 
 /* --- Plugin ABI (Context/01 lines 54-66) — VERBATIM -------------------- */
 typedef struct {
-    int api_version;             /* = 2 */
+    uint32_t api_version;        /* = 2 */
     void* (*create_instance)(const char *module_dir, const char *json_defaults);
     void  (*destroy_instance)(void *instance);
     void  (*on_midi)(void *instance, const uint8_t *msg, int len, int source);
