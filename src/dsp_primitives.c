@@ -17,14 +17,90 @@ void omega_primitives_selfcheck(void) {
     assert(g_sine_table[2048] == g_sine_table[0]);
 }
 
-/* --- FX chain (KICK-14): RED stub — passes through dry (audible/statefulness
- *     tests will fail until the GREEN implementation lands). ------------- */
-void fx_config(fx_state_t *st, int mode, float amt) {
-    (void)mode; (void)amt;
-    st->last = 0.0f; st->hold_ctr = 0; st->crush_levels = 0.0f;
+/* --- FX chain (KICK-14): 5 bounded modes ------------------------------- */
+/* Intensity constants (map FX AMT [0,1] onto each mode's useful range). */
+#define FX_DIODE_K   6.0f     /* Diode knee sharpness           */
+#define FX_CLIP_G    4.0f     /* Clip pre-gain                  */
+#define FX_FOLD_F    4.0f     /* Fold pre-gain (more folds)     */
+#define FX_CRUSH_H  15.0f     /* Crush max sample-and-hold span */
+
+/* Diode shaping LUT: g_diode_lut[i] = 1 - exp(-z), z = i/(N-1)*ZMAX, in [0,1).
+ * Read at CONTROL cost only via a table lookup in fx_process (NO per-sample
+ * expf — Pitfall 3). Asymptotes to 1 so the diode output is always bounded. */
+#define FX_DIODE_LUT_N   256
+#define FX_DIODE_LUT_ZMAX 8.0f
+static float g_diode_lut[FX_DIODE_LUT_N + 1];   /* +1 guard for interp */
+static int   g_diode_lut_ready = 0;
+
+/* diode_shape(z>=0) -> 1 - exp(-z), clamped, via linear-interp LUT. */
+static inline float diode_shape(float z) {
+    if (z <= 0.0f) return 0.0f;
+    if (z >= FX_DIODE_LUT_ZMAX) return 1.0f;
+    float fp = z * ((float)FX_DIODE_LUT_N / FX_DIODE_LUT_ZMAX);
+    int   i  = (int)fp;
+    float fr = fp - (float)i;
+    return g_diode_lut[i] + fr * (g_diode_lut[i + 1] - g_diode_lut[i]);
 }
 
+/* fx_config — CONTROL RATE. All powf/expf live HERE, never in fx_process. */
+void fx_config(fx_state_t *st, int mode, float amt) {
+    (void)mode;
+    if (!g_diode_lut_ready) {
+        for (int i = 0; i <= FX_DIODE_LUT_N; i++) {
+            float z = (float)i * (FX_DIODE_LUT_ZMAX / (float)FX_DIODE_LUT_N);
+            g_diode_lut[i] = 1.0f - expf(-z);   /* control-rate expf */
+        }
+        g_diode_lut_ready = 1;
+    }
+    /* Crush: precompute the bit-reduction level count ONCE (powf here only). */
+    if (amt < 0.0f) amt = 0.0f;
+    if (amt > 1.0f) amt = 1.0f;
+    st->crush_levels = powf(2.0f, 16.0f - amt * 12.0f);   /* 16 bits -> 4 bits */
+    st->last = 0.0f;
+    st->hold_ctr = 0;
+}
+
+/* fx_process — per-sample render stage. Reads only PRECOMPUTED state.
+ * Uses ONLY algebraic ops + fabsf/floorf/roundf/copysignf + the diode LUT;
+ * contains no transcendental calls (those live in fx_config, control rate).
+ * Each mode dry/wet-blends by amt so amt=0 is transparent and amt=1 is the
+ * full effect, and every branch is bounded to [-1,1]. */
 float fx_process(int mode, float x, float amt, fx_state_t *st) {
-    (void)mode; (void)amt; (void)st;
-    return x;
+    if (amt < 0.0f) amt = 0.0f;
+    if (amt > 1.0f) amt = 1.0f;
+    switch (mode) {
+        case FX_DIODE: {  /* back-to-back diode rounding; asymptotes to +/-1 */
+            float k = 1.0f + amt * FX_DIODE_K;
+            float wet = copysignf(diode_shape(fabsf(x) * k), x);  /* LUT lookup */
+            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+        }
+        case FX_CLIP: {   /* symmetric bounded soft clip gx/(1+|gx|) */
+            float gx = (1.0f + amt * FX_CLIP_G) * x;
+            float wet = gx / (1.0f + fabsf(gx));
+            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+        }
+        case FX_SAT: {    /* warm parallel saturation (bounded by construction) */
+            float sat = x / (1.0f + fabsf(x));
+            return (1.0f - amt) * x + amt * sat;   /* dry at amt=0 */
+        }
+        case FX_FOLD: {   /* triangle wavefolder -> [-1,1] */
+            float g = 1.0f + amt * FX_FOLD_F;
+            float v = g * x + 1.0f;
+            v = v - 4.0f * floorf(v * 0.25f);      /* mod 4 into [0,4) */
+            float wet = fabsf(v - 2.0f) - 1.0f;
+            return (1.0f - amt) * x + amt * wet;   /* dry at amt=0 */
+        }
+        case FX_CRUSH: {  /* bit + sample-rate reduction (PRECOMPUTED levels) */
+            float levels = (st->crush_levels > 0.0f) ? st->crush_levels : 1.0f;
+            int hold = 1 + (int)(amt * FX_CRUSH_H);
+            if (st->hold_ctr <= 0) {
+                st->last = roundf(x * levels) / levels;   /* bit-reduce, bounded */
+                st->hold_ctr = hold;
+            }
+            st->hold_ctr--;
+            return st->last;   /* at amt=0: levels=2^16, hold=1 -> transparent */
+        }
+        default:
+            return x;
+    }
 }
