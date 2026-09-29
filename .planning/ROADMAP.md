@@ -58,7 +58,7 @@ Plans:
 - [x] B-06-hrd-fm4-distortion-fm-PLAN.md — HRD (KICK-06) + FM4 (KICK-03) distortion + 4-op FM family
 - [x] B-07-phy-modal-physical-PLAN.md — PHY (KICK-05) modal physical-model kick
 - [x] B-08-usr-gen-userload-generative-PLAN.md — USR (KICK-10) off-render file load + GEN (KICK-11) generative engine (Phase-B scope)
-- [ ] B-09-page2-splice-and-voicing-audit-PLAN.md — dynamic Kick Page 2 splice (KICK-13) + docs/VOICING_AUDIT.md on-device voicing sign-off (D-B04, human-verify)
+- [~] B-09-page2-splice-and-voicing-audit-PLAN.md — dynamic Kick Page 2 splice (KICK-13) DONE + docs/VOICING_AUDIT.md staged; on-device D-B02 voicing sign-off PENDING (Task 4 blocking human-verify checkpoint, awaiting Move hardware — D-B04)
 **UI hint**: yes
 
 ### Phase C: Groove Rumble Engine

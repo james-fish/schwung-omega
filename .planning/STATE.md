@@ -3,14 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-08-usr-gen-userload-generative-PLAN.md
-last_updated: "2026-09-29T16:57:38.938Z"
+stopped_at: B-09 autonomous tasks complete (0c01954/74de7b0/26f89a2); STOPPED at Task 4 on-device voicing human-verify checkpoint
+last_updated: "2026-09-29T17:07:51.463Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: Omega
@@ -32,12 +31,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 8 of 9 complete (B-01..B-08 done); next is B-09 (Page-2 splice + on-device voicing audit)
-**Status:** Executing Phase B
-**Progress:** Phase B 8/9 plans complete — all 10 kick models now registered
+**Plan:** B-09 autonomous tasks complete (Page-2 splice + JSON gate + VOICING_AUDIT.md); STOPPED at Task 4 on-device voicing human-verify checkpoint
+**Status:** Executing Phase B — awaiting on-device voicing sign-off (D-B04)
+**Progress:** Phase B 9/9 plans coded (B-01..B-09); B-09 Task 4 on-device voicing round PENDING (hardware)
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 8/9 plans, all 10 models live)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware)
 ```
 
 ---
@@ -72,6 +71,8 @@ progress:
 
 ### Key Decisions
 
+- **[B-09] Kick Page 2 assembles DYNAMICALLY per model (KICK-13 SC3)** — `ui.c` `omega_build_ui` splices `g_models[inst->model]->p2_slot_desc` into the kick2 params via a fixed 1024-byte no-alloc stack scratch, between a static `UI_KICK2_PREFIX` and the always-present `UI_KICK2_FX` suffix (FX TYPE/AMT + knobs); the FX suffix leads with a comma that is dropped (`UI_KICK2_FX + 1`) when a model emits no interior so the params array stays valid JSON. `fm2_p2_slot_desc` reconciled from the old A-03 `[{key,label}]` form to the uniform bare `{key,name,type,min,max}` interior that B-04..B-08 already emit, so all 10 feed ONE generic splice path (reverses the A-03 "ui.c stops calling fm2's descriptor" note — it calls it again, uniformly). `tests/test_switch.c assert_p2_json_valid` proves every model's Page-2 JSON is bounded/null-terminated/brace-balanced/bracket-free/correctly-counted (FM2=3, FM4=6, rest=4, GEN=3), refuses a too-small buffer (returns 0), and keeps the full `ui_hierarchy` balanced + null-terminated across model switches; `get_param` unknown-key -> -1. `make test` green (100 switch pairs + p2 JSON valid for 10 models). Commits 0c01954, 74de7b0.
+- **[B-09] On-device voicing surfaced as a blocking human-verify checkpoint (D-B04), not fabricated** — `docs/VOICING_AUDIT.md` (mirrors A-04) is the phase-completion gate: a 10-model x 5-item D-B02 manual voicing matrix with every cell PENDING (on-device) + the exact deploy/audition runbook (CI artifact / Docker `make dsp.so` + `scripts/glibc_gate.sh` -> `scripts/deploy.sh` -> select each model via the root Model encoder -> audition). FM2 flagged as the D-B03 reference bar. Task 4 requires physical Move hardware + a human listener and CANNOT be automated; execution STOPPED at the checkpoint. Phase B is NOT complete until every cell reads PASS. Commit 26f89a2.
 - **[B-01] Internal vtable extended, not the ABI** — `kick_model_vtable_t` gained a `set_param` fn ptr (no `_Static_assert` binds it; internal, not host ABI). dsp.c now dispatches all kick keys through `g_models[inst->model]->set_param` instead of the hardcoded `fm2_set_param` (Pitfall 2 fix). The locked `host_api_v1_t`/`plugin_api_v2_t` `+120`/`+56` asserts were left untouched.
 - **[B-01] Designated-initializer registry (intermediate-compilation contract)** — `model_id_t` grown append-only to `MODEL_COUNT=10`; `g_models[]` uses designated initializers with `[MODEL_FM2]` set and 9 slots C-zero-init to NULL, guarded by `_Static_assert(len == MODEL_COUNT)`. The array links at every wave; each later model plan replaces its own NULL WITH the `.c` that defines its vtable symbol. dsp.c + the switch harness treat NULL slots as silence (no NULL deref).
 - **[B-01] Clean model-switch re-init (KICK-13)** — `PK_MODEL` change memsets `model_state[4096]` and re-primes defaults through the incoming model's `set_param`, killing the stale-state/NaN hazard when a new model reinterprets the shared overlay bytes. `tests/test_switch.c` is the automated KICK-13 gate (A->B->A + trigger, finite/bounded/non-stale, registry-length + NULL-slot-silence asserts); forward-compatible via NULL-slot skip.
@@ -132,17 +133,19 @@ progress:
 
 ### Blockers
 
-None.
+- **[B-09 ON-DEVICE PENDING] Complete `docs/VOICING_AUDIT.md` on the Move — the D-B02 manual ear round for all 10 models (Task 4 blocking human-verify checkpoint).** Deploy a gate-passing `dsp.so` (CI artifact or Docker build + `scripts/glibc_gate.sh`), `scripts/deploy.sh`, select each model via the root Model encoder, audition the 5 D-B02 items (usable default / PITCH-CURVE musical / knobs useful range / distinct character / no live artifacts), record PASS or the issue per cell, re-voice any failing model (re-map ranges/curves in its `.c`, rebuild, redeploy). Sign off FM2 first (D-B03 reference bar). Phase B is NOT complete until every cell reads PASS (D-B04). Not a code blocker — awaiting hardware, same as A-04.
 
 ---
 
 ## Session Continuity
 
-**Next action:** Execute Plan B-09 (final Phase-B plan) — splice each model's Page-2 `p2_slot_desc` into `ui.c` so the Kick Page 2 shows the active model's real params (currently only the root Model enum lists all 10 names) + run the on-device voicing audit (VOICING_AUDIT.md, the D-B02 manual / D-B04 ear round). All 10 kick models are now registered, distinct, non-silent, bounded, param-responsive across the full automated battery. (A-04 on-device validation still pending hardware — see Todos.)
+**Next action:** Complete the B-09 on-device voicing audit at the Move — fill `docs/VOICING_AUDIT.md` PASS for all 10 models (the D-B02 manual / D-B04 ear round; see Blockers). Once all cells PASS on-device AND the A-04 runbooks are filled, Phase B is ready for `/gsd:verify-work`. All B-09 automatable work is done: Kick Page 2 splices dynamically per model, the Page-2 JSON-validity gate covers all 10, and the audit doc + runbook are staged (`make test` green).
 
-**Stopped at:** Completed B-08-usr-gen-userload-generative-PLAN.md
+**Stopped at:** B-09 autonomous tasks complete (0c01954/74de7b0/26f89a2); STOPPED at Task 4 on-device voicing human-verify checkpoint
 
 **Recent activity:**
+
+- 2026-09-29: B-09 autonomous tasks complete — dynamic Kick Page 2 splice (KICK-13 SC3): `ui.c omega_build_ui` now splices the active model's `p2_slot_desc` into the kick2 params via a fixed 1024-byte no-alloc scratch between a static prefix and the always-present FX TYPE/AMT suffix (leading comma dropped when a model emits no interior so the params array stays valid JSON); `fm2_p2_slot_desc` reconciled from the old A-03 `[{key,label}]` form to the uniform bare `{key,name,type,min,max}` interior so all 10 feed ONE generic splice path. New `test_switch.c assert_p2_json_valid` proves every model's Page-2 JSON is bounded/null-terminated/brace-balanced/bracket-free/correctly-counted (FM2=3/FM4=6/rest=4/GEN=3), refuses too-small buffers (returns 0), and keeps the full `ui_hierarchy` balanced + null-terminated across model switches; `get_param` unknown-key -> -1. `docs/VOICING_AUDIT.md` (D-B04) staged: 10-model x 5-item D-B02 matrix all PENDING (on-device) + the exact deploy/audition runbook (CI artifact / Docker `make dsp.so` + `scripts/glibc_gate.sh` -> `scripts/deploy.sh` -> select each model via the root Model encoder -> audition), FM2 flagged as the D-B03 reference bar. `make test` green — 100 switch pairs + p2 JSON valid for 10 models, 45 distinct pairs. STOPPED at Task 4 on-device voicing human-verify checkpoint (requires Move hardware + human ears; cannot be automated/fabricated, mirrors A-04). KICK-13 delivered (commits 0c01954, 74de7b0, 26f89a2)
 
 - 2026-09-29: B-08 complete — the FINAL two models: USR (KICK-10, user-content player: usr_load_wav/usr_load_wavetable read module_dir/user/kick.wav + user/wavetable.raw ONCE in create_instance — the module's ONLY file I/O, off the malloc-trapped render path per B-RESEARCH Open Q2; the ~184 KB usr_wavetable+usr_sample live BY VALUE in bohm_instance so the single calloc grew, NOT model_state[4096] nor a per-file malloc, <800KB static_assert holds; usr_loaded==false -> built-in wavetable fallback so USR is never silent; 4 P2 slots) + GEN (KICK-11, deterministic self-clocking generative kick: xorshift64 prng_t seeded from SEED -> repeatable pitch seq, scale_quantize (SCALE), Euclidean DENSITY gating, wt_read_bl body per self-clocked step at a fixed internal rate; transport-sync via get_beat_position + full Groove Page 2 UI deferred to Phase C GRV-02/GRV-04, commented at top of gen.c; reseed-on-SEED + full env/phase zero on trigger => same seed byte-identical, downbeat always fires; NO rand(); 3 P2 slots). Both registered by replacing the LAST two NULL slots -> registry FULLY populated (10/10); B-01 array-length static_assert stays + a NEW runtime no-NULL-slot gate in test_gen.c; ui.c root Model enum now lists all 10 names (per-model Page-2 splice is B-09). Render loops transcendental-free (powf/tanf control-rate only). `make test` green — 10 registered / 45 distinct pairs, test_switch 100 pairs, test_gen determinism + USR fixture-load/fallback + complete-registry all pass; cross-build/glibc gate deferred to CI (no local Docker). KICK-10 + KICK-11 delivered (commits 69d11a1, 3d2a5da, befb75b, e6ba5f0)
 
