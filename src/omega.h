@@ -258,10 +258,16 @@ _Static_assert(sizeof(struct bohm_instance) < 1300000, "instance under 1.3MB");
 #define PK_USR_LAYERVOL "usr_layervol"
 #define PK_USR_PITCHENV "usr_pitchenv"
 
-/* GEN / HPN (KICK-11) */
+/* GEN / HPN (KICK-11 + GRV-04) — the full Groove Page 2 control set. SEED /
+ * SCALE / DENSITY landed in Phase B; SEQ LEN / LPF FREQ / LPF POLE are the
+ * Phase-C transport-clock + sub-bass LPF additions (all six live on the
+ * conditional Groove Page 2 for GEN, DC-05). */
 #define PK_GEN_SEED    "gen_seed"
 #define PK_GEN_SCALE   "gen_scale"
 #define PK_GEN_DENSITY "gen_density"
+#define PK_GEN_SEQLEN  "gen_seqlen"
+#define PK_GEN_LPFFREQ "gen_lpffreq"
+#define PK_GEN_LPFPOLE "gen_lpfpole"
 
 /* Model registry — defined in model_registry.c (Plan A-02). */
 extern const kick_model_vtable_t *g_models[MODEL_COUNT];

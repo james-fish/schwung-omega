@@ -1,18 +1,21 @@
 /* gen.c — GEN / HPN model: generative techno kick (KICK-11).
  *
- * ============================ PHASE-B SCOPE ================================
- * Phase B = the generative ENGINE only: an xorshift64 PRNG (seeded from SEED)
+ * ===================== PHASE B ENGINE + PHASE C WIRING ====================
+ * Phase B built the generative ENGINE: an xorshift64 PRNG (seeded from SEED)
  * driving a scale-quantized pitch sequence, gated by a Euclidean DENSITY
- * pattern, SELF-CLOCKING at a fixed internal step rate so it is audible and
- * auditionable offline and on-device NOW. Same SEED -> byte-identical render
- * (determinism, KICK-11).
+ * pattern. Same SEED -> byte-identical render (determinism, KICK-11).
  *
- * Transport-sync via host->get_beat_position() and the FULL Groove Page 2 UI
- * (SEED / SCALE / SEQ LEN / LPF FREQ / LPF POLE / DENSITY) are PHASE C
- * (GRV-02 / GRV-04). Do NOT pull that Phase-C work in here — Phase B ships the
- * primitives (PRNG + scale-quantize + Euclidean gate + self-clock) + a MINIMAL
- * Page-2 slot set (SEED / SCALE / DENSITY) so GEN is selectable and voice-able.
- * (B-RESEARCH §GEN recipe + Open Question 3.)
+ * Phase C (GRV-02 / GRV-04, DC-05) wires that engine to the transport and the
+ * Groove Page 2 controls:
+ *   - The step interval now comes from the groove tempo clock
+ *     (inst->groove.samples_per_16th), NOT the fixed GEN_STEP_FRAMES hardcode
+ *     (which survives ONLY as a last-resort fallback when the clock has not yet
+ *     initialised — the GEN analogue of the DC-02 hardcoded-120 bug).
+ *   - SEQ LEN is a runtime Euclidean pattern length (g->seq_len, 1..16).
+ *   - LPF FREQ + LPF POLE add a cascaded TPT low-pass (1 stage = 2-pole,
+ *     2 stages = 4-pole, DC-06) on the GEN body.
+ * All six controls (SEED / SCALE / SEQ LEN / LPF FREQ / LPF POLE / DENSITY)
+ * live on the conditional Groove Page 2 (ui.c), NOT Kick Page 2.
  * ==========================================================================
  *
  * The distinctive model: the ONLY kick whose pitch changes per hit — a rolling,
@@ -35,10 +38,13 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Self-clock: 16th notes at ~130 BPM = 44100 * 60 / (130*4) ~= 5088 frames.
- * Phase B free-runs at this fixed rate (transport sync is Phase C). */
+/* LAST-RESORT fallback interval only: 16th notes at ~130 BPM = 44100*60/(130*4)
+ * ~= 5088 frames. The LIVE step interval comes from the groove tempo clock
+ * (inst->groove.samples_per_16th, GRV-02/DC-05); GEN_STEP_FRAMES is used ONLY
+ * when that clock has not initialised (samples_per_16th < 1), mirroring the
+ * groove 120-BPM last-resort. It is NOT the live reload value. */
 #define GEN_STEP_FRAMES 5088
-#define GEN_SEQ_LEN     16          /* Euclidean pattern length (Phase B fixed) */
+#define GEN_SEQ_LEN_MAX 16          /* max Euclidean pattern length (SEQ LEN cap) */
 
 /* ---- GEN per-instance state (overlays bohm_instance.model_state) --------- */
 typedef struct gen_state {
@@ -61,14 +67,19 @@ typedef struct gen_state {
     uint64_t seed;            /* SEED (raw) — reseeds prng on change */
     prng_t   rng;             /* xorshift64 sequence source */
     int      scale;           /* SCALE index into g_scales */
-    float    density;         /* DENSITY [0,1] -> Euclidean pulses/GEN_SEQ_LEN */
+    float    density;         /* DENSITY [0,1] -> Euclidean pulses/seq_len */
     int      npulses;         /* precomputed pulse count from density */
-    int      step;            /* current step index [0,GEN_SEQ_LEN) */
+    int      seq_len;         /* SEQ LEN: runtime Euclidean pattern length 1..16 */
+    int      step;            /* current step index [0,seq_len) */
     int      step_ctr;        /* frames until next step advance */
     int      degree;          /* running scale degree (climbs for evolution) */
 
     /* Attack transient */
     tpt1_t  color_lp;    float color_g;
+
+    /* Sub-bass LPF cascade (GRV-04/DC-06): stage 1 always, stage 2 iff lpf_pole
+     * (0 = 2-pole/1 stage, 1 = 4-pole/2 stages). g set from LPF FREQ. */
+    tpt1_t  lpf1, lpf2;  float lpf_g;  int lpf_pole;
 
     /* Post-kick FX chain (KICK-14). */
     float      fx_type;
@@ -178,11 +189,30 @@ void gen_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         if (g->scale < 0) g->scale = 0;
         if (g->scale >= NUM_SCALES) g->scale = NUM_SCALES - 1;
     } else if (strcmp(key, PK_GEN_DENSITY) == 0) {
-        /* DENSITY -> Euclidean pulse count over GEN_SEQ_LEN (1..LEN). */
+        /* DENSITY -> Euclidean pulse count over seq_len (1..seq_len). */
+        int len = g->seq_len > 0 ? g->seq_len : GEN_SEQ_LEN_MAX;
         g->density  = v;
-        g->npulses  = 1 + (int)(v * (float)(GEN_SEQ_LEN - 1) + 0.5f);
+        g->npulses  = 1 + (int)(v * (float)(len - 1) + 0.5f);
         if (g->npulses < 1) g->npulses = 1;
-        if (g->npulses > GEN_SEQ_LEN) g->npulses = GEN_SEQ_LEN;
+        if (g->npulses > len) g->npulses = len;
+    } else if (strcmp(key, PK_GEN_SEQLEN) == 0) {
+        /* SEQ LEN -> runtime Euclidean pattern length 1..16. Recompute npulses
+         * from the standing density against the NEW length so DENSITY stays a
+         * proportion of the pattern (GRV-04). */
+        g->seq_len = 1 + (int)(v * 15.0f + 0.5f);
+        if (g->seq_len < 1) g->seq_len = 1;
+        if (g->seq_len > GEN_SEQ_LEN_MAX) g->seq_len = GEN_SEQ_LEN_MAX;
+        g->npulses = 1 + (int)(g->density * (float)(g->seq_len - 1) + 0.5f);
+        if (g->npulses < 1) g->npulses = 1;
+        if (g->npulses > g->seq_len) g->npulses = g->seq_len;
+    } else if (strcmp(key, PK_GEN_LPFFREQ) == 0) {
+        /* LPF FREQ -> cascade cutoff (sub-bass LPF, HPN spec). tanf at control
+         * rate only; render reads only g->lpf_g. */
+        float fc = 30.0f + v * (18000.0f - 30.0f);
+        g->lpf_g = tpt_g_from_hz(fc);
+    } else if (strcmp(key, PK_GEN_LPFPOLE) == 0) {
+        /* LPF POLE -> 0 = 2-pole (1 stage), 1 = 4-pole (2 stages), DC-06. */
+        g->lpf_pole = (v >= 0.5f);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
         g->fx_type = v;
         fx_config(&g->fx, (int)(g->fx_type * 4.0f + 0.5f), g->fx_amt);
@@ -201,17 +231,30 @@ static void gen_trigger(bohm_instance_t *inst, int note, int velocity) {
     (void)note; (void)velocity;
     gen_state *g = (gen_state *)inst->model_state;
 
+    /* Runtime defaults for Groove Page 2 controls that may never have been
+     * primed (dsp.c primes only the shared Page-1 keys). Keep GEN musical +
+     * non-silent out of the box (D-B02): a full 16-step pattern, a wide-open
+     * cutoff, 2-pole path. */
+    if (g->seq_len < 1) g->seq_len = GEN_SEQ_LEN_MAX;
+    if (g->lpf_g <= 0.0f) g->lpf_g = tpt_g_from_hz(12000.0f);
+    /* lpf_pole defaults to 0 (2-pole) via calloc; nothing to force here. */
+
     /* Deterministic restart of the seeded sequence. */
     prng_seed(&g->rng, g->seed ? g->seed : 0x9E3779B97F4A7C15ULL);
     g->degree   = 0;
     g->step     = 0;
-    g->step_ctr = GEN_STEP_FRAMES;   /* step 0 plays a full step before advancing */
+    /* Transport clock (GRV-02/DC-05): the step interval comes from the groove
+     * tempo clock, NOT the GEN_STEP_FRAMES hardcode (the GEN analogue of the
+     * DC-02 bug). GEN_STEP_FRAMES is only a last-resort fallback when the clock
+     * has not yet initialised (samples_per_16th < 1). */
+    int step_frames = inst->groove.samples_per_16th;
+    if (step_frames < 1) step_frames = GEN_STEP_FRAMES;
+    g->step_ctr = step_frames;   /* step 0 plays a full step before advancing */
     gen_step_pitch(g);   /* pitch for step 0 */
 
-    /* Default the density if GEN's Page-2 was never primed (dsp.c primes only
-     * the shared Page-1 keys). A moderate default keeps GEN audible out of the
-     * box (D-B02 non-silent default). */
-    if (g->npulses < 1) g->npulses = 1 + (int)(0.5f * (float)(GEN_SEQ_LEN - 1) + 0.5f);
+    /* Default the density if GEN's Page-2 was never primed. A moderate default
+     * keeps GEN audible out of the box (D-B02 non-silent default). */
+    if (g->npulses < 1) g->npulses = 1 + (int)(0.5f * (float)(g->seq_len - 1) + 0.5f);
 
     /* Fully zero the voice envelopes + phase FIRST so a trigger is byte-identical
      * regardless of any tail left by a prior render (determinism, KICK-11). */
@@ -225,6 +268,8 @@ static void gen_trigger(bohm_instance_t *inst, int note, int velocity) {
     gen_fire_step(g);
 
     g->color_lp.s = 0.0f;
+    g->lpf1.s     = 0.0f;   /* reset the LPF cascade so a trigger is byte-identical */
+    g->lpf2.s     = 0.0f;
     g->fx.last     = 0.0f;
     g->fx.hold_ctr = 0;
 }
@@ -233,17 +278,26 @@ static void gen_trigger(bohm_instance_t *inst, int note, int velocity) {
 static void gen_render(bohm_instance_t *inst, float *out_l, float *out_r, int frames) {
     gen_state *g = (gen_state *)inst->model_state;
 
+    /* Transport clock (GRV-02/DC-05): the live step interval is the groove
+     * tempo clock's 16th-note spacing — NOT the GEN_STEP_FRAMES hardcode (the
+     * GEN analogue of the DC-02 bug). GEN_STEP_FRAMES survives ONLY as the
+     * last-resort fallback when the clock has not initialised. Read once per
+     * block (control rate); dsp.c calls groove_update_tempo before render so
+     * this reflects the driven tempo. */
+    int step_frames = inst->groove.samples_per_16th;
+    if (step_frames < 1) step_frames = GEN_STEP_FRAMES;
+    int seq_len = g->seq_len > 0 ? g->seq_len : GEN_SEQ_LEN_MAX;
+
     for (int n = 0; n < frames; n++) {
         /* Self-clock: count down to the next step boundary; on reaching it,
          * advance the step, draw the next pitch, and fire it if the Euclidean
          * pattern hits. Control-rate work (powf in gen_step_pitch) runs only at
-         * step boundaries, not per sample. step_ctr is initialised to
-         * GEN_STEP_FRAMES in gen_trigger via the first decrement path below. */
+         * step boundaries, not per sample. */
         if (g->step_ctr <= 0) {
-            g->step = (g->step + 1) % GEN_SEQ_LEN;
+            g->step = (g->step + 1) % seq_len;
             gen_step_pitch(g);
-            if (euclid_hit(g->step, g->npulses, GEN_SEQ_LEN)) gen_fire_step(g);
-            g->step_ctr = GEN_STEP_FRAMES;
+            if (euclid_hit(g->step, g->npulses, seq_len)) gen_fire_step(g);
+            g->step_ctr = step_frames;   /* transport-derived reload (GRV-02) */
         }
         g->step_ctr--;
 
@@ -259,6 +313,12 @@ static void gen_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float amp = env_tick(&g->amp_env) * (0.5f + 0.5f * g->sustain);
         float s = body * amp * 0.85f;
         s = tpt1_lp(&g->color_lp, s, g->color_g);   /* COLOR output LP */
+
+        /* Sub-bass LPF cascade (GRV-04/DC-06): stage 1 always, stage 2 iff
+         * lpf_pole. 1 stage = 2-pole path, 2 stages = 4-pole. No new
+         * transcendental — g->lpf_g is precomputed at control rate. */
+        s = tpt1_lp(&g->lpf1, s, g->lpf_g);
+        if (g->lpf_pole) s = tpt1_lp(&g->lpf2, s, g->lpf_g);
 
         int fx_mode = (int)(g->fx_type * 4.0f + 0.5f);
         s = fx_process(fx_mode, s, g->fx_amt, &g->fx);
