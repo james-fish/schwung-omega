@@ -16,3 +16,15 @@
 void omega_primitives_selfcheck(void) {
     assert(g_sine_table[2048] == g_sine_table[0]);
 }
+
+/* --- FX chain (KICK-14): RED stub — passes through dry (audible/statefulness
+ *     tests will fail until the GREEN implementation lands). ------------- */
+void fx_config(fx_state_t *st, int mode, float amt) {
+    (void)mode; (void)amt;
+    st->last = 0.0f; st->hold_ctr = 0; st->crush_levels = 0.0f;
+}
+
+float fx_process(int mode, float x, float amt, fx_state_t *st) {
+    (void)mode; (void)amt; (void)st;
+    return x;
+}

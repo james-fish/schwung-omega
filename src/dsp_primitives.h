@@ -70,6 +70,39 @@ static inline int16_t omega_to_i16(float x) {
     return (int16_t)lrintf(x * 32767.0f);
 }
 
+/* --- Post-kick FX chain (KICK-14) -------------------------------------- */
+/* Five bounded modes selected by FX TYPE (0..4), scaled by FX AMT [0,1]:
+ *   0 Diode, 1 Clip, 2 SAT, 3 Fold, 4 Crush.
+ * All outputs are bounded to [-1,1] by construction (Pitfall 5 — engines
+ * self-limit; the int16 clamp is a net, not the plan). RT-safety: the
+ * fx_process render path contains NO powf/sinf/expf/tanf — every
+ * transcendental is precomputed at CONTROL rate in fx_config (STATE.md
+ * bug #2: the unbounded reference fast_tanh x/(1-x) is FORBIDDEN). */
+enum { FX_DIODE = 0, FX_CLIP = 1, FX_SAT = 2, FX_FOLD = 3, FX_CRUSH = 4 };
+
+/* Crush is the only stateful mode: it holds the last quantized sample and a
+ * sample-and-hold counter, plus the PRECOMPUTED bit-reduction level count
+ * (crush_levels), so fx_process never calls powf. */
+typedef struct { float last; int hold_ctr; float crush_levels; } fx_state_t;
+
+/* fx_config — CONTROL-RATE configurator. Call from each model's set_param /
+ * FX-param path (NOT per sample). Precomputes any per-amt transcendental into
+ * fx_state_t so fx_process stays transcendental-free. */
+void fx_config(fx_state_t *st, int mode, float amt);
+
+/* fx_process — per-sample render stage. Reads only PRECOMPUTED state
+ * (st->crush_levels/last/hold_ctr). NO powf/sinf/expf/tanf here. */
+float fx_process(int mode, float x, float amt, fx_state_t *st);
+
+/* crush — shared bit-reducer reused by HRD/DIG and the FX Crush mode. The
+ * caller must precompute `levels` at control rate (map bits->levels in
+ * set_param), keeping powf out of the render loop. Bounded: rounding a
+ * bounded input stays bounded. */
+static inline float crush(float x, float levels) {
+    float l = (levels > 0.0f) ? levels : 1.0f;
+    return roundf(x * l) / l;
+}
+
 /* Runtime KICK-15 guard-sample self-check (defined in dsp_primitives.c). */
 void omega_primitives_selfcheck(void);
 

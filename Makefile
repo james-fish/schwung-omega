@@ -48,6 +48,10 @@ TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.
 # a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.
 FM2_TEST_SRCS = tests/test_fm2.c tests/malloc_trap.c \
                 src/models/fm2.c src/dsp_primitives.c
+# Post-kick FX chain unit test (B-02 Task 1, KICK-14): drives fx_config/
+# fx_process directly — bounded-at-max, transparent-at-zero, audible-at-max,
+# Crush statefulness, safe uninitialized crush_levels.
+FX_TEST_SRCS = tests/test_fx.c tests/malloc_trap.c src/dsp_primitives.c
 # Model-switch hazard harness (B-01 Task 3, KICK-13): drives the real lifecycle
 # and asserts A->B->A + trigger stays finite/bounded/non-stale. Uses the
 # src/models/*.c wildcard so each new model TU is picked up automatically as
@@ -56,7 +60,7 @@ SWITCH_TEST_SRCS = tests/test_switch.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/ui.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx clean deploy
 
 # dsp.so: cross-compiled module. src/*.c wildcard already covers src/ui.c (A-03).
 dsp.so:
@@ -65,7 +69,7 @@ dsp.so:
 
 # test: native gate. Runs the FM2 unit test, the switch harness, then the
 # full offline lifecycle harness.
-test: test-fm2 test-switch
+test: test-fm2 test-fx test-switch
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -75,6 +79,12 @@ test-fm2:
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(FM2_TEST_SRCS) -o build/test_fm2 $(LDLIBS)
 	./build/test_fm2
+
+# test-fx: post-kick FX chain unit test (KICK-14, < 5 s).
+test-fx:
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(FX_TEST_SRCS) -o build/test_fx $(LDLIBS)
+	./build/test_fx
 
 # test-switch: model-switch re-init hazard harness (KICK-13). Forward-
 # compatible — skips NULL registry slots.
