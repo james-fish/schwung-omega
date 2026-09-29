@@ -1,21 +1,24 @@
-/* ui.c — The real minimal ui_hierarchy (D-08/D-09).
+/* ui.c — The real levels-based ui_hierarchy (D-08/D-09).
  *
- * Owns omega_build_ui: assembles the Kick Page 1 (8 encoder slots) + the
- * active model's Kick Page 2 (3 model slots + FX TYPE / FX AMT placeholders)
- * into the caller's buffer with ZERO allocation (D-09).
+ * Owns omega_build_ui: emits the host's real ui_hierarchy schema (Context/01
+ * lines 109-162) into the caller's buffer with ZERO allocation (D-09).
  *
  * Layout (pre-serialized static fragments, no JSON library):
- *   {"pages":[
- *     {"name":"Kick 1","slots":[ <UI_PAGE1: 8 {key,label}> ]},
- *     {"name":"Kick 2","slots":[ <model p2_slot_desc contents> ,
- *                                 {FX TYPE},{FX AMT} ]}
- *   ]}
+ *   {
+ *     "pad_layout":"drums",
+ *     "child_index_param":"current_pad",
+ *     "levels":{
+ *       "root":  { name "Omega", model+master_vol knobs, kick1/kick2 sub-pages },
+ *       "kick1": { name "Kick 1", the 8 Page-1 params },
+ *       "kick2": { name "Kick 2", the 5 FM2 Page-2 params }
+ *     }
+ *   }
  *
- * Page 1 is a single fixed .rodata string. Page 2 is dynamic: the model's
- * p2_slot_desc emits a JSON ARRAY of its model-specific slots; we splice the
- * array's INTERIOR (dropping the outer '[' ']') between our own wrapper and the
- * FX TYPE/AMT placeholder slots, so Page 2 reflects the active model (D-08,
- * A-CONTEXT integration point: ui.c reads the active model ID).
+ * The whole hierarchy is a set of fixed .rodata strings assembled in order.
+ * FM2 is the only Phase A model, so its Page-2 params are inlined here directly
+ * (simpler than splicing fm2.c's p2_slot_desc, and the schema shape changed).
+ * fm2.c keeps its fm2_p2_slot_desc / g_fm2_vtable.p2_slot_desc field in place;
+ * ui.c simply stops calling it. Do NOT touch fm2.c.
  *
  * Every write is bounded to the remaining buf_len (A-RESEARCH Pitfall 3): a
  * running offset + a bounded-append helper that never writes past buf_len and
@@ -30,31 +33,46 @@
 
 #include <string.h>
 
-/* Kick Page 1: 8 encoder slots in Bohm order, each keyed with the exact PK_*
- * string so the JSON keys match set_param/get_param dispatch (D-08). Kept well
- * under 2 KB (A-RESEARCH Open Q1: conservative sizing). */
-static const char UI_PAGE1[] =
-    "{\"key\":\"" PK_PITCH   "\",\"label\":\"PITCH\"},"
-    "{\"key\":\"" PK_LENGTH  "\",\"label\":\"LENGTH\"},"
-    "{\"key\":\"" PK_SUSTAIN "\",\"label\":\"SUSTAIN\"},"
-    "{\"key\":\"" PK_CURVE   "\",\"label\":\"CURVE\"},"
-    "{\"key\":\"" PK_ATTACK  "\",\"label\":\"ATTACK\"},"
-    "{\"key\":\"" PK_TRS_DEC "\",\"label\":\"TRS DEC\"},"
-    "{\"key\":\"" PK_TRS_TNE "\",\"label\":\"TRS TNE\"},"
-    "{\"key\":\"" PK_COLOR   "\",\"label\":\"COLOR\"}";
+/* Top-level wrapper: pad_layout + child_index_param + open the levels map. */
+static const char UI_OPEN[] =
+    "{\"pad_layout\":\"drums\",\"child_index_param\":\"current_pad\",\"levels\":{";
 
-/* FX TYPE / FX AMT placeholder slots (Claude's Discretion: keys present, the 5
- * real FX modes are KICK-14 / Phase B). Emitted after the model's Page-2 slots. */
-static const char UI_FX_SLOTS[] =
-    ",{\"key\":\"" PK_FX_TYPE "\",\"label\":\"FX TYPE\"},"
-    "{\"key\":\"" PK_FX_AMT  "\",\"label\":\"FX AMT\"}";
+/* root level: Model enum + Volume float, then the two kick sub-page links. */
+static const char UI_ROOT[] =
+    "\"root\":{\"name\":\"Omega\",\"params\":["
+      "{\"key\":\"" PK_MODEL "\",\"name\":\"Model\",\"type\":\"enum\",\"options\":[\"FM2\"]},"
+      "{\"key\":\"" PK_MASTER_VOL "\",\"name\":\"Volume\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"level\":\"kick1\",\"label\":\"Kick 1\"},"
+      "{\"level\":\"kick2\",\"label\":\"Kick 2\"}"
+    "],\"knobs\":[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]},";
 
-/* Structural wrappers. */
-static const char UI_OPEN[]        = "{\"pages\":[";
-static const char UI_PAGE1_OPEN[]  = "{\"name\":\"Kick 1\",\"slots\":[";
-static const char UI_PAGE_MID[]    = "]},";                 /* close P1 slots+page, sep */
-static const char UI_PAGE2_OPEN[]  = "{\"name\":\"Kick 2\",\"slots\":[";
-static const char UI_CLOSE[]       = "]}]}";                /* close P2 slots+page+pages */
+/* kick1 level: the 8 Page-1 params (Bohm order), each a 0..1 float. */
+static const char UI_KICK1[] =
+    "\"kick1\":{\"name\":\"Kick 1\",\"params\":["
+      "{\"key\":\"" PK_PITCH   "\",\"name\":\"PITCH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_LENGTH  "\",\"name\":\"LENGTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_SUSTAIN "\",\"name\":\"SUSTAIN\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_CURVE   "\",\"name\":\"CURVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_ATTACK  "\",\"name\":\"ATTACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_TRS_DEC "\",\"name\":\"TRS DEC\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_TRS_TNE "\",\"name\":\"TRS TNE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_COLOR   "\",\"name\":\"COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
+    "],\"knobs\":[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_SUSTAIN "\",\"" PK_CURVE
+      "\",\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR "\"]},";
+
+/* kick2 level: the 5 FM2 Page-2 params (inlined — FM2 is the only Phase A model). */
+static const char UI_KICK2[] =
+    "\"kick2\":{\"name\":\"Kick 2\",\"params\":["
+      "{\"key\":\"" PK_FM_RATIO "\",\"name\":\"FM RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_FM_INDEX "\",\"name\":\"FM INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"OP2 WAVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_FX_TYPE  "\",\"name\":\"FX TYPE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_FX_AMT   "\",\"name\":\"FX AMT\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
+    "],\"knobs\":[\"" PK_FM_RATIO "\",\"" PK_FM_INDEX "\",\"" PK_OP2_WAVE
+      "\",\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\"]}";
+
+/* Close the levels map + the top-level object. */
+static const char UI_CLOSE[] = "}}";
 
 /* Bounded append: copy up to `remaining` bytes of `src` (len bytes) into
  * buf+off, never writing past buf_len-1 (reserving a byte for the terminator).
@@ -71,31 +89,16 @@ static void ui_append(char *buf, int buf_len, int *off, const char *src, int len
 /* Assemble the full hierarchy into `buf`, bounded to buf_len, null-terminated.
  * Returns bytes written excluding the terminator (get_param contract). */
 int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
+    (void)inst;   /* FM2-only Phase A: the levels are static */
     if (!buf || buf_len <= 0) return 0;
 
     int off = 0;
 
-    /* Opening wrapper + Page 1 (static). */
-    ui_append(buf, buf_len, &off, UI_OPEN,       (int)(sizeof(UI_OPEN)       - 1));
-    ui_append(buf, buf_len, &off, UI_PAGE1_OPEN, (int)(sizeof(UI_PAGE1_OPEN) - 1));
-    ui_append(buf, buf_len, &off, UI_PAGE1,      (int)(sizeof(UI_PAGE1)      - 1));
-    ui_append(buf, buf_len, &off, UI_PAGE_MID,   (int)(sizeof(UI_PAGE_MID)   - 1));
-
-    /* Page 2: active model's slots, spliced from p2_slot_desc's array interior. */
-    ui_append(buf, buf_len, &off, UI_PAGE2_OPEN, (int)(sizeof(UI_PAGE2_OPEN) - 1));
-
-    char tmp[256];
-    int p2 = g_models[inst->model]->p2_slot_desc(inst, tmp, (int)sizeof tmp);
-    /* p2_slot_desc emits a JSON array "[ ... ]"; splice the interior (indices
-     * 1..p2-2) so it drops into our own "slots":[ ... ] wrapper. Guard the
-     * bounds in case a model returns an empty/short fragment. */
-    if (p2 >= 2 && tmp[0] == '[' && tmp[p2 - 1] == ']') {
-        ui_append(buf, buf_len, &off, tmp + 1, p2 - 2);
-    }
-
-    /* FX TYPE / FX AMT placeholders, then the closing wrapper. */
-    ui_append(buf, buf_len, &off, UI_FX_SLOTS, (int)(sizeof(UI_FX_SLOTS) - 1));
-    ui_append(buf, buf_len, &off, UI_CLOSE,    (int)(sizeof(UI_CLOSE)    - 1));
+    ui_append(buf, buf_len, &off, UI_OPEN,  (int)(sizeof(UI_OPEN)  - 1));
+    ui_append(buf, buf_len, &off, UI_ROOT,  (int)(sizeof(UI_ROOT)  - 1));
+    ui_append(buf, buf_len, &off, UI_KICK1, (int)(sizeof(UI_KICK1) - 1));
+    ui_append(buf, buf_len, &off, UI_KICK2, (int)(sizeof(UI_KICK2) - 1));
+    ui_append(buf, buf_len, &off, UI_CLOSE, (int)(sizeof(UI_CLOSE) - 1));
 
     /* Always null-terminate within bounds (Pitfall 3). off <= buf_len-1 by
      * construction, so buf[off] is a valid slot. */

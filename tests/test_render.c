@@ -114,13 +114,15 @@ int main(void) {
     assert(n > 0 && n < (int)sizeof(uibuf));
     assert(uibuf[n] == '\0');   /* return value excludes terminator; buf[n] is '\0' */
 
-    /* Page 1 key + all 3 FM2 Page-2 keys present (dynamic Page 2 assembly). */
+    /* Levels-based schema: the levels map plus every emitted PK_* key so
+     * set_param/get_param dispatch still matches (kick1 + FM2 kick2 keys). */
+    assert(strstr(uibuf, "levels"));
     assert(strstr(uibuf, "pitch"));
     assert(strstr(uibuf, "fm_ratio"));
     assert(strstr(uibuf, "fm_index"));
     assert(strstr(uibuf, "op2_wave"));
-    /* FX placeholders present too (D-08). */
-    assert(strstr(uibuf, "fx_type") && strstr(uibuf, "fx_amt"));
+    assert(strstr(uibuf, "fx_type"));
+    assert(strstr(uibuf, "fx_amt"));
 
     /* Unknown key returns -1 (do NOT return 0 or write garbage). */
     char tmp[8];
