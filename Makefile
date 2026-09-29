@@ -59,8 +59,20 @@ FX_TEST_SRCS = tests/test_fx.c tests/malloc_trap.c src/dsp_primitives.c
 SWITCH_TEST_SRCS = tests/test_switch.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/ui.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
+# Reusable per-model voicing battery (B-03 Task 2, D-B02): drives the real
+# lifecycle and asserts non-silent default + each param measurably changes the
+# output + bounded-at-extremes. Uses the src/models/*.c wildcard so later model
+# TUs are picked up automatically as they register.
+PARAMS_TEST_SRCS = tests/test_params.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/ui.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
+# Pairwise distinctness metric across registered models (B-03 Task 3, D-B02):
+# renders each registered model's default and asserts pairwise feature deltas.
+DISTINCT_TEST_SRCS = tests/test_distinct.c tests/mock_host.c tests/wav.c \
+                     tests/malloc_trap.c src/dsp.c src/ui.c \
+                     $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -83,9 +95,10 @@ dsp.so: | src/wavetables.h
 	@mkdir -p build
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
 
-# test: native gate. Runs the FM2 unit test, the switch harness, then the
-# full offline lifecycle harness.
-test: test-fm2 test-fx test-switch | src/wavetables.h
+# test: native gate. Runs the FM2 unit test, the FX unit test, the switch
+# harness, the voicing battery, the distinctness metric, then the full offline
+# lifecycle harness.
+test: test-fm2 test-fx test-switch test-params test-distinct | src/wavetables.h
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -108,6 +121,20 @@ test-switch: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(SWITCH_TEST_SRCS) -o build/test_switch $(LDLIBS)
 	./build/test_switch
+
+# test-params: reusable per-model voicing battery (D-B02). Forward-compatible —
+# each model plan adds its own assert_param_responsive call.
+test-params: | src/wavetables.h
+	@mkdir -p build tests/output
+	$(CC) $(TEST_FLAGS) $(PARAMS_TEST_SRCS) -o build/test_params $(LDLIBS)
+	./build/test_params
+
+# test-distinct: pairwise distinctness metric across registered models (D-B02).
+# Empty-trivial in Wave 2 (only FM2 registered); a real gate as models land.
+test-distinct: | src/wavetables.h
+	@mkdir -p build tests/output
+	$(CC) $(TEST_FLAGS) $(DISTINCT_TEST_SRCS) -o build/test_distinct $(LDLIBS)
+	./build/test_distinct
 
 clean:
 	rm -rf build tests/output

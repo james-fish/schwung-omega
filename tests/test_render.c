@@ -138,6 +138,34 @@ int main(void) {
     assert(tn >= 0 && tn < (int)sizeof(probe.b));  /* bytes written within bounds */
     assert(probe.b[tn] == '\0');               /* still null-terminated */
 
+    /* ---- Per-model default render (Wave-0 voicing requirement) ------------ */
+    /* Loop every registry slot; skip NULL/unregistered vtable entries so this
+     * is forward-compatible as B-04..B-08 land models. For each REGISTERED
+     * model: select it (PK_MODEL takes the integer index), prime defaults
+     * (0.5), trigger, render, assert non-silent + finite + <=1 (int16 range),
+     * and write tests/output/<name>_kick.wav. */
+    static const char *k_p1[] = {
+        PK_PITCH, PK_LENGTH, PK_SUSTAIN, PK_CURVE,
+        PK_ATTACK, PK_TRS_DEC, PK_TRS_TNE, PK_COLOR,
+    };
+    for (int m = 0; m < MODEL_COUNT; m++) {
+        if (!g_models[m]) continue;               /* skip unregistered slots */
+        char idx[16];
+        snprintf(idx, sizeof(idx), "%d", m);
+        api->set_param(inst, PK_MODEL, idx);      /* memset + re-prime (KICK-13) */
+        for (size_t i = 0; i < sizeof(k_p1) / sizeof(k_p1[0]); i++)
+            api->set_param(inst, k_p1[i], "0.5");
+        double em = render_energy(api, inst, bufA);   /* asserts int16 range */
+        assert(em > 1000.0);                          /* non-silent default */
+        char path[128];
+        snprintf(path, sizeof(path), "tests/output/%s_kick.wav", g_models[m]->name);
+        FILE *w = wav_open(path, 44100, 2);
+        assert(w != NULL);
+        wav_write(w, bufA, NSAMP);
+        wav_close(w);
+    }
+    api->set_param(inst, PK_MODEL, "0");   /* restore FM2 */
+
     api->destroy_instance(inst);
 
     printf("ALL TESTS PASSED\n");
