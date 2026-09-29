@@ -16,16 +16,17 @@
 
 extern const kick_model_vtable_t g_fm2_vtable;   /* defined in fm2.c */
 extern const kick_model_vtable_t g_wtr_vtable;   /* defined in wtr.c (B-04) */
+extern const kick_model_vtable_t g_trs_vtable;   /* defined in trs.c (B-04) */
 
 const kick_model_vtable_t *g_models[MODEL_COUNT] = {
     [MODEL_FM2] = &g_fm2_vtable,   /* implemented (Phase A) */
     [MODEL_WTR] = &g_wtr_vtable,   /* implemented (B-04) */
+    [MODEL_TRS] = &g_trs_vtable,   /* implemented (B-04) */
     /* All other slots are NULL until their model plan lands:
      *   [MODEL_FM4] = &g_fm4_vtable,   (B-06)
      *   [MODEL_PHY] = &g_phy_vtable,   (B-07)
      *   [MODEL_HRD] = &g_hrd_vtable,   (B-06)
      *   [MODEL_DIG] = &g_dig_vtable,   (B-05)
-     *   [MODEL_TRS] = &g_trs_vtable,   (B-04)
      *   [MODEL_ANA] = &g_ana_vtable,   (B-05)
      *   [MODEL_USR] = &g_usr_vtable,   (B-08)
      *   [MODEL_GEN] = &g_gen_vtable,   (B-08)

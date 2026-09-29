@@ -226,6 +226,7 @@ int main(void) {
 
     /* Wave 3 (B-04): WTR (KICK-04) + TRS (KICK-08). */
     assert_param_responsive(api, inst, MODEL_WTR, k_wtr_p2_keys, N_WTR_P2);
+    assert_param_responsive(api, inst, MODEL_TRS, k_trs_p2_keys, N_TRS_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
