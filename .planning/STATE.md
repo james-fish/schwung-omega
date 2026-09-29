@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-03-fm2-revoice-and-voicing-harness-PLAN.md
-last_updated: "2026-09-29T12:14:58.675Z"
+stopped_at: Completed B-04-wtr-trs-wavetable-transient-PLAN.md
+last_updated: "2026-09-29T12:28:00.013Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -32,12 +32,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 3 of 9 complete (B-01, B-02, B-03 done); next is B-04 (WTR/TRS wavetable + transient)
+**Plan:** 4 of 9 complete (B-01, B-02, B-03, B-04 done); next is B-05 (ANA/DIG analog/digital)
 **Status:** Executing Phase B
-**Progress:** Phase B 3/9 plans complete
+**Progress:** Phase B 4/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 3/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 4/9 plans)
 ```
 
 ---
@@ -49,7 +49,7 @@ progress:
 | Metric | Value |
 |--------|-------|
 | Phases complete | 0/7 |
-| Requirements delivered | 11/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/12/15) |
+| Requirements delivered | 13/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/04/08/12/15) |
 | On-device CPU (full chain) | Not yet measured (Phase D target: 10-15%) |
 
 | Plan | Duration | Tasks | Files |
@@ -62,6 +62,7 @@ progress:
 | Phase B-remaining-9-kick-models P01 | 4min | 3 tasks | 5 files |
 | Phase B-remaining-9-kick-models P02 | 8min | 3 tasks | 6 files |
 | Phase B-remaining-9-kick-models P03 | 6min | 3 tasks | 5 files |
+| Phase B-remaining-9-kick-models P04 | 9min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -124,12 +125,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan B-04 (WTR/TRS wavetable + transient models) — reuse the FM2 reference voicing + the B-03 voicing battery (add WTR/TRS assert_param_responsive calls with their P2 keys); register the vtables so test_distinct becomes a live 2/3-model gate. (A-04 on-device validation still pending hardware — see Todos.)
+**Next action:** Execute Plan B-05 (ANA/DIG analog + digital models) — same recipe pattern over the B-02 primitives + FM2 reference voicing (wt_read_bl body + sub-osc for ANA's 808 boom; digital/bit-crushed body for DIG via the shared crush()); register their vtables (replace the [MODEL_ANA]/[MODEL_DIG] NULL slots) so test_distinct grows to a 5-model gate; add their assert_param_responsive calls. Reuse the B-04 lesson: transient/character controls should be LP<->raw blends (not cascaded LPs) and any lead-transient should genuinely lead the attack. (A-04 on-device validation still pending hardware — see Todos.)
 
-**Stopped at:** Completed B-03-fm2-revoice-and-voicing-harness-PLAN.md
+**Stopped at:** Completed B-04-wtr-trs-wavetable-transient-PLAN.md
 
 **Recent activity:**
 
+- 2026-09-29: B-04 complete — WTR (KICK-04, clean wavetable body + dedicated separable transient) + TRS (KICK-08, advanced click<->noise transient + WT-color body morph + own 909-biased pitch curve) as thin recipes over B-02 primitives + FM2 voicing; both registered by replacing their NULL registry slots; transient brightness reworked to LP<->raw blends (cascaded LPs made the click inaudible/unresponsive) with the bright transient leading the attack; TEST_SRCS switched to the src/models/*.c wildcard; `make test` green — 3 registered / 3 distinct pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-04 + KICK-08 delivered (commits 415e092, 3e925a7, 0e84606)
 - 2026-09-29: B-03 complete — re-voiced FM2 to the reference bar (D-B03): exp PITCH map [35,120] Hz (~50 Hz default), curve-coupled sweep clamp(f0*(2+curve*4),<=480 Hz), exp LENGTH [50,1500] ms, narrowed FM INDEX 0-8, tuned CURVE 15ms/300ms; wired KICK-14 FX into fm2_render (fx_config control-rate, fx_process render, powf/expf/tanf-free); reusable voicing battery (test_params.c) + pairwise distinctness (test_distinct.c) — both loop MODEL_COUNT + skip NULL, reusable by B-04..B-08; `make test` green (commits 440c6a5, dc37820, cf2dacf)
 - 2026-09-29: Quick task 260929-cjj — fixed Phase A on-device load crash: `host_api_v1_t` was missing 3 fields (`mapped_memory`/`audio_out_offset`/`audio_in_offset`), shifting `g_host->log` onto a data pointer → segfault when the D-10 spike fired on first `get_param`. Also corrected `module.json` (nested `capabilities`) and `ui_hierarchy` (real `levels` schema) to match Context/01 verbatim. `make test` green (commits ce99134, f10d3b5, 5f799a7)
 - 2026-09-29: A-03 complete — real `ui_hierarchy` (ui.c, D-08/D-09): static Page 1 (8 keyed slots) + dynamic FM2 Page 2 spliced from `p2_slot_desc` + FX TYPE/AMT; dsp.c wired to ui.c (fallback removed), D-10 one-shot locale-independent buf_len log; CI cross-build flipped to blocking; harness proves the get_param contract; `make test` green (commits 98e62a0, 3ac9e54, e8802b7)
