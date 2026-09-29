@@ -72,8 +72,13 @@ void groove_init(groove_state_t *g) {
     g->samples_per_16th = (int)((60.0f / 120.0f) * OMEGA_SR / 4.0f + 0.5f);
     if (g->samples_per_16th < 1) g->samples_per_16th = 1;
 
-    /* Page-1 musical middles so a bare create -> trigger is audible. */
-    g->vol = 0.7f;
+    /* Page-1 defaults. VOL starts at 0 so the groove rumble is SILENT on a bare
+     * create and does not color the per-model kick voicing (the groove is an
+     * opt-in performance voice the user opens via grv_vol; the FX voicing
+     * battery renders each kick model in isolation). tap_level/decay/COLOR are
+     * seeded to musical middles so the moment grv_vol is raised the rumble is
+     * immediately shaped and audible (test_groove's prime_groove opens it). */
+    g->vol = 0.0f;
     for (int t = 0; t < 4; t++) g->tap_level[t] = 0.6f;
     groove_set_length(g, 0.5f);
     g->color_g      = tpt_g_from_hz(8000.0f);
