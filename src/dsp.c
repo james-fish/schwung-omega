@@ -4,7 +4,8 @@
  *   - exports the single symbol move_plugin_init_v2 (FNDTN-01),
  *   - creates/destroys the instance with exactly one calloc/free (FNDTN-03),
  *   - routes on_midi note-ons to the active model's trigger,
- *   - routes set_param kick keys to fm2_set_param; model/master handled here,
+ *   - routes set_param kick keys through the active model's vtable set_param
+ *     (NULL-guarded); model/master handled here, memset re-init on switch,
  *   - serves get_param("ui_hierarchy") (A-03 owns the real hierarchy),
  *   - renders through the vtable with FPCR flush-to-zero (FNDTN-05) and the
  *     clamped int16 boundary (FNDTN-07).
@@ -81,9 +82,12 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
     inst->model         = MODEL_FM2;
     inst->main_volume   = 1.0f;
     inst->logged_buflen = false;
-    /* Prime all kick params to mid so a bare create -> trigger is audible. */
-    for (size_t i = 0; i < sizeof(k_kick_keys) / sizeof(k_kick_keys[0]); i++)
-        fm2_set_param(inst, k_kick_keys[i], "0.5");
+    /* Prime all kick params to mid so a bare create -> trigger is audible.
+     * Route through the active model's vtable (NULL-guarded), not a hardcoded
+     * fm2_set_param, so every model receives its primed defaults. */
+    if (g_models[inst->model] && g_models[inst->model]->set_param)
+        for (size_t i = 0; i < sizeof(k_kick_keys) / sizeof(k_kick_keys[0]); i++)
+            g_models[inst->model]->set_param(inst, k_kick_keys[i], "0.5");
     return inst;
 }
 
@@ -97,7 +101,9 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
     /* Trigger only on note-on with velocity > 0 (Pitfall 5): vel-0 note-ons and
      * note-offs and other status bytes are ignored. */
     if (len >= 3 && (msg[0] & 0xF0) == 0x90 && msg[2] > 0) {
-        g_models[inst->model]->trigger(inst, msg[1], msg[2]);
+        /* NULL-guard: an unimplemented (NULL) model slot ignores triggers. */
+        if (g_models[inst->model] && g_models[inst->model]->trigger)
+            g_models[inst->model]->trigger(inst, msg[1], msg[2]);
     }
 }
 
@@ -107,15 +113,30 @@ static void omega_set_param(void *instance, const char *key, const char *val) {
         int m = (int)dsp_parse_f(val);
         if (m < 0) m = 0;
         if (m >= MODEL_COUNT) m = MODEL_COUNT - 1;
-        inst->model = (model_id_t)m;
+        /* Only act on an actual change. Clean re-init on switch (Pitfall 1 /
+         * KICK-13): the incoming model reinterprets the SAME model_state[4096]
+         * bytes the previous model left. Zero them, then re-prime defaults
+         * through the incoming model so it starts from a known-good state.
+         * NULL-guard the re-prime so a switch to an unimplemented (NULL) slot
+         * clears state and renders silence — never a NULL deref. */
+        if ((model_id_t)m != inst->model) {
+            inst->model = (model_id_t)m;
+            memset(inst->model_state, 0, sizeof inst->model_state);
+            if (g_models[inst->model] && g_models[inst->model]->set_param)
+                for (size_t i = 0; i < sizeof(k_kick_keys) / sizeof(k_kick_keys[0]); i++)
+                    g_models[inst->model]->set_param(inst, k_kick_keys[i], "0.5");
+        }
     } else if (strcmp(key, PK_MASTER_VOL) == 0) {
         float v = dsp_parse_f(val);
         if (v < 0.0f) v = 0.0f;
         if (v > 1.0f) v = 1.0f;
         inst->main_volume = v;
     } else {
-        /* All kick keys (Page 1 + Page 2) route to the FM2 param dispatch. */
-        fm2_set_param(inst, key, val);
+        /* All kick keys (Page 1 + Page 2) dispatch through the active model's
+         * vtable (Pitfall 2 fix). NULL-guarded so an unimplemented slot is a
+         * no-op, never a NULL deref. */
+        if (g_models[inst->model] && g_models[inst->model]->set_param)
+            g_models[inst->model]->set_param(inst, key, val);
     }
 }
 
@@ -147,7 +168,14 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
     if (frames > OMEGA_MAX_BLOCK) frames = OMEGA_MAX_BLOCK;   /* margin guard */
 
     float l[OMEGA_MAX_BLOCK], r[OMEGA_MAX_BLOCK];
-    g_models[inst->model]->render(inst, l, r, frames);        /* dispatch (KICK-01) */
+    /* NULL-guard: an unimplemented (NULL) model slot renders silence rather
+     * than dereferencing a NULL vtable (intermediate-compilation contract). */
+    if (g_models[inst->model] && g_models[inst->model]->render) {
+        g_models[inst->model]->render(inst, l, r, frames);    /* dispatch (KICK-01) */
+    } else {
+        memset(l, 0, sizeof(float) * (size_t)frames);
+        memset(r, 0, sizeof(float) * (size_t)frames);
+    }
 
     for (int n = 0; n < frames; n++) {
         out_lr[n * 2]     = omega_to_i16(l[n] * inst->main_volume);   /* FNDTN-07 */
