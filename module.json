@@ -1,8 +1,16 @@
 {
   "id": "omega",
   "name": "Omega",
-  "component_type": "sound_generator",
-  "pad_layout": "drums",
+  "abbrev": "OMGA",
+  "version": "0.1.0",
+  "author": "James Fish",
+  "description": "Ohm Force Bohm-inspired FM2 techno kick for Schwung (Phase A)",
   "api_version": 2,
-  "version": "0.1.0"
+  "capabilities": {
+    "chainable": true,
+    "component_type": "sound_generator",
+    "audio_out": true,
+    "midi_in": true,
+    "pad_layout": "drums"
+  }
 }
