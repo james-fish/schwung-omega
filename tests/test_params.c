@@ -97,6 +97,20 @@ static const char *k_fm4_p2_keys[] = {
 };
 #define N_FM4_P2 (int)(sizeof(k_fm4_p2_keys) / sizeof(k_fm4_p2_keys[0]))
 
+/* USR Kick Page 2 keys (4 + FX TYPE/AMT) — B-08. */
+static const char *k_usr_p2_keys[] = {
+    PK_USR_SAMPLE, PK_USR_WTMORPH, PK_USR_LAYERVOL, PK_USR_PITCHENV,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_USR_P2 (int)(sizeof(k_usr_p2_keys) / sizeof(k_usr_p2_keys[0]))
+
+/* GEN Kick Page 2 keys (3 + FX TYPE/AMT) — B-08 (Phase-B minimal set). */
+static const char *k_gen_p2_keys[] = {
+    PK_GEN_SEED, PK_GEN_SCALE, PK_GEN_DENSITY,
+    PK_FX_TYPE, PK_FX_AMT,
+};
+#define N_GEN_P2 (int)(sizeof(k_gen_p2_keys) / sizeof(k_gen_p2_keys[0]))
+
 /* Trigger note-on then render NBLOCKS into buf (interleaved int16). Asserts
  * every int16 sample is in range (finite + bounded, since omega_to_i16 clamps
  * and the engine self-limits). Returns the RMS-envelope: sqrt(mean(x^2)). */
@@ -309,6 +323,10 @@ int main(void) {
      * EXPLICIT worst-case modal-corner NaN/bounds assertion (KICK-05 criterion). */
     assert_param_responsive(api, inst, MODEL_PHY, k_phy_p2_keys, N_PHY_P2);
     assert_phy_extremes_no_nan(api, inst);
+
+    /* Wave 7 (B-08): USR (KICK-10) + GEN (KICK-11) — the final two models. */
+    assert_param_responsive(api, inst, MODEL_USR, k_usr_p2_keys, N_USR_P2);
+    assert_param_responsive(api, inst, MODEL_GEN, k_gen_p2_keys, N_GEN_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");

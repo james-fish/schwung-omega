@@ -1,0 +1,288 @@
+/* gen.c — GEN / HPN model: generative techno kick (KICK-11).
+ *
+ * ============================ PHASE-B SCOPE ================================
+ * Phase B = the generative ENGINE only: an xorshift64 PRNG (seeded from SEED)
+ * driving a scale-quantized pitch sequence, gated by a Euclidean DENSITY
+ * pattern, SELF-CLOCKING at a fixed internal step rate so it is audible and
+ * auditionable offline and on-device NOW. Same SEED -> byte-identical render
+ * (determinism, KICK-11).
+ *
+ * Transport-sync via host->get_beat_position() and the FULL Groove Page 2 UI
+ * (SEED / SCALE / SEQ LEN / LPF FREQ / LPF POLE / DENSITY) are PHASE C
+ * (GRV-02 / GRV-04). Do NOT pull that Phase-C work in here — Phase B ships the
+ * primitives (PRNG + scale-quantize + Euclidean gate + self-clock) + a MINIMAL
+ * Page-2 slot set (SEED / SCALE / DENSITY) so GEN is selectable and voice-able.
+ * (B-RESEARCH §GEN recipe + Open Question 3.)
+ * ==========================================================================
+ *
+ * The distinctive model: the ONLY kick whose pitch changes per hit — a rolling,
+ * evolving, hypnotic 16th-note sub-bass variation. Each step: the PRNG picks a
+ * scale degree (scale-quantized against a fixed root), sets the body f0, and the
+ * Euclidean pattern decides whether the step fires (re-triggers the amp/pitch
+ * envelopes). Reseeding from SEED reproduces the exact sequence (determinism).
+ *
+ * Body reuses the WTR/ANA band-limited wavetable kick + the FM2 dual-envelope
+ * 808<->909 CURVE sweep. All coeff/transcendental work in set_param/trigger,
+ * never per-sample (no tanf/expf/powf in render; NO rand() — prng_t only).
+ */
+#include "omega.h"
+#include "dsp_primitives.h"
+
+#include <math.h>
+#include <string.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+/* Self-clock: 16th notes at ~130 BPM = 44100 * 60 / (130*4) ~= 5088 frames.
+ * Phase B free-runs at this fixed rate (transport sync is Phase C). */
+#define GEN_STEP_FRAMES 5088
+#define GEN_SEQ_LEN     16          /* Euclidean pattern length (Phase B fixed) */
+
+/* ---- GEN per-instance state (overlays bohm_instance.model_state) --------- */
+typedef struct gen_state {
+    /* Body oscillator */
+    float base_f0;            /* PITCH -> root fundamental Hz */
+    float f0;                 /* current step fundamental (root * 2^(semi/12)) */
+    float sweep_hz;           /* pitch-env depth in Hz above f0 */
+    env_t pitch_env_fast;     /* 909 fast sweep */
+    env_t pitch_env_slow;     /* 808 slow sweep */
+    float curve;              /* 0 = 808 (slow), 1 = 909 (fast) */
+    float body_phase;
+    int   wave;               /* body wave index */
+
+    /* Amplitude envelope + tail contour */
+    env_t amp_env;
+    float sustain;
+    float length_ms;
+
+    /* Generative sequencer (self-clocking, deterministic) */
+    uint64_t seed;            /* SEED (raw) — reseeds prng on change */
+    prng_t   rng;             /* xorshift64 sequence source */
+    int      scale;           /* SCALE index into g_scales */
+    float    density;         /* DENSITY [0,1] -> Euclidean pulses/GEN_SEQ_LEN */
+    int      npulses;         /* precomputed pulse count from density */
+    int      step;            /* current step index [0,GEN_SEQ_LEN) */
+    int      step_ctr;        /* frames until next step advance */
+    int      degree;          /* running scale degree (climbs for evolution) */
+
+    /* Attack transient */
+    tpt1_t  color_lp;    float color_g;
+
+    /* Post-kick FX chain (KICK-14). */
+    float      fx_type;
+    float      fx_amt;
+    fx_state_t fx;
+} gen_state;
+
+_Static_assert(sizeof(gen_state) <= 4096, "gen_state fits model_state");
+
+/* ---- Locale-independent float parser (UI-01; copied from fm2.c) ---------- */
+static float parse_f(const char *s) {
+    if (!s) return 0.0f;
+    while (*s == ' ' || *s == '\t') s++;
+    float sign = 1.0f;
+    if (*s == '+') { s++; }
+    else if (*s == '-') { sign = -1.0f; s++; }
+    float ip = 0.0f;
+    while (*s >= '0' && *s <= '9') { ip = ip * 10.0f + (float)(*s - '0'); s++; }
+    float fp = 0.0f, scale = 0.1f;
+    if (*s == '.') {
+        s++;
+        while (*s >= '0' && *s <= '9') { fp += (float)(*s - '0') * scale; scale *= 0.1f; s++; }
+    }
+    return sign * (ip + fp);
+}
+
+static inline float clampf(float x, float lo, float hi) {
+    return x < lo ? lo : (x > hi ? hi : x);
+}
+
+static inline float tpt_g_from_hz(float fc) {
+    return tanf((float)M_PI * fc / OMEGA_SR);
+}
+
+/* Euclidean rhythm: does step `s` (of `len`) fire given `pulses` pulses spread
+ * evenly (Bjorklund's even distribution: floor((s+1)*p/len) > floor(s*p/len)).
+ * No allocation, no per-sample cost (called once per step boundary). */
+static inline int euclid_hit(int s, int pulses, int len) {
+    if (pulses <= 0) return 0;
+    if (pulses >= len) return 1;
+    return ((s + 1) * pulses) / len != (s * pulses) / len;
+}
+
+/* Recompute the pitch of the current step from a fresh PRNG draw, scale-quantized
+ * against the root. Called on each self-clock step advance (control-rate). */
+static void gen_step_pitch(gen_state *g) {
+    /* Draw a degree in a musical window (0..~14), climbing slightly so the
+     * sequence evolves rather than sitting on the root. */
+    int draw = (int)(prng_next_f(&g->rng) * 8.0f);        /* 0..7 */
+    g->degree = (g->degree + draw) % 24;                  /* wrap two octaves */
+    int semi = scale_quantize(g->scale, g->degree) - 12;  /* center around root */
+    /* Body fundamental = root * 2^(semi/12). exp2 via powf at CONTROL rate. */
+    g->f0 = clampf(g->base_f0 * powf(2.0f, (float)semi / 12.0f), 20.0f, 400.0f);
+    g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+}
+
+/* Fire a step: re-trigger the amp + pitch envelopes for the current f0. */
+static void gen_fire_step(gen_state *g) {
+    float c909 = env_coeff_from_ms(15.0f);
+    float c808 = env_coeff_from_ms(300.0f);
+    env_trigger(&g->pitch_env_fast, 1.0f, c909);
+    env_trigger(&g->pitch_env_slow, 1.0f, c808);
+    float len_ms = g->length_ms > 0.0f ? g->length_ms : 220.0f;
+    env_trigger(&g->amp_env, 0.9f, env_coeff_from_ms(len_ms));
+    g->body_phase = 0.0f;
+}
+
+/* ---- Parameter dispatch (Page 1 + GEN Page 2 keys) ----------------------- */
+void gen_set_param(bohm_instance_t *inst, const char *key, const char *val) {
+    gen_state *g = (gen_state *)inst->model_state;
+    float v = clampf(parse_f(val), 0.0f, 1.0f);
+
+    if (strcmp(key, PK_PITCH) == 0) {
+        g->base_f0 = 30.0f * powf(110.0f / 30.0f, v);   /* sub-bass [30,110] Hz */
+        g->f0 = g->base_f0;
+        g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+    } else if (strcmp(key, PK_LENGTH) == 0) {
+        g->length_ms = 50.0f * powf(1500.0f / 50.0f, v);
+    } else if (strcmp(key, PK_SUSTAIN) == 0) {
+        g->sustain = v;
+    } else if (strcmp(key, PK_CURVE) == 0) {
+        g->curve = v;
+        g->sweep_hz = clampf(g->f0 * (2.0f + g->curve * 4.0f), 0.0f, 480.0f);
+    } else if (strcmp(key, PK_ATTACK) == 0) {
+        /* ATTACK biases the body wave brighter (more attack presence). */
+        g->wave = (int)(v * (float)(NUM_WAVES - 1) + 0.5f);
+        if (g->wave < 0) g->wave = 0;
+        if (g->wave >= NUM_WAVES) g->wave = NUM_WAVES - 1;
+    } else if (strcmp(key, PK_TRS_DEC) == 0) {
+        /* TRS DEC nudges the tail contour (kept responsive; body-only model). */
+        g->sustain = clampf(g->sustain + (v - 0.5f) * 0.2f, 0.0f, 1.0f);
+    } else if (strcmp(key, PK_TRS_TNE) == 0) {
+        float fc = 200.0f + v * (16000.0f - 200.0f);
+        g->color_g = tpt_g_from_hz(fc);
+    } else if (strcmp(key, PK_COLOR) == 0) {
+        float fc = 200.0f + v * (18000.0f - 200.0f);
+        g->color_g = tpt_g_from_hz(fc);
+    } else if (strcmp(key, PK_GEN_SEED) == 0) {
+        /* SEED: reseed the PRNG so the same seed reproduces the sequence
+         * (determinism, KICK-11). Map [0,1] to a wide integer seed space. */
+        g->seed = (uint64_t)(v * 4294967295.0f) * 0x9E3779B1u + 1u;
+        prng_seed(&g->rng, g->seed);
+        g->degree = 0;
+        gen_step_pitch(g);   /* recompute step 0 pitch from the new seed */
+    } else if (strcmp(key, PK_GEN_SCALE) == 0) {
+        g->scale = (int)(v * (float)(NUM_SCALES - 1) + 0.5f);
+        if (g->scale < 0) g->scale = 0;
+        if (g->scale >= NUM_SCALES) g->scale = NUM_SCALES - 1;
+    } else if (strcmp(key, PK_GEN_DENSITY) == 0) {
+        /* DENSITY -> Euclidean pulse count over GEN_SEQ_LEN (1..LEN). */
+        g->density  = v;
+        g->npulses  = 1 + (int)(v * (float)(GEN_SEQ_LEN - 1) + 0.5f);
+        if (g->npulses < 1) g->npulses = 1;
+        if (g->npulses > GEN_SEQ_LEN) g->npulses = GEN_SEQ_LEN;
+    } else if (strcmp(key, PK_FX_TYPE) == 0) {
+        g->fx_type = v;
+        fx_config(&g->fx, (int)(g->fx_type * 4.0f + 0.5f), g->fx_amt);
+    } else if (strcmp(key, PK_FX_AMT) == 0) {
+        g->fx_amt = v;
+        fx_config(&g->fx, (int)(g->fx_type * 4.0f + 0.5f), g->fx_amt);
+    }
+    /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
+}
+
+/* ---- Trigger (note-on) --------------------------------------------------- */
+/* Resets phases/filters/FX + RESEEDS the sequence from SEED so the generative
+ * sequence is deterministic per trigger (KICK-11). The seeded sequence is
+ * PRESERVED across the switch memset because SEED is re-primed on model switch. */
+static void gen_trigger(bohm_instance_t *inst, int note, int velocity) {
+    (void)note; (void)velocity;
+    gen_state *g = (gen_state *)inst->model_state;
+
+    /* Deterministic restart of the seeded sequence. */
+    prng_seed(&g->rng, g->seed ? g->seed : 0x9E3779B97F4A7C15ULL);
+    g->degree   = 0;
+    g->step     = 0;
+    g->step_ctr = GEN_STEP_FRAMES;   /* step 0 plays a full step before advancing */
+    gen_step_pitch(g);   /* pitch for step 0 */
+
+    if (g->npulses < 1) g->npulses = 1 + (int)(g->density * (float)(GEN_SEQ_LEN - 1) + 0.5f);
+
+    /* Fire step 0 if the Euclidean pattern hits it (dense patterns start on 1). */
+    if (euclid_hit(0, g->npulses, GEN_SEQ_LEN)) gen_fire_step(g);
+
+    g->color_lp.s = 0.0f;
+    g->fx.last     = 0.0f;
+    g->fx.hold_ctr = 0;
+}
+
+/* ---- Render (per-sample; no transcendentals here) ------------------------ */
+static void gen_render(bohm_instance_t *inst, float *out_l, float *out_r, int frames) {
+    gen_state *g = (gen_state *)inst->model_state;
+
+    for (int n = 0; n < frames; n++) {
+        /* Self-clock: count down to the next step boundary; on reaching it,
+         * advance the step, draw the next pitch, and fire it if the Euclidean
+         * pattern hits. Control-rate work (powf in gen_step_pitch) runs only at
+         * step boundaries, not per sample. step_ctr is initialised to
+         * GEN_STEP_FRAMES in gen_trigger via the first decrement path below. */
+        if (g->step_ctr <= 0) {
+            g->step = (g->step + 1) % GEN_SEQ_LEN;
+            gen_step_pitch(g);
+            if (euclid_hit(g->step, g->npulses, GEN_SEQ_LEN)) gen_fire_step(g);
+            g->step_ctr = GEN_STEP_FRAMES;
+        }
+        g->step_ctr--;
+
+        float p_fast = env_tick(&g->pitch_env_fast);
+        float p_slow = env_tick(&g->pitch_env_slow);
+        float pitch  = p_slow + g->curve * (p_fast - p_slow);
+        float fbody  = g->f0 + pitch * g->sweep_hz;
+
+        float body = wt_read_bl(g->wave, 0, g->body_phase);
+        g->body_phase += fbody / OMEGA_SR;
+        if (g->body_phase >= 1.0f) g->body_phase -= 1.0f;
+
+        float amp = env_tick(&g->amp_env) * (0.5f + 0.5f * g->sustain);
+        float s = body * amp * 0.85f;
+        s = tpt1_lp(&g->color_lp, s, g->color_g);   /* COLOR output LP */
+
+        int fx_mode = (int)(g->fx_type * 4.0f + 0.5f);
+        s = fx_process(fx_mode, s, g->fx_amt, &g->fx);
+
+        out_l[n] = out_r[n] = s;
+    }
+}
+
+/* ---- Page-2 slot delegation --------------------------------------------- */
+static void gen_set_p2(bohm_instance_t *inst, const char *key, const char *val) {
+    gen_set_param(inst, key, val);
+}
+
+/* ---- Page-2 slot descriptor (Phase-B minimal set; Pattern 3) ------------- */
+/* Phase B exposes only SEED / SCALE / DENSITY. The full SEED/SCALE/SEQ LEN/
+ * LPF FREQ/LPF POLE/DENSITY set lands on Groove Page 2 in Phase C (GRV-04). */
+static int gen_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
+    (void)inst;
+    static const char json[] =
+        "{\"key\":\"" PK_GEN_SEED    "\",\"name\":\"SEED\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_GEN_SCALE   "\",\"name\":\"SCALE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_GEN_DENSITY "\",\"name\":\"DENSITY\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+    int len = (int)(sizeof(json) - 1);
+    if (buf_len <= len) return 0;        /* bounded: no overflow */
+    memcpy(buf, json, (size_t)len);
+    buf[len] = '\0';
+    return len;
+}
+
+/* ---- Vtable ------------------------------------------------------------- */
+const kick_model_vtable_t g_gen_vtable = {
+    .name         = "GEN",
+    .trigger      = gen_trigger,
+    .render       = gen_render,
+    .set_param    = gen_set_param,
+    .set_p2       = gen_set_p2,
+    .p2_slot_desc = gen_p2_slot_desc,
+};
