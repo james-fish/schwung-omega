@@ -48,7 +48,17 @@ Plans:
   3. Each model's Kick Page 2 shows the correct 6 model-specific parameter slots assembled from its `p2_slot_desc`
   4. All five post-kick FX modes (Diode, Clip, SAT, Fold, Crush) are selectable and audibly alter the kick with no divergence or clipping artifacts
   5. USR loads a custom WAV/wavetable from `module_dir/user/` at `create_instance` with zero file I/O on the audio thread
-**Plans**: TBD
+**Plans**: 9 plans
+Plans:
+- [ ] B-01-vtable-dispatch-and-switch-reinit-PLAN.md — fix the 2 blocking bugs (vtable-dispatched set_param + clean model-switch re-init) + KICK-13 switch test scaffold
+- [ ] B-02-shared-primitives-and-fx-chain-PLAN.md — shared primitives (modal/PRNG/scale/noise/band-limited wt) + 5-mode FX chain (KICK-14) + wavetables.h generator
+- [ ] B-03-fm2-revoice-and-voicing-harness-PLAN.md — FM2 re-voice (D-B03) + wire FX into FM2 + reusable automated voicing battery (param-responsiveness + distinctness)
+- [ ] B-04-wtr-trs-wavetable-transient-PLAN.md — WTR (KICK-04) + TRS (KICK-08) wavetable-body + transient family
+- [ ] B-05-ana-dig-analog-digital-PLAN.md — ANA (KICK-09) + DIG (KICK-07) analog-morph/sub + digital/bitcrush family
+- [ ] B-06-hrd-fm4-distortion-fm-PLAN.md — HRD (KICK-06) + FM4 (KICK-03) distortion + 4-op FM family
+- [ ] B-07-phy-modal-physical-PLAN.md — PHY (KICK-05) modal physical-model kick
+- [ ] B-08-usr-gen-userload-generative-PLAN.md — USR (KICK-10) off-render file load + GEN (KICK-11) generative engine (Phase-B scope)
+- [ ] B-09-page2-splice-and-voicing-audit-PLAN.md — dynamic Kick Page 2 splice (KICK-13) + docs/VOICING_AUDIT.md on-device voicing sign-off (D-B04, human-verify)
 **UI hint**: yes
 
 ### Phase C: Groove Rumble Engine
@@ -117,7 +127,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | A. Foundation + FM2 | 4/4 | Complete   | 2026-09-28 |
-| B. 9 Kick Models | 0/? | Not started | - |
+| B. 9 Kick Models | 0/9 | Not started | - |
 | C. Groove Rumble | 0/? | Not started | - |
 | D. Performer Chain | 0/? | Not started | - |
 | E. UI Hierarchy | 0/? | Not started | - |
