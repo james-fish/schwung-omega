@@ -78,7 +78,7 @@
 
 ### Phases (v1.1)
 
-- [ ] **Phase B1: Param/UI Infrastructure** - Per-key value readback + rich enum/int/float schema + per-model state memory + correct control types + drive auto-gain; foundational, unblocks every UI complaint
+- [x] **Phase B1: Param/UI Infrastructure** - Per-key value readback + rich enum/int/float schema + per-model state memory + correct control types + drive auto-gain; foundational, unblocks every UI complaint (completed 2026-09-30, native tests GREEN)
 - [ ] **Phase B2: Kick Voicing & Page Reorg** - Lower/deeper pitch + stronger CURVE, merge redundant params, model-unique params on Page 1 / transients on Page 2, per-model voicing fixes
 - [ ] **Phase B3: Sample Infrastructure** - Module samples folder + optional SD browse, enumerated off-thread at create_instance; string list-picker for sample selection
 - [ ] **Phase C1: Groove Redesign** - TAPS/GEN type selector decoupled from kick model; feedback/resonant rumble (fixes "bit-crushed & quiet"); per-type pages with reverb/drive/filter/LFO; GEN retrigger modes + seqlen 1–32 + tone shaping
@@ -185,7 +185,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| B1. Param/UI Infrastructure | 0/? | Not started | - |
+| B1. Param/UI Infrastructure | 2/2 | Complete (UIX-01..06; native tests GREEN, on-device pending) | 2026-09-30 |
 | B2. Kick Voicing & Page Reorg | 0/? | Not started | - |
 | B3. Sample Infrastructure | 0/? | Not started | - |
 | C1. Groove Redesign | 0/? | Not started | - |

@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refinement
 status: in_progress
-stopped_at: B1-01 done (param value cache — UIX-01/04 readback + per-model memory + defaults; c75c546). Next B1 increment — rich enum/unit/default schema + drive auto-gain (UIX-02/03/05/06).
-last_updated: "2026-09-30T00:00:00.000Z"
+stopped_at: Phase B1 COMPLETE (UIX-01..06; commits c75c546 value cache, 0500b6a rich schema+auto-gain; native tests GREEN, on-device pending). Next — Phase B2 Kick Voicing & Page Reorg (VOICE-01..06).
+last_updated: "2026-09-30T01:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -75,6 +75,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 
 ### Key Decisions
 
+- **[B1-02] Metadata-driven ui_hierarchy + drive auto-gain (UIX-02/03/05/06)** — Rewrote `src/ui.c` from static string fragments to a metadata-driven emitter: every param now carries `type`/`short_name`/`min`/`max`/`default`/`step`/`unit`, and discrete params (MODEL, FX TYPE, groove MONO, GEN LPF POLE) render as `type:"enum"` with an `options` array (matches reference module.json). Defaults are pulled from the params.c tables via `ui_default_for` (key→index→g_*_defaults) so schema defaults never drift from the value cache. Numbers formatted with `pk_format_value` (locale-independent, never libc %f); fixed parts via `snprintf` %s/%d (locale-safe). Kick Page 2 still splices the model's `p2_slot_desc` interior between prefix and the FX suffix; groove2 still GEN-only. Real-domain units (PITCH in Hz etc.) deferred to B2 where the model set_param domains change. UIX-06: added `fx_state_t.out_gain` — a control-rate makeup attenuation `1/(1+amt*comp[mode])` (Clip .6/Fold .8/Diode .4/SAT .2/Crush 0) computed in `fx_config`, applied to the drive modes in `fx_process` (guarded so out_gain==0 pre-config is transparent), so raising drive changes character not level; amt=0 stays transparent. test_readback extended to assert enum/options/default/short_name/unit/step present; full suite GREEN. Commit 0500b6a.
 - **[B1-01] Central raw-value param cache — get_param readback + per-model memory (UIX-01/04)** — Root cause of "every knob/model-box/vol shows 0, resets on model switch": `omega_get_param` answered only `ui_hierarchy` (−1 for all keys) while the host reads back per-key values (`ui_chain.js:37-40`); models store DERIVED values (Hz/ms/coeffs) not the raw normalized value, so there was nothing to echo, and model switch did `memset+reprime-to-0.5` losing state. Fix: new `src/params.{c,h}` — a per-model `kick_cache[MODEL_COUNT][PKI_COUNT=53]` + global `global_cache[GKI_COUNT=10]` on `bohm_instance` (single calloc, ~2.7 KB, size assert holds), key↔index tables, defaults tables, and a locale-independent `pk_format_value` (no libc `%f`). `omega_set_param` records the raw value into the right cache before dispatch; `omega_get_param` formats it back; a NEW `omega_prime_model` replays a model's cached row (seeded to defaults in create) into freshly-zeroed `model_state` on create AND on switch, restoring both sound and knob positions. `OMEGA_PKI_COUNT/GKI_COUNT` macros in omega.h size the arrays without pulling params.h into the header; `_Static_assert` binds them to the enum counts. Host ABI untouched. New `tests/test_readback.c` (set→get echo, create defaults=musical-not-0, per-model memory FM2=0.1/FM4=0.9 across switches, global round-trip, unknown-key −1, formatter) wired into `make test`; full suite GREEN (8 harnesses). Commit c75c546.
 
 

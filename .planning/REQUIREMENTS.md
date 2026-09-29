@@ -76,12 +76,12 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 
 ### Param/UI Infrastructure (Phase B1)
 
-- [ ] **UIX-01**: `get_param(key, buf, buf_len)` returns the current value (locale-independent string) for every individual param key, not just `ui_hierarchy` — so the host reads back knob positions (fixes knobs/model-box/vol displaying 0). Unknown keys still return -1.
-- [ ] **UIX-02**: Param schema in `ui_hierarchy` carries rich metadata per control: `type` (`float`/`int`/`enum`), `options` (string list for enums), `default`, `min`, `max`, `step`, `unit`, `short_name`, and `display_format` where useful — matching the reference module.json format.
-- [ ] **UIX-03**: Discrete named parameters render as `enum` string selectors (same control type as Model): FX type, groove type, scale, retrigger mode, filter routing, reverb type, sample select.
-- [ ] **UIX-04**: Per-model parameter state memory — switching models restores that model's last-set values (never visually or actually reset to 0/50%); the active model's params report their stored values via `get_param`.
-- [ ] **UIX-05**: Each control declares an appropriate UI element and sweep: bidirectional/centered where meaningful, discrete where meaningful, and real-world units where meaningful (e.g. PITCH in Hz).
-- [ ] **UIX-06**: Drive/distortion amount applies automatic output-gain compensation so raising drive does not simply increase level.
+- [x] **UIX-01**: `get_param(key, buf, buf_len)` returns the current value (locale-independent string) for every individual param key, not just `ui_hierarchy` — so the host reads back knob positions (fixes knobs/model-box/vol displaying 0). Unknown keys still return -1.
+- [x] **UIX-02**: Param schema in `ui_hierarchy` carries rich metadata per control: `type` (`float`/`int`/`enum`), `options` (string list for enums), `default`, `min`, `max`, `step`, `unit`, `short_name`, and `display_format` where useful — matching the reference module.json format.
+- [x] **UIX-03**: Discrete named parameters render as `enum` string selectors (same control type as Model): FX type, groove type, scale, retrigger mode, filter routing, reverb type, sample select.
+- [x] **UIX-04**: Per-model parameter state memory — switching models restores that model's last-set values (never visually or actually reset to 0/50%); the active model's params report their stored values via `get_param`.
+- [x] **UIX-05**: Each control declares an appropriate UI element and sweep: bidirectional/centered where meaningful, discrete where meaningful, and real-world units where meaningful (e.g. PITCH in Hz).
+- [x] **UIX-06**: Drive/distortion amount applies automatic output-gain compensation so raising drive does not simply increase level.
 
 ### Kick Voicing & Page Reorg (Phase B2)
 
@@ -176,12 +176,12 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | GRV-03 | Phase C | Complete |
 | GRV-04 | Phase C | Complete |
 | GRV-05 | Phase C | Complete |
-| UIX-01 | Phase B1 (v1.1) | Pending |
-| UIX-02 | Phase B1 (v1.1) | Pending |
-| UIX-03 | Phase B1 (v1.1) | Pending |
-| UIX-04 | Phase B1 (v1.1) | Pending |
-| UIX-05 | Phase B1 (v1.1) | Pending |
-| UIX-06 | Phase B1 (v1.1) | Pending |
+| UIX-01 | Phase B1 (v1.1) | Complete |
+| UIX-02 | Phase B1 (v1.1) | Complete |
+| UIX-03 | Phase B1 (v1.1) | Complete |
+| UIX-04 | Phase B1 (v1.1) | Complete |
+| UIX-05 | Phase B1 (v1.1) | Complete |
+| UIX-06 | Phase B1 (v1.1) | Complete |
 | VOICE-01 | Phase B2 (v1.1) | Pending |
 | VOICE-02 | Phase B2 (v1.1) | Pending |
 | VOICE-03 | Phase B2 (v1.1) | Pending |
