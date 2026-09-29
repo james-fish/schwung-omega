@@ -40,6 +40,95 @@ extern const kick_model_vtable_t *g_models[];
 #define NBLOCKS 4            /* 512 frames */
 #define NSAMP   (NBLOCKS * BLOCK * 2)
 
+/* Expected Page-2 slot count per model, indexed by model_id_t (KICK-13:
+ * "each p2_slot_desc emits valid bounded JSON with the correct slot count").
+ * FM2=3 (FM RATIO/FM INDEX/OP2 WAVE), FM4=6 (full operator set), the rest=4,
+ * GEN=3 (Phase-B minimal SEED/SCALE/DENSITY). Kept in model_id_t order. */
+static const int g_expected_slots[MODEL_COUNT] = {
+    [MODEL_FM2] = 3, [MODEL_FM4] = 6, [MODEL_WTR] = 4, [MODEL_PHY] = 4,
+    [MODEL_HRD] = 4, [MODEL_DIG] = 4, [MODEL_TRS] = 4, [MODEL_ANA] = 4,
+    [MODEL_USR] = 4, [MODEL_GEN] = 3,
+};
+
+/* Count occurrences of a literal substring in a null-terminated string. */
+static int count_substr(const char *s, const char *needle) {
+    int n = 0;
+    size_t nl = strlen(needle);
+    for (const char *p = s; (p = strstr(p, needle)) != NULL; p += nl) n++;
+    return n;
+}
+
+/* Count occurrences of a single character in a null-terminated string. */
+static int count_char(const char *s, char c) {
+    int n = 0;
+    for (const char *p = s; *p; p++) if (*p == c) n++;
+    return n;
+}
+
+static void model_index_str(int idx, char *buf);   /* defined below */
+
+/* KICK-13: for every registered model, prove its p2_slot_desc emits valid,
+ * bounded, correctly-counted JSON and refuses to overflow a too-small buffer;
+ * and prove the FULL ui_hierarchy stays balanced + null-terminated after a
+ * switch to that model. */
+static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
+    int checked = 0;
+    for (int m = 0; m < MODEL_COUNT; m++) {
+        const kick_model_vtable_t *vt = g_models[m];
+        if (!vt || !vt->p2_slot_desc) continue;   /* forward-compatible skip */
+
+        /* 1. Bounded, non-empty, null-terminated interior. */
+        char buf[1024];
+        memset(buf, 0x7f, sizeof buf);            /* poison to catch missing NUL */
+        int len = vt->p2_slot_desc(inst, buf, (int)sizeof buf);
+        assert(len > 0);                          /* emits something */
+        assert(len < (int)sizeof buf);            /* bounded, no overflow */
+        assert(buf[len] == '\0');                 /* null-terminated at len */
+        assert((int)strlen(buf) == len);          /* no embedded NUL / matches */
+
+        /* 2. Balanced JSON: models emit a bare comma-separated object list
+         * (no outer [] wrap), so braces balance and there are no stray
+         * brackets in the interior. */
+        assert(count_char(buf, '{') == count_char(buf, '}'));
+        assert(count_char(buf, '[') == count_char(buf, ']'));
+        assert(count_char(buf, '[') == 0);        /* interior is bracket-free */
+
+        /* 3. Slot count matches the documented per-model count. */
+        int nkeys = count_substr(buf, "\"key\"");
+        assert(nkeys == g_expected_slots[m]);
+        assert(count_char(buf, '{') == g_expected_slots[m]);  /* one obj/slot */
+
+        /* 4. A too-small buffer is refused (returns 0, no write past bound —
+         * the Pattern 3 overflow guard). Give it fewer bytes than it needs. */
+        char tiny[8];
+        memset(tiny, 0x7f, sizeof tiny);
+        int r = vt->p2_slot_desc(inst, tiny, (int)sizeof tiny);
+        assert(r == 0);                           /* bounded refusal */
+
+        /* 5. The FULL ui_hierarchy stays valid after switching to this model:
+         * balanced braces/brackets + null-terminated + bytes-written contract. */
+        char idxbuf[4];
+        model_index_str(m, idxbuf);
+        api->set_param(inst, PK_MODEL, idxbuf);
+        char ui[8192];
+        memset(ui, 0x7f, sizeof ui);
+        int uilen = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+        assert(uilen > 0 && uilen < (int)sizeof ui);
+        assert(ui[uilen] == '\0');
+        assert((int)strlen(ui) == uilen);
+        assert(count_char(ui, '{') == count_char(ui, '}'));
+        assert(count_char(ui, '[') == count_char(ui, ']'));
+        /* the active model's slots are present in the full hierarchy: its key
+         * count appears inside kick2 (model slots) + 2 FX slots + Page-1 (8)
+         * + root (2). At minimum every model slot's "key" survived the splice. */
+        assert(count_substr(ui, "\"key\"") >= g_expected_slots[m] + 2);
+
+        checked++;
+    }
+    assert(checked >= 1);
+    printf("test_switch: p2_slot_desc JSON valid for %d models\n", checked);
+}
+
 /* Convert a model index to its decimal string for PK_MODEL (matches dsp.c's
  * (int)dsp_parse_f parse). MODEL_COUNT <= 10 so a single digit suffices, but
  * handle two digits defensively. */
@@ -86,6 +175,17 @@ int main(void) {
     assert(api && api->api_version == 2);
     void *inst = api->create_instance("/tmp/omega", "{}");
     assert(inst);
+
+    /* KICK-13: every model's p2_slot_desc emits valid, bounded, correctly-
+     * counted JSON, refuses overflow, and keeps the full ui_hierarchy balanced
+     * across model switches (B-09 dynamic Page-2 splice). */
+    assert_p2_json_valid(api, inst);
+
+    /* get_param contract (Pitfall 4): an unknown key returns -1, no write. */
+    {
+        char kb[64];
+        assert(api->get_param(inst, "no_such_key", kb, (int)sizeof kb) == -1);
+    }
 
     /* KICK-13: A->B->A switch + trigger over every ordered implemented pair.
      * Skip NULL (unimplemented) slots so this is forward-compatible. */
