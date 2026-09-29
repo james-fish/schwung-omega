@@ -323,6 +323,121 @@ static void test_mono_sum(void) {
     printf("test_groove: GRV-05 MONO force-sum OK (L == R under MONO)\n");
 }
 
+/* ---- GRV-04 (C-03): GEN clocks to the transport, not GEN_STEP_FRAMES ------- */
+/* Select GEN, prime it, then render the SAME seeded sequence at 120 vs 174 BPM
+ * while driving the mock transport. A faster tempo fires MORE steps over the
+ * fixed window, so the two rendered buffers must DIFFER — proving gen.c reads
+ * inst->groove.samples_per_16th and not the ~130-BPM hardcode. A min-energy
+ * guard on both buffers makes the "differ" assertion non-trivial (neither can
+ * be silent). */
+static void gen_prime_groove2(plugin_api_v2_t *api, void *inst) {
+    select_model(api, inst, MODEL_GEN);
+    for (int i = 0; i < N_PAGE1; i++) api->set_param(inst, k_page1_keys[i], "0.5");
+    api->set_param(inst, PK_GEN_SCALE,   "0.5");
+    api->set_param(inst, PK_GEN_SEED,    "0.3");
+    api->set_param(inst, PK_GEN_DENSITY, "0.7");
+    api->set_param(inst, PK_GEN_SEQLEN,  "1.0");   /* full 16-step pattern */
+    api->set_param(inst, PK_GEN_LPFFREQ, "0.8");   /* wide open so body passes */
+    api->set_param(inst, PK_GEN_LPFPOLE, "0");
+}
+
+/* Settle the groove tempo clock at `bpm` on a FRESH instance, then trigger so
+ * gen_trigger latches samples_per_16th at the fully-locked interval (the EMA
+ * needs several blocks to converge + re-lock past its 0.5-BPM threshold), and
+ * render the seeded GEN sequence. Returns via `buf`; sets *energy. */
+static void gen_render_at_bpm(plugin_api_v2_t *api, double bpm,
+                              int16_t *buf, double *energy) {
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+    gen_prime_groove2(api, inst);
+
+    /* Settle: drive the transport at `bpm` for enough blocks that the EMA locks
+     * samples_per_16th to this tempo BEFORE we trigger (so step 0 uses the true
+     * interval, 5513 @120 vs 3802 @174, not the 120-init value). */
+    mock_host_set_beat(0.0);
+    mock_host_set_bpm((float)bpm);
+    double dbeat = dbeat_for_bpm(bpm);
+    int16_t warm[BLOCK * 2];
+    for (int b = 0; b < 40; b++) {
+        mock_host_advance_beat(dbeat);
+        api->render_block(inst, warm, BLOCK);   /* no trigger yet: just settle clock */
+    }
+
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    api->on_midi(inst, noteon, 3, 0);           /* latches locked samples_per_16th */
+    *energy = render_driven(api, inst, dbeat, buf);
+    api->destroy_instance(inst);
+}
+
+static void test_gen_clocks_to_bpm(void) {
+    static int16_t b120[NSAMP], b174[NSAMP];
+
+    host_api_v1_t host = make_mock_host();
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+
+    double e120 = 0.0, e174 = 0.0;
+    gen_render_at_bpm(api, 120.0, b120, &e120);
+    gen_render_at_bpm(api, 174.0, b174, &e174);   /* same seed, faster tempo */
+
+    /* Min-energy guard: both tempos must be audibly non-silent so the "differ"
+     * assertion below cannot pass trivially with both buffers silent. */
+    assert(e120 > 1000.0 && e174 > 1000.0);
+    assert(buf_rms(b120, NSAMP) > 1e-4 && buf_rms(b174, NSAMP) > 1e-4);
+
+    /* The transport clock changes the step rate -> the buffers differ. If gen.c
+     * still used the fixed GEN_STEP_FRAMES, these would be byte-identical. */
+    assert(memcmp(b120, b174, sizeof b120) != 0);
+
+    printf("test_groove: GRV-04 GEN clocks to BPM OK (120 vs 174 differ, both live)\n");
+}
+
+/* ---- GRV-04 (C-03): LPF POLE 2-pole vs 4-pole differ ---------------------- */
+/* With LPF FREQ low, a 4-pole (2 stages) cascade attenuates more than a 2-pole
+ * (1 stage), so the same seeded GEN sequence renders with LESS RMS energy at
+ * 4-pole. Both non-silent (min-energy guard). */
+static void test_gen_lpf_pole(void) {
+    static int16_t p2[NSAMP], p4[NSAMP];
+
+    host_api_v1_t host = make_mock_host();
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    double dbeat = dbeat_for_bpm(128.0);
+
+    /* 2-pole (1 stage), low cutoff. */
+    gen_prime_groove2(api, inst);
+    api->set_param(inst, PK_GEN_LPFFREQ, "0.1");   /* low cutoff -> pole count bites */
+    api->set_param(inst, PK_GEN_LPFPOLE, "0");     /* 2-pole */
+    mock_host_set_beat(0.0);
+    mock_host_set_bpm(128.0f);
+    { uint8_t noteon[3] = { 0x90, 36, 100 }; api->on_midi(inst, noteon, 3, 0); }
+    render_driven(api, inst, dbeat, p2);
+
+    /* 4-pole (2 stages), same cutoff + seed. */
+    gen_prime_groove2(api, inst);
+    api->set_param(inst, PK_GEN_LPFFREQ, "0.1");
+    api->set_param(inst, PK_GEN_LPFPOLE, "1");     /* 4-pole */
+    mock_host_set_beat(0.0);
+    mock_host_set_bpm(128.0f);
+    { uint8_t noteon[3] = { 0x90, 36, 100 }; api->on_midi(inst, noteon, 3, 0); }
+    render_driven(api, inst, dbeat, p4);
+
+    double r2 = buf_rms(p2, NSAMP), r4 = buf_rms(p4, NSAMP);
+    assert(r2 > 1e-4);                             /* 2-pole path stays audible */
+    /* The pole toggle measurably changes the sound (4-pole attenuates more at a
+     * low cutoff; at minimum the two buffers differ). */
+    if (!(fabs(r2 - r4) > 1e-5 || memcmp(p2, p4, sizeof p2) != 0))
+        fprintf(stderr, "LPF POLE: r2=%.6f r4=%.6f (expected measurable diff)\n", r2, r4);
+    assert(fabs(r2 - r4) > 1e-5 || memcmp(p2, p4, sizeof p2) != 0);
+    assert(r4 <= r2 + 1e-3);                       /* 4-pole never LOUDER than 2-pole */
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRV-04 LPF POLE OK (2-pole r=%.4f vs 4-pole r=%.4f)\n", r2, r4);
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -341,6 +456,13 @@ int main(void) {
     test_tap_delay_presence();
     test_page1_responsive();
     test_mono_sum();
+
+    /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
+     * LPF POLE 2/4-pole cascade toggle. Requires GEN registered. */
+    assert(g_models[MODEL_GEN] != NULL);
+    assert(g_models[MODEL_GEN]->render != NULL);
+    test_gen_clocks_to_bpm();
+    test_gen_lpf_pole();
 
     printf("test_groove: ALL TESTS PASSED\n");
     return 0;

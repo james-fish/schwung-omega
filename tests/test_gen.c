@@ -77,6 +77,32 @@ static void gen_render(plugin_api_v2_t *api, void *inst, int16_t *buf) {
     }
 }
 
+/* One 128-frame block advances the beat by (bpm/60)*(frames/sr) quarter-notes —
+ * the inverse of the groove clock's bpm = dbeat*60*sr/frames. */
+static double dbeat_for_bpm(double bpm) {
+    return (bpm / 60.0) * ((double)BLOCK / 44100.0);
+}
+
+/* Trigger + render NBLOCKS while DRIVING the mock transport at `bpm` before each
+ * block (so gen.c clocks off inst->groove.samples_per_16th, GRV-02/DC-05). Resets
+ * the beat to 0 first so the transport-clock path is byte-deterministic per seed.
+ * Asserts every sample finite + bounded. */
+static void gen_render_driven(plugin_api_v2_t *api, void *inst, double bpm, int16_t *buf) {
+    mock_host_set_beat(0.0);
+    mock_host_set_bpm((float)bpm);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    api->on_midi(inst, noteon, 3, 0);
+    double dbeat = dbeat_for_bpm(bpm);
+    int16_t out[BLOCK * 2];
+    for (int b = 0; b < NBLOCKS; b++) {
+        mock_host_advance_beat(dbeat);                /* drive the transport clock */
+        api->render_block(inst, out, BLOCK);
+        for (int i = 0; i < BLOCK * 2; i++)
+            assert(out[i] >= INT16_MIN && out[i] <= INT16_MAX);
+        memcpy(&buf[b * BLOCK * 2], out, sizeof out);
+    }
+}
+
 /* Fraction of frames whose amplitude is above a gate threshold — a proxy for
  * how much of the window is "filled" with generative hits. A denser Euclidean
  * pattern fires more steps -> more of the window carries energy, so the active
@@ -135,6 +161,56 @@ static void test_gen_determinism(plugin_api_v2_t *api, void *inst) {
 
     printf("test_gen: determinism OK (seed-stable, seed-differ, density lo=%.2f hi=%.2f)\n",
            flo, fhi);
+}
+
+/* ---- GRV-02/GRV-04: transport-clock determinism + SEQ LEN (C-03) --------- */
+/* Determinism must SURVIVE the transport clock: with the mock beat driven at a
+ * fixed BPM, the same SEED renders byte-identically (the tempo path adds no
+ * nondeterminism). Uses a FRESH instance per render so the groove tempo clock's
+ * EMA state (prev_beat/bpm_smooth) starts identically — the determinism contract
+ * is per-voice-from-reset, matching test_groove's fresh-instance BPM sweep.
+ * SEQ LEN low vs high changes the Euclidean pattern length, so those differ. */
+static void test_gen_transport(plugin_api_v2_t *api) {
+    static int16_t a[NSAMP], b[NSAMP];
+
+    /* Same SEED, same driven BPM, fresh instance each time -> byte-identical
+     * (determinism holds under the transport clock, GRV-02). */
+    void *i1 = api->create_instance("/tmp/omega", "{}");
+    assert(i1);
+    gen_prime(api, i1, "0.3", "0.5"); gen_render_driven(api, i1, 128.0, a);
+    api->destroy_instance(i1);
+
+    void *i2 = api->create_instance("/tmp/omega", "{}");
+    assert(i2);
+    gen_prime(api, i2, "0.3", "0.5"); gen_render_driven(api, i2, 128.0, b);
+    api->destroy_instance(i2);
+
+    assert(memcmp(a, b, sizeof a) == 0);        /* deterministic under transport */
+    assert(rms(a) > 1e-4);                      /* non-silent */
+
+    /* SEQ LEN responsiveness (GRV-04): short pattern vs full pattern produces a
+     * DIFFERENT hit sequence over the window. Both non-silent. Fresh instances
+     * so the only varying input is SEQ LEN. */
+    static int16_t slo[NSAMP], shi[NSAMP];
+    void *is1 = api->create_instance("/tmp/omega", "{}");
+    assert(is1);
+    gen_prime(api, is1, "0.3", "0.6");
+    api->set_param(is1, PK_GEN_SEQLEN, "0.0");   /* seq_len = 1 */
+    gen_render_driven(api, is1, 128.0, slo);
+    api->destroy_instance(is1);
+
+    void *is2 = api->create_instance("/tmp/omega", "{}");
+    assert(is2);
+    gen_prime(api, is2, "0.3", "0.6");
+    api->set_param(is2, PK_GEN_SEQLEN, "1.0");   /* seq_len = 16 */
+    gen_render_driven(api, is2, 128.0, shi);
+    api->destroy_instance(is2);
+
+    assert(rms(slo) > 1e-4 && rms(shi) > 1e-4);   /* min-energy guard: both live */
+    assert(memcmp(slo, shi, sizeof slo) != 0);    /* SEQ LEN changes the pattern */
+
+    printf("test_gen: transport-clock determinism + SEQ LEN OK "
+           "(byte-identical @128 BPM; seq_len 1 vs 16 differ)\n");
 }
 
 /* ---- USR off-render load (KICK-10) -------------------------------------- */
@@ -202,6 +278,8 @@ int main(void) {
 
     test_gen_determinism(api, inst);
     api->destroy_instance(inst);
+
+    test_gen_transport(api);
 
     test_usr_load(api);
 
