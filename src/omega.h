@@ -97,12 +97,22 @@ typedef struct {
     const char *name;                                   /* "FM2" */
     void (*trigger)(bohm_instance_t *inst, int note, int velocity);
     void (*render)(bohm_instance_t *inst, float *out_l, float *out_r, int frames);
+    /* set_param handles both Page-1 and this model's Page-2 keys; dsp.c
+     * dispatches ALL kick keys through g_models[inst->model]->set_param
+     * (Pitfall 2 fix). Internal vtable — safe to extend, no _Static_assert
+     * binds its layout, and it is NOT part of the host ABI. */
+    void (*set_param)(bohm_instance_t *inst, const char *key, const char *val);
     void (*set_p2)(bohm_instance_t *inst, const char *key, const char *val);
     int  (*p2_slot_desc)(bohm_instance_t *inst, char *buf, int buf_len);
 } kick_model_vtable_t;
 
-/* model IDs are append-only and permanent — never renumber (KICK-01) */
-typedef enum { MODEL_FM2 = 0, MODEL_COUNT } model_id_t;
+/* model IDs are append-only and permanent — never renumber (KICK-01).
+ * MODEL_FM2 = 0 is permanent. MODEL_COUNT becomes 10. */
+typedef enum {
+    MODEL_FM2 = 0, MODEL_FM4, MODEL_WTR, MODEL_PHY, MODEL_HRD,
+    MODEL_DIG, MODEL_TRS, MODEL_ANA, MODEL_USR, MODEL_GEN,
+    MODEL_COUNT
+} model_id_t;
 
 /* --- Shared instance layout -------------------------------------------- */
 /* The full struct lives here so downstream plans share ONE definition.
@@ -137,15 +147,86 @@ _Static_assert(sizeof(struct bohm_instance) < 800000, "instance under 800KB");
 #define PK_MASTER_VOL "master_vol"
 #define PK_UI_HIER    "ui_hierarchy"
 
+/* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
+/* Each key is unique across all models (dispatch is a flat strcmp chain).
+ * Model .c files own their own key handling in their set_param; unknown keys
+ * are ignored (parse_f pattern), so priming a model with the shared list is
+ * safe. ui.c (B-09) splices these into the active model's Kick Page 2. */
+
+/* FM4 / OLP-4 (KICK-03) */
+#define PK_FM4_ALGO     "fm4_algo"
+#define PK_FM4_OPRATIO  "fm4_opratio"
+#define PK_FM4_OPINDEX  "fm4_opindex"
+#define PK_FM4_OPAMP    "fm4_opamp"
+#define PK_FM4_FEEDBACK "fm4_feedback"
+#define PK_FM4_ALGO2    "fm4_algo2"
+
+/* WTR / HZ-1 (KICK-04) */
+#define PK_WTR_WAVE      "wtr_wave"
+#define PK_WTR_BODYPITCH "wtr_bodypitch"
+#define PK_WTR_TRANSDEC  "wtr_transdec"
+#define PK_WTR_TRANSCOL  "wtr_transcol"
+
+/* PHY / PM-K1 (KICK-05) */
+#define PK_PHY_BEATER   "phy_beater"
+#define PK_PHY_SHELL    "phy_shell"
+#define PK_PHY_HEADTENS "phy_headtens"
+#define PK_PHY_DAMPING  "phy_damping"
+
+/* HRD / PX-3 (KICK-06) */
+#define PK_HRD_SAMPLE "hrd_sample"
+#define PK_HRD_MIX    "hrd_mix"
+#define PK_HRD_DRIVE  "hrd_drive"
+#define PK_HRD_CRUSH  "hrd_crush"
+
+/* DIG / SP-6 (KICK-07) */
+#define PK_DIG_WAVEIDX  "dig_waveidx"
+#define PK_DIG_SAMPLE   "dig_sample"
+#define PK_DIG_BITDEPTH "dig_bitdepth"
+#define PK_DIG_PITCHENV "dig_pitchenv"
+
+/* TRS / VX-T (KICK-08) — note PK_TRS_CURVE is a P2 pitch-curve morph,
+ * distinct from the Page-1 PK_CURVE. */
+#define PK_TRS_TONE  "trs_tone"
+#define PK_TRS_TDEC  "trs_tdec"
+#define PK_TRS_WTCOL "trs_wtcol"
+#define PK_TRS_CURVE "trs_curve"
+
+/* ANA / WT-4 (KICK-09) */
+#define PK_ANA_MORPH  "ana_morph"
+#define PK_ANA_SUBLVL "ana_sublvl"
+#define PK_ANA_SUBDEC "ana_subdec"
+#define PK_ANA_SAMPLE "ana_sample"
+
+/* USR / XT-88 (KICK-10) */
+#define PK_USR_SAMPLE   "usr_sample"
+#define PK_USR_WTMORPH  "usr_wtmorph"
+#define PK_USR_LAYERVOL "usr_layervol"
+#define PK_USR_PITCHENV "usr_pitchenv"
+
+/* GEN / HPN (KICK-11) */
+#define PK_GEN_SEED    "gen_seed"
+#define PK_GEN_SCALE   "gen_scale"
+#define PK_GEN_DENSITY "gen_density"
+
 /* Model registry — defined in model_registry.c (Plan A-02). */
 extern const kick_model_vtable_t *g_models[MODEL_COUNT];
 
 /* --- FM2 engine exports (Plan A-02, src/models/fm2.c) ------------------- */
 /* The FM2 vtable (defined in fm2.c) and the Page-1 param setter that dsp.c
  * dispatches all kick keys to. dsp.c never calls DSP math directly (D-01);
- * it routes PK_* kick keys to fm2_set_param and triggers/renders via g_models. */
+ * it routes PK_* kick keys through the active model's vtable set_param. */
 extern const kick_model_vtable_t g_fm2_vtable;
 void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val);
+
+/* --- Phase B model vtable exports (defined in their model .c files) ----- */
+/* Declared here so model_registry.c can reference them once each model plan
+ * lands (B-04..B-08). A registry designated line referencing one of these
+ * before its .c defines the symbol would fail to link, so each later plan
+ * adds its designated registry line together with the .c that defines it. */
+extern const kick_model_vtable_t g_fm4_vtable, g_wtr_vtable, g_phy_vtable,
+                                 g_hrd_vtable, g_dig_vtable, g_trs_vtable,
+                                 g_ana_vtable, g_usr_vtable, g_gen_vtable;
 
 /* --- UI hierarchy (Plan A-03, src/ui.c) -------------------------------- */
 /* Defining OMEGA_HAS_UI tells dsp.c that ui.c owns the real omega_build_ui, so

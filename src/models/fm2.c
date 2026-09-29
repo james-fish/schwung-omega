@@ -233,6 +233,7 @@ const kick_model_vtable_t g_fm2_vtable = {
     .name         = "FM2",
     .trigger      = fm2_trigger,
     .render       = fm2_render,
+    .set_param    = fm2_set_param,   /* Page-1 + FM2 Page-2 keys (Pitfall 2) */
     .set_p2       = fm2_set_p2,
     .p2_slot_desc = fm2_p2_slot_desc,
 };
