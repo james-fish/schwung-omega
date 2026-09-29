@@ -72,7 +72,7 @@ Plans:
   4. With the GEN model active, Groove Page 2 (SEED, SCALE, SEQ LEN, LPF FREQ, LPF POLE, DENSITY) generates repeatable scale-quantized sequences with Euclidean density gating; Page 2 is hidden for all other models
 **Plans**: 3 plans
 Plans:
-- [ ] C-01-tempo-drivable-mock-host-and-test-groove-PLAN.md — Wave 0: tempo-drivable mock host + RED test_groove harness wired into `make test` (enables GRV-02)
+- [x] C-01-tempo-drivable-mock-host-and-test-groove-PLAN.md — Wave 0: tempo-drivable mock host + RED test_groove harness wired into `make test` (enables GRV-02)
 - [ ] C-02-groove-contracts-tempo-clock-and-multitap-PLAN.md — groove_state_t + PK_GRV_* + raised assert; guarded transport tempo clock; mask-wrapped 4-tap; Page-1 + MONO; kick+groove sum (GRV-01/02/03/05)
 - [ ] C-03-gen-transport-clock-and-groove-page2-PLAN.md — transport-clock gen.c (kills GEN_STEP_FRAMES) + SEQ LEN/LPF cascade; conditional GEN-only Groove Page 2 in ui.c; extended harnesses (GRV-04)
 **UI hint**: yes

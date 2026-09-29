@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: B-09 autonomous tasks complete (0c01954/74de7b0/26f89a2); STOPPED at Task 4 on-device voicing human-verify checkpoint
-last_updated: "2026-09-29T17:14:06.307Z"
+status: executing
+stopped_at: Completed C-01-PLAN.md (tempo-drivable mock host + RED test_groove); C-02 next
+last_updated: "2026-09-29T17:43:45.402Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State: Omega
@@ -24,19 +25,19 @@ progress:
 
 **What it is:** A native C Schwung module for Ableton Move — a multi-engine kick synthesizer (10 models) + 4-tap groove rumble generator + live performer mixer, in a single `dsp.so` loadable in Schwung slots, DR32 pads, and Movy tracks.
 
-**Current focus:** Phase B — Remaining 9 Kick Models
+**Current focus:** Phase C — Groove Rumble Engine
 
 ---
 
 ## Current Position
 
-**Phase:** B
-**Plan:** Not started
-**Status:** Milestone complete
-**Progress:** Phase B 9/9 plans coded (B-01..B-09); B-09 Task 4 on-device voicing round PENDING (hardware)
+Phase: C (Groove Rumble Engine) — EXECUTING
+Plan: 2 of 3 (C-01 complete; C-02 next)
+**Status:** Executing Phase C
+**Progress:** Phase C 1/3 plans (C-01 Wave-0 test infra complete; C-02 groove engine next)
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware; C: 1/3 plans — C-01 tempo-drivable mock host + RED test_groove landed)
 ```
 
 ---
@@ -66,11 +67,13 @@ progress:
 | Phase B-remaining-9-kick-models P06 | 7min | 3 tasks | 4 files |
 | Phase B-remaining-9-kick-models P07 | 4min | 2 tasks | 3 files |
 | Phase B-remaining-9-kick-models P08 | 12min | 3 tasks | 9 files |
+| Phase C-groove-rumble-engine P01 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Key Decisions
 
+- **[C-01] Mock host tempo-drivable + RED test_groove harness (Wave 0)** — `tests/mock_host.c` transport is now settable: module-static `g_mock_beat`/`g_mock_bpm` with `mock_host_set_beat`/`mock_host_advance_beat`/`mock_host_set_bpm`; `make_mock_host` wires `h.get_bpm = mock_get_bpm` (was NULL) and RESETS `(beat=0, bpm=120)` per call so tests start from a known transport state; new `make_mock_host_null_transport()` returns BOTH callbacks NULL to exercise the groove clock's last-resort 120-constant path (C-RESEARCH Pitfall 2). `tests/test_groove.c` drives the REAL plugin (init→create→set_param→on_midi→render_block) through the drivable mock and encodes GRV-01/02/03/05: GRV-02 BPM sweep {120,128,174} asserts `samples_per_16th=(60/bpm)*sr/4` distinct (5513/5168/3802) + per-block `mock_host_advance_beat(dbeat)` finite/bounded/non-silent, plus NULL-transport and negative-beat fallback cases; GRV-01 tap-delayed energy; GRV-03 grv_vol/length/color/tap1-4 responsiveness; GRV-05 MONO `grv_mono=1` → L==R. Groove params referenced as `grv_*` STRING LITERALS mirroring C-02's PK_GRV_* macros so the harness compiles+links independently in C-01 (unknown keys ignored by set_param today). `main()` guards FM2 registered so eventual GREEN asserts are non-trivial. RED as intended (GRV-03 fails on inert keys until C-02); wired into `make test` (GROOVE_TEST_SRCS + test-groove target + .PHONY + test: prereq); `src/omega.h` ABI byte-identical; `make test-switch` green. Commits 8b38227, 981f0c0.
 - **[B-09] Kick Page 2 assembles DYNAMICALLY per model (KICK-13 SC3)** — `ui.c` `omega_build_ui` splices `g_models[inst->model]->p2_slot_desc` into the kick2 params via a fixed 1024-byte no-alloc stack scratch, between a static `UI_KICK2_PREFIX` and the always-present `UI_KICK2_FX` suffix (FX TYPE/AMT + knobs); the FX suffix leads with a comma that is dropped (`UI_KICK2_FX + 1`) when a model emits no interior so the params array stays valid JSON. `fm2_p2_slot_desc` reconciled from the old A-03 `[{key,label}]` form to the uniform bare `{key,name,type,min,max}` interior that B-04..B-08 already emit, so all 10 feed ONE generic splice path (reverses the A-03 "ui.c stops calling fm2's descriptor" note — it calls it again, uniformly). `tests/test_switch.c assert_p2_json_valid` proves every model's Page-2 JSON is bounded/null-terminated/brace-balanced/bracket-free/correctly-counted (FM2=3, FM4=6, rest=4, GEN=3), refuses a too-small buffer (returns 0), and keeps the full `ui_hierarchy` balanced + null-terminated across model switches; `get_param` unknown-key -> -1. `make test` green (100 switch pairs + p2 JSON valid for 10 models). Commits 0c01954, 74de7b0.
 - **[B-09] On-device voicing surfaced as a blocking human-verify checkpoint (D-B04), not fabricated** — `docs/VOICING_AUDIT.md` (mirrors A-04) is the phase-completion gate: a 10-model x 5-item D-B02 manual voicing matrix with every cell PENDING (on-device) + the exact deploy/audition runbook (CI artifact / Docker `make dsp.so` + `scripts/glibc_gate.sh` -> `scripts/deploy.sh` -> select each model via the root Model encoder -> audition). FM2 flagged as the D-B03 reference bar. Task 4 requires physical Move hardware + a human listener and CANNOT be automated; execution STOPPED at the checkpoint. Phase B is NOT complete until every cell reads PASS. Commit 26f89a2.
 - **[B-01] Internal vtable extended, not the ABI** — `kick_model_vtable_t` gained a `set_param` fn ptr (no `_Static_assert` binds it; internal, not host ABI). dsp.c now dispatches all kick keys through `g_models[inst->model]->set_param` instead of the hardcoded `fm2_set_param` (Pitfall 2 fix). The locked `host_api_v1_t`/`plugin_api_v2_t` `+120`/`+56` asserts were left untouched.
@@ -139,11 +142,13 @@ progress:
 
 ## Session Continuity
 
-**Next action:** Complete the B-09 on-device voicing audit at the Move — fill `docs/VOICING_AUDIT.md` PASS for all 10 models (the D-B02 manual / D-B04 ear round; see Blockers). Once all cells PASS on-device AND the A-04 runbooks are filled, Phase B is ready for `/gsd:verify-work`. All B-09 automatable work is done: Kick Page 2 splices dynamically per model, the Page-2 JSON-validity gate covers all 10, and the audit doc + runbook are staged (`make test` green).
+**Next action:** Execute C-02 (groove contracts, tempo clock, and multitap) — define the PK_GRV_* keys in omega.h matching the `grv_*` strings test_groove.c uses, implement the groove voice (circular delay + tempo clock per C-RESEARCH Pattern 2 + Page-1 controls + MONO sum) so `make test-groove` goes GREEN. The RED harness and drivable mock host are now in place. (B-09 on-device voicing audit + A-04 runbooks remain outstanding hardware UAT debt, tracked in Blockers — not a code blocker for Phase C.)
 
-**Stopped at:** B-09 autonomous tasks complete (0c01954/74de7b0/26f89a2); STOPPED at Task 4 on-device voicing human-verify checkpoint
+**Stopped at:** Completed C-01-PLAN.md (tempo-drivable mock host + RED test_groove); C-02 next
 
 **Recent activity:**
+
+- 2026-09-29: C-01 complete — Wave-0 test infra for Phase C. `tests/mock_host.c` made tempo-drivable: module-static `g_mock_beat`/`g_mock_bpm` + `mock_host_set_beat`/`mock_host_advance_beat`/`mock_host_set_bpm`; `make_mock_host` wires `h.get_bpm=mock_get_bpm` (was NULL) and resets `(0,120)` per call; new `make_mock_host_null_transport()` (both callbacks NULL) for the last-resort 120-constant path. `tests/test_groove.c` (new) drives the REAL plugin through the drivable mock and encodes GRV-01/02/03/05: GRV-02 BPM sweep {120,128,174} asserting `samples_per_16th=(60/bpm)*sr/4` distinct (5513/5168/3802) + per-block `mock_host_advance_beat` finite/bounded/non-silent + NULL-transport & negative-beat fallback cases; GRV-01 tap-delayed energy; GRV-03 grv_* responsiveness; GRV-05 MONO L==R. Groove keys as `grv_*` string literals mirroring C-02's PK_GRV_* so the harness compiles independently; `main()` guards FM2 registered so GREEN asserts stay non-trivial. RED as intended (GRV-03 fails on inert keys until C-02). Wired into `make test` (GROOVE_TEST_SRCS + test-groove target + .PHONY + test: prereq); `src/omega.h` ABI byte-identical; `make test-switch` green. Commits 8b38227, 981f0c0
 
 - 2026-09-29: B-09 autonomous tasks complete — dynamic Kick Page 2 splice (KICK-13 SC3): `ui.c omega_build_ui` now splices the active model's `p2_slot_desc` into the kick2 params via a fixed 1024-byte no-alloc scratch between a static prefix and the always-present FX TYPE/AMT suffix (leading comma dropped when a model emits no interior so the params array stays valid JSON); `fm2_p2_slot_desc` reconciled from the old A-03 `[{key,label}]` form to the uniform bare `{key,name,type,min,max}` interior so all 10 feed ONE generic splice path. New `test_switch.c assert_p2_json_valid` proves every model's Page-2 JSON is bounded/null-terminated/brace-balanced/bracket-free/correctly-counted (FM2=3/FM4=6/rest=4/GEN=3), refuses too-small buffers (returns 0), and keeps the full `ui_hierarchy` balanced + null-terminated across model switches; `get_param` unknown-key -> -1. `docs/VOICING_AUDIT.md` (D-B04) staged: 10-model x 5-item D-B02 matrix all PENDING (on-device) + the exact deploy/audition runbook (CI artifact / Docker `make dsp.so` + `scripts/glibc_gate.sh` -> `scripts/deploy.sh` -> select each model via the root Model encoder -> audition), FM2 flagged as the D-B03 reference bar. `make test` green — 100 switch pairs + p2 JSON valid for 10 models, 45 distinct pairs. STOPPED at Task 4 on-device voicing human-verify checkpoint (requires Move hardware + human ears; cannot be automated/fabricated, mirrors A-04). KICK-13 delivered (commits 0c01954, 74de7b0, 26f89a2)
 
