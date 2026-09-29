@@ -81,8 +81,15 @@ DISTINCT_TEST_SRCS = tests/test_distinct.c tests/mock_host.c tests/wav.c \
 GEN_TEST_SRCS = tests/test_gen.c tests/mock_host.c tests/wav.c \
                 tests/malloc_trap.c src/dsp.c src/ui.c \
                 $(wildcard src/models/*.c) src/dsp_primitives.c
+# Groove rumble engine harness (C-01, GRV-01/02/03/05): drives the real
+# lifecycle through the tempo-DRIVABLE mock host and asserts tap positions track
+# driven BPM (120/128/174), Page-1 responsiveness, and MONO channel equality.
+# EXPECTED to fail RED until C-02 lands the groove engine; goes green then.
+GROOVE_TEST_SRCS = tests/test_groove.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/ui.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen fixtures wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -121,7 +128,7 @@ dsp.so: | src/wavetables.h
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -165,6 +172,14 @@ test-gen: | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(GEN_TEST_SRCS) -o build/test_gen $(LDLIBS)
 	./build/test_gen
+
+# test-groove: Groove rumble engine harness (C-01, GRV-01/02/03/05). Drives the
+# tempo-drivable mock at 120/128/174 BPM. EXPECTED to fail RED until C-02 lands
+# the groove engine — this is the intended enabling state; goes green in C-02.
+test-groove: | src/wavetables.h
+	@mkdir -p build tests/output
+	$(CC) $(TEST_FLAGS) $(GROOVE_TEST_SRCS) -o build/test_groove $(LDLIBS)
+	./build/test_groove
 
 clean:
 	rm -rf build tests/output

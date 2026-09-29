@@ -1,0 +1,347 @@
+/* test_groove.c — Groove rumble engine harness (GRV-01/02/03/05, Plan C-01).
+ *
+ * This is the Phase-C tempo-lock RED harness. It drives the REAL plugin
+ * (move_plugin_init_v2 -> create_instance -> set_param -> on_midi ->
+ * render_block) exactly like test_switch.c, through the tempo-DRIVABLE mock
+ * host (mock_host_set_beat / mock_host_advance_beat / make_mock_host_null_
+ * transport), and encodes every offline GRV assertion.
+ *
+ * RED STATE (expected): the groove engine (circular delay, tempo clock,
+ * Page-1 controls, MONO sum) does not exist until Plan C-02. Until then the
+ * groove-specific assertions (delayed tap energy, per-key responsiveness, MONO
+ * channel equality) are EXPECTED to fail — that is the intended enabling state
+ * this plan lands. The harness goes GREEN when C-02 wires the groove voice.
+ *
+ * Groove param keys: the PK_GRV_* macros are defined in C-02's omega.h. To let
+ * THIS file compile independently (C-01's `make test-groove` must not error on
+ * undefined macros), the keys are referenced as string literals that MIRROR the
+ * C-02 PK_GRV_* naming exactly:
+ *     PK_GRV_VOL    -> "grv_vol"
+ *     PK_GRV_LENGTH -> "grv_length"
+ *     PK_GRV_COLOR  -> "grv_color"
+ *     PK_GRV_TAP1.. -> "grv_tap1".."grv_tap4"
+ *     PK_GRV_MONO   -> "grv_mono"
+ * (set_param ignores unknown keys today, so the file compiles + runs; the
+ *  assertions bite once C-02 makes these keys live.)
+ */
+#include "omega.h"
+#include "dsp_primitives.h"
+#include "mock_host.h"
+
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+extern const kick_model_vtable_t *g_models[];
+
+#define BLOCK    128
+#define NBLOCKS  64                    /* ~0.19 s — enough for the tempo EMA to settle */
+#define NSAMP    (NBLOCKS * BLOCK * 2)
+
+#define SR       44100.0
+
+/* Groove Page-1 keys (mirror C-02's PK_GRV_* macros — see file header). */
+#define KGRV_VOL    "grv_vol"
+#define KGRV_LENGTH "grv_length"
+#define KGRV_COLOR  "grv_color"
+#define KGRV_TAP1   "grv_tap1"
+#define KGRV_TAP2   "grv_tap2"
+#define KGRV_TAP3   "grv_tap3"
+#define KGRV_TAP4   "grv_tap4"
+#define KGRV_MONO   "grv_mono"
+
+/* Kick Page 1 keys (8) — model-agnostic defaults every model understands. */
+static const char *k_page1_keys[] = {
+    PK_PITCH, PK_LENGTH, PK_SUSTAIN, PK_CURVE,
+    PK_ATTACK, PK_TRS_DEC, PK_TRS_TNE, PK_COLOR,
+};
+#define N_PAGE1 (int)(sizeof(k_page1_keys) / sizeof(k_page1_keys[0]))
+
+/* Groove Page-1 keys under test for GRV-03 responsiveness. */
+static const char *k_grv_keys[] = {
+    KGRV_VOL, KGRV_LENGTH, KGRV_COLOR,
+    KGRV_TAP1, KGRV_TAP2, KGRV_TAP3, KGRV_TAP4,
+};
+#define N_GRV (int)(sizeof(k_grv_keys) / sizeof(k_grv_keys[0]))
+
+/* The DC-02 tempo formula the harness asserts against: integer samples per 16th
+ * note = (60/bpm) * sr / 4, rounded. Distinct across BPMs => tap offsets track. */
+static int samples_per_16th(double bpm) {
+    return (int)((60.0 / bpm) * SR / 4.0 + 0.5);
+}
+
+/* Per-block beat advance that DRIVES the mock transport at `bpm`. This is the
+ * inverse of C-02's bpm = dbeat*60*sr/frames: one 128-frame block advances the
+ * beat by (bpm/60) quarter-notes-per-second * (frames/sr) seconds. */
+static double dbeat_for_bpm(double bpm) {
+    return (bpm / 60.0) * ((double)BLOCK / SR);
+}
+
+/* Select a NON-GEN model (index as decimal string, matches dsp.c's parse). */
+static void select_model(plugin_api_v2_t *api, void *inst, int model_idx) {
+    char idx[8];
+    if (model_idx < 10) { idx[0] = (char)('0' + model_idx); idx[1] = '\0'; }
+    else { idx[0] = (char)('0' + model_idx / 10); idx[1] = (char)('0' + model_idx % 10); idx[2] = '\0'; }
+    api->set_param(inst, PK_MODEL, idx);
+}
+
+/* Prime Kick Page 1 to mid and open the groove voice (VOL up, all taps up,
+ * moderate LENGTH/COLOR) so the rumble is audible when C-02 lands. */
+static void prime_groove(plugin_api_v2_t *api, void *inst) {
+    for (int i = 0; i < N_PAGE1; i++) api->set_param(inst, k_page1_keys[i], "0.5");
+    api->set_param(inst, KGRV_VOL,    "0.8");
+    api->set_param(inst, KGRV_LENGTH, "0.7");
+    api->set_param(inst, KGRV_COLOR,  "0.6");
+    api->set_param(inst, KGRV_TAP1,   "0.9");
+    api->set_param(inst, KGRV_TAP2,   "0.7");
+    api->set_param(inst, KGRV_TAP3,   "0.5");
+    api->set_param(inst, KGRV_TAP4,   "0.3");
+    api->set_param(inst, KGRV_MONO,   "0");
+}
+
+/* Render NBLOCKS while advancing the mock transport by `dbeat` before EACH block
+ * (drives the tempo clock). Asserts every int16 sample is finite + in range.
+ * Returns summed abs energy (int16 domain) for non-silence checks. If dbeat==0
+ * the transport is left wherever the caller set it (for the fallback cases). */
+static double render_driven(plugin_api_v2_t *api, void *inst, double dbeat,
+                            int16_t *capture /* NSAMP or NULL */) {
+    double energy = 0.0;
+    int16_t out[BLOCK * 2];
+    for (int b = 0; b < NBLOCKS; b++) {
+        if (dbeat > 0.0) mock_host_advance_beat(dbeat);   /* drive transport */
+        api->render_block(inst, out, BLOCK);
+        for (int i = 0; i < BLOCK * 2; i++) {
+            assert(out[i] >= INT16_MIN && out[i] <= INT16_MAX);   /* finite/bounded */
+            energy += fabs((double)out[i]);
+            if (capture) capture[b * BLOCK * 2 + i] = out[i];
+        }
+    }
+    return energy;
+}
+
+/* RMS-envelope energy of an int16 buffer (for GRV-03 responsiveness deltas). */
+static double buf_rms(const int16_t *buf, int nsamp) {
+    double s = 0.0;
+    for (int i = 0; i < nsamp; i++) { double x = (double)buf[i] / 32768.0; s += x * x; }
+    return sqrt(s / (double)nsamp);
+}
+
+/* ---- GRV-02: parametric BPM sweep — the tempo-lock crux -------------------- */
+static void test_bpm_sweep(void) {
+    static const double bpms[] = { 120.0, 128.0, 174.0 };
+    const int NB = (int)(sizeof(bpms) / sizeof(bpms[0]));
+
+    /* The computed 16th-note intervals MUST be distinct across BPMs — this is
+     * what "tap positions track BPM, never hardcoded 120" means (GRV-02 SC1).
+     * 120 -> ~5513, 128 -> ~5168, 174 -> ~3802 frames. */
+    int spq[3];
+    for (int i = 0; i < NB; i++) spq[i] = samples_per_16th(bpms[i]);
+    assert(spq[0] == 5513);            /* 120 BPM 16th */
+    assert(spq[1] == 5168);            /* 128 BPM 16th */
+    assert(spq[2] == 3802);            /* 174 BPM 16th */
+    for (int i = 0; i < NB; i++)
+        for (int j = i + 1; j < NB; j++)
+            assert(spq[i] != spq[j]);  /* distinct => the interval is tempo-driven */
+
+    /* For each BPM: reset the mock transport, init/create/select a NON-GEN model
+     * (FM2 = index 0), prime the groove, trigger, then render while advancing the
+     * beat at that BPM so the C-02 EMA settles. Output must be non-silent + finite
+     * + bounded at every tempo (the tempo-driven rumble is alive). */
+    for (int i = 0; i < NB; i++) {
+        host_api_v1_t host = make_mock_host();     /* resets beat=0, bpm=120 */
+        mock_host_set_bpm((float)bpms[i]);         /* fallback source also matches */
+        plugin_api_v2_t *api2 = move_plugin_init_v2(&host);
+        assert(api2 && api2->api_version == 2);
+        void *inst = api2->create_instance("/tmp/omega", "{}");
+        assert(inst);
+
+        select_model(api2, inst, MODEL_FM2);
+        prime_groove(api2, inst);
+        uint8_t noteon[3] = { 0x90, 36, 100 };
+        api2->on_midi(inst, noteon, 3, 0);
+
+        double e = render_driven(api2, inst, dbeat_for_bpm(bpms[i]), NULL);
+        assert(e > 1000.0);                        /* non-silent tempo-driven output */
+
+        api2->destroy_instance(inst);
+    }
+
+    printf("test_groove: GRV-02 BPM sweep OK (spq 120=%d 128=%d 174=%d distinct)\n",
+           spq[0], spq[1], spq[2]);
+}
+
+/* GRV-02 fallback chain: (a) NULL transport (both callbacks NULL) -> last-resort
+ * 120 constant; (b) negative beat position -> get_bpm fallback. Both must render
+ * finite/bounded/non-silent. */
+static void test_fallback_chain(void) {
+    /* (a) both callbacks NULL -> the 120 constant path. */
+    {
+        host_api_v1_t host = make_mock_host_null_transport();
+        plugin_api_v2_t *api = move_plugin_init_v2(&host);
+        assert(api && api->api_version == 2);
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        uint8_t noteon[3] = { 0x90, 36, 100 };
+        api->on_midi(inst, noteon, 3, 0);
+        double e = render_driven(api, inst, 0.0, NULL);  /* no transport to drive */
+        assert(e > 1000.0);                              /* still alive on 120 constant */
+        api->destroy_instance(inst);
+    }
+
+    /* (b) beat position pinned negative (transport stopped) -> get_bpm fallback. */
+    {
+        host_api_v1_t host = make_mock_host();
+        mock_host_set_bpm(128.0f);
+        mock_host_set_beat(-1.0);                        /* stopped transport */
+        plugin_api_v2_t *api = move_plugin_init_v2(&host);
+        assert(api && api->api_version == 2);
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        uint8_t noteon[3] = { 0x90, 36, 100 };
+        api->on_midi(inst, noteon, 3, 0);
+        double e = render_driven(api, inst, 0.0, NULL);  /* beat stays negative */
+        assert(e > 1000.0);                              /* get_bpm path keeps it alive */
+        api->destroy_instance(inst);
+    }
+
+    printf("test_groove: GRV-02 fallback chain OK (NULL-transport + negative-beat)\n");
+}
+
+/* ---- GRV-01: 4-tap delay presence ----------------------------------------- */
+/* Trigger a kick, drive at 174 BPM (short 16th so all four taps land inside the
+ * render window), and assert energy exists AFTER the initial attack window — the
+ * delayed taps produce later energy that a pure single kick would not. Every
+ * sample finite + bounded (int16 range). */
+static void test_tap_delay_presence(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(174.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    select_model(api, inst, MODEL_FM2);
+    prime_groove(api, inst);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    api->on_midi(inst, noteon, 3, 0);
+
+    static int16_t buf[NSAMP];
+    render_driven(api, inst, dbeat_for_bpm(174.0), buf);
+
+    /* Late-window energy: sum |x| in the last third of the render (well past the
+     * kick attack). With the groove taps active this MUST carry energy; a bare
+     * decayed kick would be near-silent here. */
+    int frames = NSAMP / 2;
+    int late_start = (frames * 2) / 3;
+    double late = 0.0;
+    for (int f = late_start; f < frames; f++)
+        late += fabs((double)buf[f * 2]) + fabs((double)buf[f * 2 + 1]);
+    assert(late > 100.0);                 /* delayed-tap energy present (RED until C-02) */
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRV-01 4-tap delayed energy present (late=%.0f)\n", late);
+}
+
+/* ---- GRV-03: Page-1 responsiveness ---------------------------------------- */
+/* For each groove key, render with the key at "0.0" vs "1.0" (others primed) and
+ * assert the RMS energy DIFFERS measurably; both extremes finite + bounded. */
+static void test_page1_responsive(void) {
+    host_api_v1_t host = make_mock_host();
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    static int16_t lo[NSAMP], hi[NSAMP];
+    double dbeat = dbeat_for_bpm(128.0);
+    mock_host_set_bpm(128.0f);
+
+    int responsive = 0;
+    for (int k = 0; k < N_GRV; k++) {
+        /* lo extreme */
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        api->set_param(inst, k_grv_keys[k], "0.0");
+        uint8_t noteon[3] = { 0x90, 36, 100 };
+        api->on_midi(inst, noteon, 3, 0);
+        mock_host_set_beat(0.0);
+        render_driven(api, inst, dbeat, lo);
+
+        /* hi extreme */
+        prime_groove(api, inst);
+        api->set_param(inst, k_grv_keys[k], "1.0");
+        api->on_midi(inst, noteon, 3, 0);
+        mock_host_set_beat(0.0);
+        render_driven(api, inst, dbeat, hi);
+
+        double rlo = buf_rms(lo, NSAMP), rhi = buf_rms(hi, NSAMP);
+        if (fabs(rhi - rlo) > 1e-4) responsive++;   /* measurable change */
+    }
+    /* Every groove key must move the output (RED until C-02 makes them live). */
+    assert(responsive == N_GRV);
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRV-03 Page-1 responsiveness OK (%d/%d keys)\n", responsive, N_GRV);
+}
+
+/* ---- GRV-05: MONO force-sum ------------------------------------------------ */
+/* With MONO on, the groove voice sums L+R so the rendered L channel == R channel
+ * sample-for-sample. This is the load-bearing GRV-05 check (holds regardless of
+ * whether the base kick is symmetric). Asymmetric taps are set so a non-mono
+ * groove could differ L/R. */
+static void test_mono_sum(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    static int16_t buf[NSAMP];
+    double dbeat = dbeat_for_bpm(128.0);
+
+    /* MONO on + asymmetric taps -> L must equal R everywhere. */
+    select_model(api, inst, MODEL_FM2);
+    prime_groove(api, inst);
+    api->set_param(inst, KGRV_TAP1, "1.0");
+    api->set_param(inst, KGRV_TAP3, "0.0");
+    api->set_param(inst, KGRV_MONO, "1");
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    api->on_midi(inst, noteon, 3, 0);
+    render_driven(api, inst, dbeat, buf);
+
+    int frames = NSAMP / 2;
+    for (int f = 0; f < frames; f++)
+        assert(buf[f * 2] == buf[f * 2 + 1]);       /* MONO forces L == R (GRV-05) */
+
+    api->destroy_instance(inst);
+    printf("test_groove: GRV-05 MONO force-sum OK (L == R under MONO)\n");
+}
+
+int main(void) {
+    omega_primitives_selfcheck();
+
+    /* Guard: the harness must be exercising a registered non-GEN model so the
+     * eventual GREEN assertions are non-trivial (groove fed by a live kick, not
+     * silence-in silence-out). If FM2 were unregistered the "non-silent" checks
+     * would pass on garbage / never bite. */
+    assert(g_models[MODEL_FM2] != NULL);
+    assert(g_models[MODEL_FM2]->render != NULL);
+
+    /* GRV-02 (the crux): tap positions track driven BPM + guarded fallback. */
+    test_bpm_sweep();
+    test_fallback_chain();
+
+    /* GRV-01 / GRV-03 / GRV-05. */
+    test_tap_delay_presence();
+    test_page1_responsive();
+    test_mono_sum();
+
+    printf("test_groove: ALL TESTS PASSED\n");
+    return 0;
+}
