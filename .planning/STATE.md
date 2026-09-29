@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed B-04-wtr-trs-wavetable-transient-PLAN.md
-last_updated: "2026-09-29T12:28:00.013Z"
+stopped_at: Completed B-05-ana-dig-analog-digital-PLAN.md
+last_updated: "2026-09-29T12:38:46.236Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -32,12 +32,12 @@ progress:
 ## Current Position
 
 **Phase:** B — Remaining 9 Kick Models — EXECUTING
-**Plan:** 4 of 9 complete (B-01, B-02, B-03, B-04 done); next is B-05 (ANA/DIG analog/digital)
+**Plan:** 5 of 9 complete (B-01..B-05 done); next is B-06 (HRD/FM4 distortion + FM)
 **Status:** Executing Phase B
-**Progress:** Phase B 4/9 plans complete
+**Progress:** Phase B 5/9 plans complete
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 4/9 plans)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 5/9 plans)
 ```
 
 ---
@@ -49,7 +49,7 @@ progress:
 | Metric | Value |
 |--------|-------|
 | Phases complete | 0/7 |
-| Requirements delivered | 13/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/04/08/12/15) |
+| Requirements delivered | 15/42 (FNDTN-01/02/03/04/05/06/07, KICK-01/02/04/07/08/09/12/15) |
 | On-device CPU (full chain) | Not yet measured (Phase D target: 10-15%) |
 
 | Plan | Duration | Tasks | Files |
@@ -63,6 +63,7 @@ progress:
 | Phase B-remaining-9-kick-models P02 | 8min | 3 tasks | 6 files |
 | Phase B-remaining-9-kick-models P03 | 6min | 3 tasks | 5 files |
 | Phase B-remaining-9-kick-models P04 | 9min | 3 tasks | 5 files |
+| Phase B-remaining-9-kick-models P05 | 6min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ progress:
 - **[B-03] FM2 re-voiced to the reference bar (D-B03)** — PITCH uses an exponential map `35*(120/35)^v` over [35,120] Hz (default ~50 Hz techno pocket, replaces linear 30-200); sweep decoupled from `f0*4` to a curve-coupled `clamp(f0*(2+curve*4), <=480 Hz)` recomputed on both PITCH and CURVE changes; LENGTH exp map [50,1500] ms; FM INDEX narrowed 0-8 (was 0-12; tail buzzy past 8); CURVE keeps the dual-env OUTPUT blend with tuned 15 ms (909) / 300 ms (808) constants. FM2 is the reference bar for B-04..B-08.
 - **[B-03] FM2 routes final output through fx_process (KICK-14)** — `fx_state_t fx` added to `fm2_state` (static_assert <=4096 holds); `fm2_set_param` calls `fx_config` at control rate on FX_TYPE/FX_AMT (Crush's powf runs there, not render); `fm2_render` applies `fx_process(fx_type*4, s, amt, &fm->fx)` as the final per-sample stage; render verified free of sinf/expf/tanf/tanhf/powf. Trigger resets the FX sample-and-hold but preserves precomputed crush_levels. FX chain now proven inside a real model.
 - **[B-03] Reusable automated voicing battery (D-B02)** — `tests/test_params.c` `assert_param_responsive(api,inst,model_idx,keys,nkeys)` proves non-silent default + each-param-lo-vs-hi-differs + bounded-at-extremes; `tests/test_distinct.c` computes pairwise RMS-envelope+spectral-ZCR distinctness. Both loop MODEL_COUNT + skip NULL slots so B-04..B-08 reuse them by passing their own P2 keys (distinctness empty-trivial in Wave 2, a real gate as models land). The 'measurably changes' metric is RMS-envelope OR spectral-ZCR (whole-buffer + 30 ms attack window) so transient/brightness params (e.g. TRS TNE) register — the plan's RMS-OR-spectral-centroid behavior.
+- **[B-04] Wavetable+transient family (WTR/TRS)** — WTR (KICK-04, clean separable transient) + TRS (KICK-08, 909 click<->noise transient morph + own PK_TRS_CURVE) as thin recipes over B-02 primitives; transient brightness reworked to LP<->raw BLENDS (cascaded LPs made the click inaudible/unresponsive) with the bright transient LEADING the attack; both registered by replacing their NULL slots; Makefile TEST_SRCS switched to `$(wildcard src/models/*.c)` so registry-named symbols always resolve. 3 registered / 3 distinct pairs.
+- **[B-05] ANA = dedicated sub-oscillator (KICK-09)** — a 2-table analog WAVE MORPH body (sine<->analog `wt_read_bl` crossfade) pitch-swept via the FM2 CURVE blend, PLUS a dedicated, independently-enveloped SUB-OSCILLATOR (pure `g_sine_table` sine at the UN-swept f0, own SUB LEVEL + long SUB DECAY exp 100..900 ms) = the 808 sub-boom lever no other model has, PLUS a synthesized SAMPLE attack-thump. PITCH mapped lower [30,110] Hz (~45 Hz) for sub territory. The sub tracks un-swept f0 so the boom is a stable low fundamental under the body's downward sweep.
+- **[B-05] DIG = digital body + BIT DEPTH as timbre (KICK-07)** — digital-character `wt_read_bl` body (bright saw/square/digital factory waves via WAVE IDX) + BIT DEPTH applying the shared `crush()` as a TIMBRAL control (v->bits[6,14], `powf(2,bits)`->levels precomputed at control rate; render is a bounded `roundf` only — no per-sample powf), contrasting HRD's future aggressive CRUSH. Warm-ANA-vs-crunchy-DIG split on the wavetable-source axis (ANA morphs sine/analog, DIG selects saw/square/digital) on top of ANA's sub-osc / DIG's crush. DIG's Page-1 TRS TNE reworked from a dead bit-level nudge to a body-brightness wave morph after the battery flagged it (rms_delta 9e-5, zcr_delta 0) — a spectral lever, not a subtle attenuation (same lesson as B-04). Now 5 registered / 10 distinct pairs; test_switch 25 pairs.
 - **Single module** (not split kick + rumble) — inter-pad routing may not be supported in DR32/Movy; single module is certain to work
 - **Hybrid DSP fidelity** — accurate FM/wavetable/transient engines; modal damped resonator for PHY; TPT SVF instead of ZDF Moog ladder (~3-5% CPU saving)
 - **Synthesis-method model IDs** (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN) — IP avoidance + user clarity
@@ -125,12 +129,13 @@ None.
 
 ## Session Continuity
 
-**Next action:** Execute Plan B-05 (ANA/DIG analog + digital models) — same recipe pattern over the B-02 primitives + FM2 reference voicing (wt_read_bl body + sub-osc for ANA's 808 boom; digital/bit-crushed body for DIG via the shared crush()); register their vtables (replace the [MODEL_ANA]/[MODEL_DIG] NULL slots) so test_distinct grows to a 5-model gate; add their assert_param_responsive calls. Reuse the B-04 lesson: transient/character controls should be LP<->raw blends (not cascaded LPs) and any lead-transient should genuinely lead the attack. (A-04 on-device validation still pending hardware — see Todos.)
+**Next action:** Execute Plan B-06 (HRD/FM4 distortion + FM models) — HRD (KICK-06) = hard-techno wavetable body + sample layer + post-distortion (reuse FX SAT/Fold at high amt + shared crush() for CRUSH); FM4 (KICK-03) = 4-op FM extending the FM2 core with 4 static OPL3-style algorithm routing tables + per-op AM/index envelopes + clamped FEEDBACK. Register their vtables (replace the [MODEL_HRD]/[MODEL_FM4] NULL slots) so test_distinct grows to a 7-model gate; add their assert_param_responsive calls. Reuse the B-05 lesson: every Page-1 knob needs a real spectral/amplitude target (no dead nudges) and character controls should move the spectrum measurably. (A-04 on-device validation still pending hardware — see Todos.)
 
-**Stopped at:** Completed B-04-wtr-trs-wavetable-transient-PLAN.md
+**Stopped at:** Completed B-05-ana-dig-analog-digital-PLAN.md
 
 **Recent activity:**
 
+- 2026-09-29: B-05 complete — ANA (KICK-09, the warm 808 sub-boom king: 2-table analog WAVE MORPH body + dedicated independently-enveloped SUB-OSC at un-swept f0 with long SUB DECAY + sample thump; PITCH lowered to [30,110] Hz) + DIG (KICK-07, the digital/retro kick: bright saw/square/digital body via WAVE IDX + BIT DEPTH as timbre via shared crush() with control-rate level precompute + PITCH ENV) as thin recipes over B-02 primitives + FM2 voicing; both registered by replacing their NULL slots; DIG's Page-1 TRS TNE reworked from a dead bit-nudge to a body-brightness wave morph after the battery flagged it (rms 9e-5, zcr 0); `make test` green — 5 registered / 10 distinct pairs, test_switch 25 pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-09 + KICK-07 delivered (commits 49dccdd, acec86a)
 - 2026-09-29: B-04 complete — WTR (KICK-04, clean wavetable body + dedicated separable transient) + TRS (KICK-08, advanced click<->noise transient + WT-color body morph + own 909-biased pitch curve) as thin recipes over B-02 primitives + FM2 voicing; both registered by replacing their NULL registry slots; transient brightness reworked to LP<->raw blends (cascaded LPs made the click inaudible/unresponsive) with the bright transient leading the attack; TEST_SRCS switched to the src/models/*.c wildcard; `make test` green — 3 registered / 3 distinct pairs; cross-build/glibc gate deferred to CI (no local Docker). KICK-04 + KICK-08 delivered (commits 415e092, 3e925a7, 0e84606)
 - 2026-09-29: B-03 complete — re-voiced FM2 to the reference bar (D-B03): exp PITCH map [35,120] Hz (~50 Hz default), curve-coupled sweep clamp(f0*(2+curve*4),<=480 Hz), exp LENGTH [50,1500] ms, narrowed FM INDEX 0-8, tuned CURVE 15ms/300ms; wired KICK-14 FX into fm2_render (fx_config control-rate, fx_process render, powf/expf/tanf-free); reusable voicing battery (test_params.c) + pairwise distinctness (test_distinct.c) — both loop MODEL_COUNT + skip NULL, reusable by B-04..B-08; `make test` green (commits 440c6a5, dc37820, cf2dacf)
 - 2026-09-29: Quick task 260929-cjj — fixed Phase A on-device load crash: `host_api_v1_t` was missing 3 fields (`mapped_memory`/`audio_out_offset`/`audio_in_offset`), shifting `g_host->log` onto a data pointer → segfault when the D-10 spike fired on first `get_param`. Also corrected `module.json` (nested `capabilities`) and `ui_hierarchy` (real `levels` schema) to match Context/01 verbatim. `make test` green (commits ce99134, f10d3b5, 5f799a7)

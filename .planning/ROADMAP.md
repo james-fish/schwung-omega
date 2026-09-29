@@ -54,7 +54,7 @@ Plans:
 - [x] B-02-shared-primitives-and-fx-chain-PLAN.md — shared primitives (modal/PRNG/scale/noise/band-limited wt) + 5-mode FX chain (KICK-14) + wavetables.h generator
 - [x] B-03-fm2-revoice-and-voicing-harness-PLAN.md — FM2 re-voice (D-B03) + wire FX into FM2 + reusable automated voicing battery (param-responsiveness + distinctness)
 - [x] B-04-wtr-trs-wavetable-transient-PLAN.md — WTR (KICK-04) + TRS (KICK-08) wavetable-body + transient family
-- [ ] B-05-ana-dig-analog-digital-PLAN.md — ANA (KICK-09) + DIG (KICK-07) analog-morph/sub + digital/bitcrush family
+- [x] B-05-ana-dig-analog-digital-PLAN.md — ANA (KICK-09) + DIG (KICK-07) analog-morph/sub + digital/bitcrush family
 - [ ] B-06-hrd-fm4-distortion-fm-PLAN.md — HRD (KICK-06) + FM4 (KICK-03) distortion + 4-op FM family
 - [ ] B-07-phy-modal-physical-PLAN.md — PHY (KICK-05) modal physical-model kick
 - [ ] B-08-usr-gen-userload-generative-PLAN.md — USR (KICK-10) off-render file load + GEN (KICK-11) generative engine (Phase-B scope)

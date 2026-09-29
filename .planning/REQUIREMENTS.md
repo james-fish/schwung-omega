@@ -25,9 +25,9 @@
 - [x] **KICK-04**: WTR model — wavetable body oscillator + dedicated transient impulse synth; body and click are independently enveloped; model-specific Kick Page 2: WAVE SELECT, BODY PITCH, TRANS DECAY, TRANS COLOR
 - [ ] **KICK-05**: PHY model — damped resonator physical model using 2–3 resonant modes (modal synthesis); represents shell/head/beater interaction without full waveguide; model-specific Kick Page 2: BEATER, SHELL SIZE, HEAD TENS, DAMPING
 - [ ] **KICK-06**: HRD model — hard techno: wavetable body + sample layer + post-distortion; drive and bit-crush available; model-specific Kick Page 2: SAMPLE LAYER, MIX, DRIVE, CRUSH
-- [ ] **KICK-07**: DIG model — digital wavetable (chip/additive/bit-reduced waveforms) + sample playback; bit-depth control for retro character; model-specific Kick Page 2: WAVE IDX, SAMPLE LAYER, BIT DEPTH, PITCH ENV
+- [x] **KICK-07**: DIG model — digital wavetable (chip/additive/bit-reduced waveforms) + sample playback; bit-depth control for retro character; model-specific Kick Page 2: WAVE IDX, SAMPLE LAYER, BIT DEPTH, PITCH ENV
 - [x] **KICK-08**: TRS model — advanced wavetable + transient synthesizer modeling stick/beater clicks and noise bursts; 909-style attack clarity; model-specific Kick Page 2: TRANS TONE, TRANS DECAY, WT COLOR, CURVE
-- [ ] **KICK-09**: ANA model — analog wavetable morphing (sampled vintage waveforms) + sub-oscillator + sample layer; 808 sub-boom character; model-specific Kick Page 2: WAVE MORPH, SUB LEVEL, SUB DECAY, SAMPLE
+- [x] **KICK-09**: ANA model — analog wavetable morphing (sampled vintage waveforms) + sub-oscillator + sample layer; 808 sub-boom character; model-specific Kick Page 2: WAVE MORPH, SUB LEVEL, SUB DECAY, SAMPLE
 - [ ] **KICK-10**: USR model — user-defined: load a custom WAV sample and/or 2048-sample wavetable from device storage (`module_dir/user/`); file I/O done off audio thread at `create_instance`; model-specific Kick Page 2: SAMPLE SELECT, WT MORPH, LAYER VOL, PITCH ENV
 - [ ] **KICK-11**: GEN model — generative rumble: PRNG pitch/velocity sequence generator; seed for repeatable sequences; scale-quantized or free-frequency mode; Euclidean density gating for rhythmic feel; model-specific Kick Page 2 parameters (see GRV-04)
 - [x] **KICK-12**: Universal Kick Page 1 present for all models (8 encoders): PITCH, LENGTH, SUSTAIN, CURVE (808↔909 pitch sweep), ATTACK, TRS DEC, TRS TNE, COLOR
@@ -124,9 +124,9 @@
 | KICK-04 | Phase B | Complete |
 | KICK-05 | Phase B | Pending |
 | KICK-06 | Phase B | Pending |
-| KICK-07 | Phase B | Pending |
+| KICK-07 | Phase B | Complete |
 | KICK-08 | Phase B | Complete |
-| KICK-09 | Phase B | Pending |
+| KICK-09 | Phase B | Complete |
 | KICK-10 | Phase B | Pending |
 | KICK-11 | Phase B | Pending |
 | KICK-12 | Phase A | Complete |
