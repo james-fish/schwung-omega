@@ -208,10 +208,21 @@ static void gen_trigger(bohm_instance_t *inst, int note, int velocity) {
     g->step_ctr = GEN_STEP_FRAMES;   /* step 0 plays a full step before advancing */
     gen_step_pitch(g);   /* pitch for step 0 */
 
-    if (g->npulses < 1) g->npulses = 1 + (int)(g->density * (float)(GEN_SEQ_LEN - 1) + 0.5f);
+    /* Default the density if GEN's Page-2 was never primed (dsp.c primes only
+     * the shared Page-1 keys). A moderate default keeps GEN audible out of the
+     * box (D-B02 non-silent default). */
+    if (g->npulses < 1) g->npulses = 1 + (int)(0.5f * (float)(GEN_SEQ_LEN - 1) + 0.5f);
 
-    /* Fire step 0 if the Euclidean pattern hits it (dense patterns start on 1). */
-    if (euclid_hit(0, g->npulses, GEN_SEQ_LEN)) gen_fire_step(g);
+    /* Fully zero the voice envelopes + phase FIRST so a trigger is byte-identical
+     * regardless of any tail left by a prior render (determinism, KICK-11). */
+    env_trigger(&g->amp_env, 0.0f, 0.0f);
+    env_trigger(&g->pitch_env_fast, 0.0f, 0.0f);
+    env_trigger(&g->pitch_env_slow, 0.0f, 0.0f);
+    g->body_phase = 0.0f;
+
+    /* The downbeat ALWAYS fires (a triggered kick must sound immediately); the
+     * Euclidean DENSITY pattern then gates the subsequent self-clocked steps. */
+    gen_fire_step(g);
 
     g->color_lp.s = 0.0f;
     g->fx.last     = 0.0f;
