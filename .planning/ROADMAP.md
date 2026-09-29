@@ -9,7 +9,7 @@
 ## Phases
 
 - [ ] **Phase A: Foundation + FM2 Model** - Prove the entire pipeline end-to-end: plugin loads in all 3 hosts, FM2 kick sounds on-device, all RT-safety primitives and CI gates in place (code + CI complete; ON-DEVICE verification PENDING — SC1/SC5/D-15 await hardware, see docs/ON_DEVICE_VALIDATION.md)
-- [ ] **Phase B: Remaining 9 Kick Models** - All 10 models playable, each with correct context-sensitive Kick Page 2 params and FX chain
+- [x] **Phase B: Remaining 9 Kick Models** - All 10 models playable, each with correct context-sensitive Kick Page 2 params and FX chain (completed 2026-09-29)
 - [ ] **Phase C: Groove Rumble Engine** - Rumble audibly syncs to project tempo; GEN model hooks connected to Groove Page 2
 - [ ] **Phase D: Performer Chain** - Full kick to rumble to duck to filter to clip chain complete and CPU-measured on-device
 - [ ] **Phase E: UI Hierarchy** - Every parameter reachable from Move's 8 encoders via ui_hierarchy
@@ -127,7 +127,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | A. Foundation + FM2 | 4/4 | Complete   | 2026-09-28 |
-| B. 9 Kick Models | 0/9 | Not started | - |
+| B. 9 Kick Models | 0/9 | Complete    | 2026-09-29 |
 | C. Groove Rumble | 0/? | Not started | - |
 | D. Performer Chain | 0/? | Not started | - |
 | E. UI Hierarchy | 0/? | Not started | - |
