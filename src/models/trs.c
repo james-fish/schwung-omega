@@ -235,11 +235,6 @@ static void trs_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
     }
 }
 
-/* ---- Page-2 slot delegation --------------------------------------------- */
-static void trs_set_p2(bohm_instance_t *inst, const char *key, const char *val) {
-    trs_set_param(inst, key, val);
-}
-
 /* ---- Page-2 slot descriptor (full JSON objects; Pattern 3) --------------- */
 static int trs_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
