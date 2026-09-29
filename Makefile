@@ -60,35 +60,51 @@ SWITCH_TEST_SRCS = tests/test_switch.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/ui.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx wavetables clean deploy
+
+# --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
+# src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
+# emitted by the host-side (native cc) generator. Committed like sine_table.h
+# so CI never regenerates; `make wavetables` (re)emits it. dsp.so and test
+# depend on the header EXISTING (order-only) so a clean checkout builds it once.
+src/wavetables.h: tools/gen_wavetables.c
+	@mkdir -p build
+	$(CC) -std=gnu11 -O2 tools/gen_wavetables.c -o build/gen_wavetables $(LDLIBS)
+	./build/gen_wavetables > $@
+
+# Convenience: force-regenerate the wavetable header.
+wavetables: tools/gen_wavetables.c
+	@mkdir -p build
+	$(CC) -std=gnu11 -O2 tools/gen_wavetables.c -o build/gen_wavetables $(LDLIBS)
+	./build/gen_wavetables > src/wavetables.h
 
 # dsp.so: cross-compiled module. src/*.c wildcard already covers src/ui.c (A-03).
-dsp.so:
+dsp.so: | src/wavetables.h
 	@mkdir -p build
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
 
 # test: native gate. Runs the FM2 unit test, the switch harness, then the
 # full offline lifecycle harness.
-test: test-fm2 test-fx test-switch
+test: test-fm2 test-fx test-switch | src/wavetables.h
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
 
 # test-fm2: focused FM2 DSP unit test (< 5 s).
-test-fm2:
+test-fm2: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(FM2_TEST_SRCS) -o build/test_fm2 $(LDLIBS)
 	./build/test_fm2
 
 # test-fx: post-kick FX chain unit test (KICK-14, < 5 s).
-test-fx:
+test-fx: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(FX_TEST_SRCS) -o build/test_fx $(LDLIBS)
 	./build/test_fx
 
 # test-switch: model-switch re-init hazard harness (KICK-13). Forward-
 # compatible — skips NULL registry slots.
-test-switch:
+test-switch: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(SWITCH_TEST_SRCS) -o build/test_switch $(LDLIBS)
 	./build/test_switch

@@ -9,6 +9,7 @@
  */
 #include "dsp_primitives.h"
 #include "sine_table.h"   /* defines: const float _Alignas(16) g_sine_table[2049] */
+#include "wavetables.h"   /* defines: const float _Alignas(16) g_wavetables[...] */
 #include <assert.h>
 
 /* --- Scale-quantize tables (GEN, KICK-11) ------------------------------ */
@@ -36,6 +37,11 @@ int scale_quantize(int scale, int degree) {
  * wrap point is branch-free and correct. Assert it at runtime from the harness. */
 void omega_primitives_selfcheck(void) {
     assert(g_sine_table[2048] == g_sine_table[0]);
+    /* Every factory wavetable must carry the same guard sample so wt_read_bl's
+     * t[i+1] at the wrap point is branch-free and correct (KICK-15). */
+    for (int w = 0; w < NUM_WAVES; w++)
+        for (int b = 0; b < BANDS; b++)
+            assert(g_wavetables[w][b][WT_LEN] == g_wavetables[w][b][0]);
 }
 
 /* --- FX chain (KICK-14): 5 bounded modes ------------------------------- */
