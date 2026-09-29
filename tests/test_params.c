@@ -242,8 +242,9 @@ int main(void) {
     assert_param_responsive(api, inst, MODEL_WTR, k_wtr_p2_keys, N_WTR_P2);
     assert_param_responsive(api, inst, MODEL_TRS, k_trs_p2_keys, N_TRS_P2);
 
-    /* Wave 4 (B-05): ANA (KICK-09). DIG added in Task 2. */
+    /* Wave 4 (B-05): ANA (KICK-09) + DIG (KICK-07). */
     assert_param_responsive(api, inst, MODEL_ANA, k_ana_p2_keys, N_ANA_P2);
+    assert_param_responsive(api, inst, MODEL_DIG, k_dig_p2_keys, N_DIG_P2);
 
     api->destroy_instance(inst);
     printf("test_params: ALL TESTS PASSED\n");
