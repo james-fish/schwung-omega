@@ -120,6 +120,16 @@ typedef enum {
     MODEL_COUNT
 } model_id_t;
 
+/* --- Groove rumble state (Phase C) ------------------------------------- */
+/* groove_state_t (delay rings + tempo clock + Page-1 params + COLOR LP) is
+ * defined in groove.h and placed BY VALUE on bohm_instance so the single
+ * create_instance calloc grows to cover it (DC-01/DC-08). groove.h is included
+ * HERE — after host_api_v1 is declared (its API decls reference it) and it does
+ * NOT re-include omega.h/dsp_primitives.h, so no include cycle is created (it
+ * stores the TPT COLOR state as bare floats to stay independent of
+ * dsp_primitives.h). */
+#include "groove.h"
+
 /* --- Shared instance layout -------------------------------------------- */
 /* The full struct lives here so downstream plans share ONE definition.
  * Phase B overlays per-model state via a union in a later plan; Phase A uses a
@@ -144,9 +154,21 @@ struct bohm_instance {
     int   usr_sample_len;            /* valid frames in usr_sample (0 if none) */
     bool  usr_wt_loaded;             /* a user wavetable was read */
     bool  usr_loaded;                /* any user content (sample or wavetable) */
+
+    /* --- Groove rumble voice (Phase C) — by value in the single calloc ----
+     * Two 131072-float delay rings dominate the instance footprint (~1.0 MB);
+     * the whole groove_state_t stays inside the ONE calloc (DC-01/DC-08), never
+     * a separate malloc. This is the member that raises the size assert below
+     * from the pre-C ~0.2 MB to the true ~1.3 MB mask footprint. */
+    groove_state_t groove;
 };
 
-_Static_assert(sizeof(struct bohm_instance) < 800000, "instance under 800KB");
+/* Size assert RAISED for the Phase-C groove delay rings. The two 131072-float
+ * rings alone are 2*131072*4 = 1,048,576 B; plus model_state (4096) + the USR
+ * buffers (usr_wavetable 2049*4 + usr_sample 44100*4 ~= 184 KB) + small fields
+ * the real sizeof is ~1.24 MB. Bound set just above at 1,300,000 (DC-08's
+ * 1,100,000 was illustrative; sized to the TRUE mask footprint, no padding). */
+_Static_assert(sizeof(struct bohm_instance) < 1300000, "instance under 1.3MB");
 
 /* --- Param key macros (D-08) — must match set_param/get_param dispatch -- */
 #define PK_PITCH      "pitch"
@@ -165,6 +187,19 @@ _Static_assert(sizeof(struct bohm_instance) < 800000, "instance under 800KB");
 #define PK_MODEL      "model"
 #define PK_MASTER_VOL "master_vol"
 #define PK_UI_HIER    "ui_hierarchy"
+
+/* --- Groove Page-1 param keys (Phase C, GRV-03/05) --------------------- */
+/* Model-independent groove-voice keys; dsp.c routes these to groove_set_param
+ * BEFORE the model-vtable fallback (they must NOT go through the kick model).
+ * The string values MUST match the literals tests/test_groove.c uses. */
+#define PK_GRV_VOL    "grv_vol"
+#define PK_GRV_LENGTH "grv_length"
+#define PK_GRV_COLOR  "grv_color"
+#define PK_GRV_TAP1   "grv_tap1"
+#define PK_GRV_TAP2   "grv_tap2"
+#define PK_GRV_TAP3   "grv_tap3"
+#define PK_GRV_TAP4   "grv_tap4"
+#define PK_GRV_MONO   "grv_mono"
 
 /* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
 /* Each key is unique across all models (dispatch is a flat strcmp chain).
