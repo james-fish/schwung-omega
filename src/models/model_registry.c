@@ -22,6 +22,8 @@ extern const kick_model_vtable_t g_dig_vtable;   /* defined in dig.c (B-05) */
 extern const kick_model_vtable_t g_hrd_vtable;   /* defined in hrd.c (B-06) */
 extern const kick_model_vtable_t g_fm4_vtable;   /* defined in fm4.c (B-06) */
 extern const kick_model_vtable_t g_phy_vtable;   /* defined in phy.c (B-07) */
+extern const kick_model_vtable_t g_usr_vtable;   /* defined in usr.c (B-08) */
+extern const kick_model_vtable_t g_gen_vtable;   /* defined in gen.c (B-08) */
 
 const kick_model_vtable_t *g_models[MODEL_COUNT] = {
     [MODEL_FM2] = &g_fm2_vtable,   /* implemented (Phase A) */
@@ -32,11 +34,11 @@ const kick_model_vtable_t *g_models[MODEL_COUNT] = {
     [MODEL_DIG] = &g_dig_vtable,   /* implemented (B-05) */
     [MODEL_HRD] = &g_hrd_vtable,   /* implemented (B-06) */
     [MODEL_PHY] = &g_phy_vtable,   /* implemented (B-07) */
-    /* All other slots are NULL until their model plan lands:
-     *   [MODEL_USR] = &g_usr_vtable,   (B-08)
-     *   [MODEL_GEN] = &g_gen_vtable,   (B-08)
-     * C zero-initialises any element not named above, so those slots are
-     * guaranteed NULL. dsp.c + the test harness guard/skip NULL slots. */
+    [MODEL_USR] = &g_usr_vtable,   /* implemented (B-08) — user WAV/wavetable */
+    [MODEL_GEN] = &g_gen_vtable,   /* implemented (B-08) — generative engine */
+    /* ALL 10 slots are now non-NULL. The registry is fully populated; the
+     * length _Static_assert below guarantees array size == MODEL_COUNT, and a
+     * runtime no-NULL-slot check lives in the test harness (test_gen.c). */
 };
 
 _Static_assert(sizeof(g_models) / sizeof(g_models[0]) == MODEL_COUNT,

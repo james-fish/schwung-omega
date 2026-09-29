@@ -40,7 +40,8 @@ static const char UI_OPEN[] =
 /* root level: Model enum + Volume float, then the two kick sub-page links. */
 static const char UI_ROOT[] =
     "\"root\":{\"name\":\"Omega\",\"params\":["
-      "{\"key\":\"" PK_MODEL "\",\"name\":\"Model\",\"type\":\"enum\",\"options\":[\"FM2\"]},"
+      "{\"key\":\"" PK_MODEL "\",\"name\":\"Model\",\"type\":\"enum\",\"options\":"
+        "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\",\"GEN\"]},"
       "{\"key\":\"" PK_MASTER_VOL "\",\"name\":\"Volume\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
       "{\"level\":\"kick1\",\"label\":\"Kick 1\"},"
       "{\"level\":\"kick2\",\"label\":\"Kick 2\"}"

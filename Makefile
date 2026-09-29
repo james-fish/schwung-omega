@@ -75,6 +75,12 @@ PARAMS_TEST_SRCS = tests/test_params.c tests/mock_host.c tests/wav.c \
 DISTINCT_TEST_SRCS = tests/test_distinct.c tests/mock_host.c tests/wav.c \
                      tests/malloc_trap.c src/dsp.c src/ui.c \
                      $(wildcard src/models/*.c) src/dsp_primitives.c
+# GEN determinism + USR off-render load + complete-registry gate (B-08 Task 3):
+# KICK-11 seed-stable/seed-differ/density; KICK-10 fixture-load + fallback; and
+# a runtime assert that all MODEL_COUNT registry slots are non-NULL.
+GEN_TEST_SRCS = tests/test_gen.c tests/mock_host.c tests/wav.c \
+                tests/malloc_trap.c src/dsp.c src/ui.c \
+                $(wildcard src/models/*.c) src/dsp_primitives.c
 
 .PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen fixtures wavetables clean deploy
 
@@ -152,6 +158,13 @@ test-distinct: | src/wavetables.h
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(DISTINCT_TEST_SRCS) -o build/test_distinct $(LDLIBS)
 	./build/test_distinct
+
+# test-gen: GEN determinism + USR off-render load + complete-registry gate
+# (B-08, KICK-10/KICK-11). Depends on the USR fixture WAV.
+test-gen: | src/wavetables.h tests/fixtures/user_kick.wav
+	@mkdir -p build tests/output
+	$(CC) $(TEST_FLAGS) $(GEN_TEST_SRCS) -o build/test_gen $(LDLIBS)
+	./build/test_gen
 
 clean:
 	rm -rf build tests/output
