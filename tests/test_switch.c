@@ -47,7 +47,7 @@ extern const kick_model_vtable_t *g_models[];
  * Page 2, so its KICK Page 2 emits no model interior (FX TYPE/AMT only). Kept
  * in model_id_t order. */
 static const int g_expected_slots[MODEL_COUNT] = {
-    [MODEL_FM2] = 3, [MODEL_FM4] = 6, [MODEL_WTR] = 4, [MODEL_PHY] = 4,
+    [MODEL_FM2] = 3, [MODEL_FM4] = 5, [MODEL_WTR] = 4, [MODEL_PHY] = 4,
     [MODEL_HRD] = 4, [MODEL_DIG] = 4, [MODEL_TRS] = 4, [MODEL_ANA] = 4,
     [MODEL_USR] = 4, [MODEL_GEN] = 0,
 };

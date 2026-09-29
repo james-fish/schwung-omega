@@ -103,6 +103,7 @@ static const char OPT_MODEL[] =
 static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush\"]";
 static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
+static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
@@ -111,26 +112,33 @@ static const uiparam_t P_ROOT[] = {
 };
 static const char KN_ROOT[] = "[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]";
 
+/* Kick Page 1 (B2 reorg, VOICE-04): the fun lives here — PITCH, LENGTH, CURVE
+ * (LENGTH now folds in SUSTAIN, VOICE-03) followed by the ACTIVE model's unique
+ * params (spliced from its p2_slot_desc). PITCH exposed in Hz (VOICE-01). */
 static const uiparam_t P_KICK1[] = {
-    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "%", "0.01", NULL },
-    { PK_LENGTH,  "LENGTH",  "LEN",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_SUSTAIN, "SUSTAIN", "SUS",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_CURVE,   "CURVE",   "CURVE", UP_FLOAT, "%", "0.01", NULL },
-    { PK_ATTACK,  "ATTACK",  "ATK",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_TRS_DEC, "TRS DEC", "TRSDEC",UP_FLOAT, "%", "0.01", NULL },
-    { PK_TRS_TNE, "TRS TNE", "TRSTNE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_COLOR,   "COLOR",   "COLOR", UP_FLOAT, "%", "0.01", NULL },
+    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "Hz", "1",    NULL },
+    { PK_LENGTH,  "LENGTH",  "LEN",   UP_FLOAT, "%",  "0.01", NULL },
+    { PK_CURVE,   "CURVE",   "CURVE", UP_FLOAT, "%",  "0.01", NULL },
 };
-static const char KN_KICK1[] =
-    "[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_SUSTAIN "\",\"" PK_CURVE
-    "\",\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR "\"]";
 
-/* Kick Page 2 FX suffix params (appended after the model splice). */
-static const uiparam_t P_FX[] = {
-    { PK_FX_TYPE, "FX TYPE", "FXTYPE", UP_ENUM,  "",  "0",    OPT_FX },
-    { PK_FX_AMT,  "FX AMT",  "FXAMT",  UP_FLOAT, "%", "0.01", NULL },
+/* Kick Page 2 (B2 reorg, VOICE-04): static shared set — the 3 transients, the
+ * body FILTER (=COLOR) with routing, and the post FX (type/amount/tone). TRS TNE
+ * shapes the transient; FILTER + ROUTE replace the old separate COLOR (VOICE-03/
+ * 05). PITCH is in Hz but PK_PITCH still parses 0..1 internally in Phase B2-01;
+ * the Hz domain conversion lands with the per-model voicing pass (B2-02). */
+static const uiparam_t P_KICK2[] = {
+    { PK_ATTACK,       "ATTACK",   "ATK",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_DEC,      "TRS DEC",  "TRSDEC",UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_TNE,      "TRS TNE",  "TRSTNE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_COLOR,        "FILTER",   "FILT",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_FILTER_ROUTE, "FILT RTE", "RTE",   UP_ENUM,  "",  "0",    OPT_ROUTE },
+    { PK_FX_TYPE,      "FX TYPE",  "FXTYPE",UP_ENUM,  "",  "0",    OPT_FX },
+    { PK_FX_AMT,       "FX AMT",   "FXAMT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_FX_TONE,      "FX TONE",  "FXTONE",UP_FLOAT, "%", "0.01", NULL },
 };
-static const char KN_FX[] = "[\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\"]";
+static const char KN_KICK2[] =
+    "[\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR
+    "\",\"" PK_FILTER_ROUTE "\",\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\",\"" PK_FX_TONE "\"]";
 
 static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
@@ -166,10 +174,26 @@ static const char UI_OPEN[] =
 static const char UI_ROOT_LINKS[] =
     ",{\"level\":\"kick1\",\"label\":\"Kick 1\"},"
     "{\"level\":\"kick2\",\"label\":\"Kick 2\"}";
-static const char UI_KICK2_PREFIX[] = "\"kick2\":{\"name\":\"Kick 2\",\"params\":[";
 static const char UI_CLOSE[] = "}}";
 
 #define NELEM(a) ((int)(sizeof(a)/sizeof((a)[0])))
+
+/* Append each "key" value found in a spliced model interior to the knobs array
+ * as ,"<key>" so Page 1's knob map covers the model-unique params too. The
+ * interior is null-terminated (p2_slot_desc); bounded, no allocation. */
+static void ui_emit_interior_keys(char *buf, int buf_len, int *off, const char *interior) {
+    const char *p = interior;
+    const char *tag = "\"key\":\"";
+    while ((p = strstr(p, tag)) != NULL) {
+        p += 7;                                   /* past the tag */
+        const char *q = p;
+        while (*q && *q != '"') q++;
+        ui_puts(buf, buf_len, off, ",\"");
+        ui_append(buf, buf_len, off, p, (int)(q - p));
+        ui_puts(buf, buf_len, off, "\"");
+        p = (*q) ? q + 1 : q;
+    }
+}
 
 /* Emit the root level by hand (it mixes params with two nav-link objects). */
 static void ui_emit_root(char *buf, int buf_len, int *off) {
@@ -203,23 +227,25 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
 
     ui_emit_root(buf, buf_len, &off);
 
-    ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "kick1", "Kick 1", P_KICK1, NELEM(P_KICK1), KN_KICK1);
-
-    /* kick2 = prefix + model splice + FX suffix (with leading comma iff the
-     * model emitted an interior). */
-    ui_puts(buf, buf_len, &off, ",");
-    ui_puts(buf, buf_len, &off, UI_KICK2_PREFIX);
-    if (slot_len > 0) {
-        ui_append(buf, buf_len, &off, scratch, slot_len);
-        ui_puts(buf, buf_len, &off, ",");
+    /* kick1 (B2 reorg): PITCH/LENGTH/CURVE + the active model's unique params
+     * (spliced from p2_slot_desc). knobs = those fixed keys + the model keys
+     * extracted from the interior, so all 8 encoders map correctly. */
+    ui_puts(buf, buf_len, &off, ",\"kick1\":{\"name\":\"Kick 1\",\"params\":[");
+    for (int i = 0; i < NELEM(P_KICK1); i++) {
+        if (i) ui_puts(buf, buf_len, &off, ",");
+        ui_emit_param(buf, buf_len, &off, &P_KICK1[i]);
     }
-    ui_emit_param(buf, buf_len, &off, &P_FX[0]);   /* FX TYPE */
+    if (slot_len > 0) {
+        ui_puts(buf, buf_len, &off, ",");
+        ui_append(buf, buf_len, &off, scratch, slot_len);
+    }
+    ui_puts(buf, buf_len, &off, "],\"knobs\":[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_CURVE "\"");
+    if (slot_len > 0) ui_emit_interior_keys(buf, buf_len, &off, scratch);
+    ui_puts(buf, buf_len, &off, "]}");
+
+    /* kick2 (B2 reorg): static shared transient/FILTER/FX page. */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_param(buf, buf_len, &off, &P_FX[1]);   /* FX AMT */
-    ui_puts(buf, buf_len, &off, "],\"knobs\":");
-    ui_puts(buf, buf_len, &off, KN_FX);
-    ui_puts(buf, buf_len, &off, "}");
+    ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2);
 
     /* Groove Page 1 always; Groove Page 2 only for GEN (GRV-04). */
     ui_puts(buf, buf_len, &off, ",");

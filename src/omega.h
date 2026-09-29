@@ -31,7 +31,7 @@
  * live on bohm_instance without pulling in params.h (which includes THIS
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
-#define OMEGA_PKI_COUNT 53   /* == PKI_COUNT (every kick param) */
+#define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
 #define OMEGA_GKI_COUNT 10   /* == GKI_COUNT (master/model + 8 groove) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
@@ -180,6 +180,11 @@ struct bohm_instance {
     float kick_cache[MODEL_COUNT][OMEGA_PKI_COUNT];
     bool  kick_cache_set[MODEL_COUNT][OMEGA_PKI_COUNT];
     float global_cache[OMEGA_GKI_COUNT];
+
+    /* FX TONE post-kick tilt state (B2, VOICE-05). A one-pole split applied to
+     * the kick voice in render: neutral at 0.5, darker below, brighter above.
+     * Zeroed by the calloc. */
+    float fx_tone_lp_l, fx_tone_lp_r;
 };
 
 /* Size assert RAISED for the Phase-C groove delay rings. The two 131072-float
@@ -203,6 +208,11 @@ _Static_assert(sizeof(struct bohm_instance) < 1300000, "instance under 1.3MB");
 #define PK_OP2_WAVE   "op2_wave"
 #define PK_FX_TYPE    "fx_type"
 #define PK_FX_AMT     "fx_amt"
+/* B2 (VOICE-04/05): shared Kick Page 2 additions. FX TONE tilts the post-FX
+ * output; FILTER ROUTE selects whether COLOR (the body filter) is applied to the
+ * synth, the transient, or both. COLOR is now surfaced as "FILTER" in the UI. */
+#define PK_FX_TONE      "fx_tone"
+#define PK_FILTER_ROUTE "filter_route"
 #define PK_MODEL      "model"
 #define PK_MASTER_VOL "master_vol"
 #define PK_UI_HIER    "ui_hierarchy"

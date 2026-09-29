@@ -28,9 +28,10 @@
  * keys. Append-only within a model group is fine; the enum only indexes the
  * cache, it is not part of any ABI. */
 typedef enum {
-    /* Shared (Page 1 + FX) */
+    /* Shared (Page 1 + Page 2 transient/FX/filter) */
     PKI_PITCH = 0, PKI_LENGTH, PKI_SUSTAIN, PKI_CURVE, PKI_ATTACK,
     PKI_TRS_DEC, PKI_TRS_TNE, PKI_COLOR, PKI_FX_TYPE, PKI_FX_AMT,
+    PKI_FX_TONE, PKI_FILTER_ROUTE,
     /* FM2 */
     PKI_FM_RATIO, PKI_FM_INDEX, PKI_OP2_WAVE,
     /* FM4 */

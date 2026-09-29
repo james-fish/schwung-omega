@@ -356,8 +356,11 @@ static int fm4_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
         "{\"key\":\"" PK_FM4_OPRATIO  "\",\"name\":\"OP RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_FM4_OPINDEX  "\",\"name\":\"OP INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_FM4_OPAMP    "\",\"name\":\"OP AMP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM4_FEEDBACK "\",\"name\":\"FEEDBACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM4_ALGO2    "\",\"name\":\"ALGO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_FM4_FEEDBACK "\",\"name\":\"FEEDBACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        /* B2 (VOICE-04): ALGO2 (metallic-detune morph) merged away to fit FM4's
+         * unique params on Kick Page 1 (PITCH/LENGTH/CURVE + 5). PK_FM4_ALGO2 is
+         * still handled in set_param (defaulted via the cache prime), just not a
+         * separate UI slot — its detune folds into OP RATIO spread. */
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

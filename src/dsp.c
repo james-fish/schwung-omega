@@ -334,6 +334,23 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
         memset(r, 0, sizeof(float) * (size_t)frames);
     }
 
+    /* FX TONE post-kick tilt (B2, VOICE-05). A cheap fixed ~1.2 kHz one-pole
+     * split: out = low + high*(2*tone), neutral at tone=0.5 (out==x), darker
+     * below, brighter above; lows are always preserved so a kick never thins
+     * out. Transcendental-free (constant coefficient); reads the active model's
+     * cached FX TONE. Applied to the kick voice before the groove taps so the
+     * rumble echoes the toned kick. */
+    {
+        float tone = inst->kick_cache[inst->model][PKI_FX_TONE];
+        float hi_gain = 2.0f * tone;
+        for (int n = 0; n < frames; n++) {
+            inst->fx_tone_lp_l += 0.157f * (l[n] - inst->fx_tone_lp_l);
+            inst->fx_tone_lp_r += 0.157f * (r[n] - inst->fx_tone_lp_r);
+            l[n] = inst->fx_tone_lp_l + (l[n] - inst->fx_tone_lp_l) * hi_gain;
+            r[n] = inst->fx_tone_lp_r + (r[n] - inst->fx_tone_lp_r) * hi_gain;
+        }
+    }
+
     /* Groove rumble (Phase C). Update the tempo clock ONCE per block (Pattern 2
      * — never per sample) UNCONDITIONALLY: GEN reads inst->groove.samples_per_16th
      * to clock its generative sequence (GRV-02/DC-05), so the clock must run even

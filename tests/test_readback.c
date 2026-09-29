@@ -121,6 +121,26 @@ int main(void) {
         assert(strstr(ui, "\"unit\":") != NULL);               /* real-world unit */
         assert(strstr(ui, "\"step\":") != NULL);
         printf("test_readback: rich schema OK (enum/options/default/short_name/unit/step)\n");
+
+        /* B2 page reorg (VOICE-03/04/05): model-unique params live on kick1;
+         * kick2 is the static transient/FILTER/FX page; PITCH is Hz; SUSTAIN is
+         * gone from the UI (merged into LENGTH). */
+        const char *k1 = strstr(ui, "\"kick1\":{");   /* level def, not nav link */
+        const char *k2 = strstr(ui, "\"kick2\":{");
+        const char *grv = strstr(ui, "\"groove1\":{");
+        assert(k1 && k2 && grv && k1 < k2 && k2 < grv);
+        /* FM4 is active (model set to "1" earlier). Its unique key op ratio must
+         * appear on kick1 (between kick1 and kick2), NOT on kick2. */
+        const char *opr = strstr(ui, PK_FM4_OPRATIO);
+        assert(opr && opr > k1 && opr < k2);
+        /* kick2 static controls present after kick2. */
+        assert(strstr(k2, PK_FILTER_ROUTE) != NULL);
+        assert(strstr(k2, PK_FX_TONE) != NULL);
+        assert(strstr(ui, "\"Synth\",\"Transient\",\"Both\"") != NULL);  /* route enum */
+        assert(strstr(ui, "\"unit\":\"Hz\"") != NULL);                    /* PITCH Hz */
+        /* SUSTAIN key no longer surfaced as a UI param object. */
+        assert(strstr(ui, "\"key\":\"" PK_SUSTAIN "\"") == NULL);
+        printf("test_readback: B2 page reorg OK (model params on kick1, static kick2, PITCH Hz)\n");
     }
 
     /* 5. Unknown key -> -1, no write. */
