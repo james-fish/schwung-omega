@@ -100,11 +100,11 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 
 ### Groove Redesign (Phase C1)
 
-- [ ] **GRVX-01**: Groove has a discrete Type selector (TAPS / GEN) that swaps the groove control set; GEN groove is decoupled from the base kick model and pairs with any model.
-- [ ] **GRVX-02**: Groove voice redesigned to a resonant/feedback rumble (not a dry 4-tap echo) — audibly a continuous rumble, not gated/bit-crushed, at usable levels.
-- [ ] **GRVX-03**: TAPS type — Page 1 tap controls (COLOR filter audibly effective) + Page 2 FX: reverb (cheap, 1–3 types, MIX/DECAY/TONE), drive, filter type, LFO speed, LFO amount.
-- [ ] **GRVX-04**: GEN type — Page 1: SCALE (enum incl. off/unquantized), SEED, SEQ LEN (1–32, actually seeds a 1–32 × 16th sequence), ROTATE (bidirectional), SWING; Page 2: WAVE TYPE, WAVEFOLDER, FILTER (RES+ENV, usable curve), LFO, MUTATE, DELAY, REVERB, DRIVE.
-- [ ] **GRVX-05**: GEN retrigger mode control — on-note / 1 / 2 / 4 / 8 bars / NONE, default NONE (sequencer free-runs, obeys length; does not retrigger every kick hit); sequence stops when transport stops.
+- [x] **GRVX-01**: Groove has a discrete Type selector (TAPS / GEN) that swaps the groove control set; GEN groove is decoupled from the base kick model and pairs with any model.
+- [x] **GRVX-02**: Groove voice redesigned to a resonant/feedback rumble (not a dry 4-tap echo) — audibly a continuous rumble, not gated/bit-crushed, at usable levels.
+- [x] **GRVX-03**: TAPS type — Page 1 tap controls (COLOR filter audibly effective) + Page 2 FX: reverb (cheap, 1–3 types, MIX/DECAY/TONE), drive, filter type, LFO speed, LFO amount.
+- [x] **GRVX-04**: GEN type — Page 1: SCALE (enum incl. off/unquantized), SEED, SEQ LEN (1–32, actually seeds a 1–32 × 16th sequence), ROTATE (bidirectional), SWING; Page 2: WAVE TYPE, WAVEFOLDER, FILTER (RES+ENV, usable curve), LFO, MUTATE, DELAY, REVERB, DRIVE.
+- [x] **GRVX-05**: GEN retrigger mode control — on-note / 1 / 2 / 4 / 8 bars / NONE, default NONE (sequencer free-runs, obeys length; does not retrigger every kick hit); sequence stops when transport stops.
 
 ---
 
@@ -191,11 +191,11 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | SMPL-01 | Phase B3 (v1.1) | Complete |
 | SMPL-02 | Phase B3 (v1.1) | Complete |
 | SMPL-03 | Phase B3 (v1.1) | Complete (SD path best-guess, confirm on-device) |
-| GRVX-01 | Phase C1 (v1.1) | Pending |
-| GRVX-02 | Phase C1 (v1.1) | Pending |
-| GRVX-03 | Phase C1 (v1.1) | Pending |
-| GRVX-04 | Phase C1 (v1.1) | Pending |
-| GRVX-05 | Phase C1 (v1.1) | Pending |
+| GRVX-01 | Phase C1 (v1.1) | Complete |
+| GRVX-02 | Phase C1 (v1.1) | Complete |
+| GRVX-03 | Phase C1 (v1.1) | Complete |
+| GRVX-04 | Phase C1 (v1.1) | Complete |
+| GRVX-05 | Phase C1 (v1.1) | Complete |
 | PERF-01 | Phase D (v1.1) | Pending |
 | PERF-02 | Phase D (v1.1) | Pending |
 | PERF-03 | Phase D (v1.1) | Pending |
