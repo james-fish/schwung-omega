@@ -26,7 +26,7 @@ must_haves:
       pattern: "modal_tick"
     - from: "src/models/model_registry.c g_models[]"
       to: "g_phy_vtable at MODEL_PHY"
-      via: "append-only registry in enum order"
+      via: "designated initializer replacing the NULL slot (enum-indexed)"
       pattern: "g_phy_vtable"
 ---
 
@@ -34,7 +34,7 @@ must_haves:
 Implement PHY (KICK-05) — the modal physical-model kick, the only NON-oscillator engine. 2-3 damped resonant modes (complex-rotation `modal_t` from B-02) excited by a short filtered noise/click burst, mapping BEATER (excitation), SHELL SIZE (body-mode freqs), HEAD TENS (dominant pitched mode + downward sweep), DAMPING (decay). This is the highest-risk DSP (NaN/blowup if freq/decay unclamped) — the modal primitive already clamps freq to [20, 0.45*SR] and decay to (0,1) (B-02), and PHY re-verifies bounds.
 
 Purpose: The organic/woody/springy voice that no FM or wavetable model provides; proves the modal primitive in a real model.
-Output: src/models/phy.c, registry entry, extended param battery.
+Output: src/models/phy.c, registry entry (replacing its NULL slot), extended param battery.
 </objective>
 
 <execution_context>
@@ -55,6 +55,8 @@ Output: src/models/phy.c, registry entry, extended param battery.
 
 <interfaces>
 <!-- From B-01: MODEL_PHY, PK_PHY_* keys, extern g_phy_vtable, vtable has .set_param.
+     From B-01 registry: g_models uses designated initializers; MODEL_PHY is currently
+     NULL — this plan REPLACES that NULL.
      From B-02: modal_t + modal_excite(m, freq_hz, decay_per_sample, amp) [clamps freq
      to [20,0.45*SR] and decay to (0,1)] + modal_tick(m); noise_t + noise_tick;
      tpt1_lp; env_t; fx_process + fx_state_t. Research skeleton (§Code Examples):
@@ -95,30 +97,32 @@ Output: src/models/phy.c, registry entry, extended param battery.
 </task>
 
 <task type="auto">
-  <name>Task 2: Register PHY; extend param battery; add explicit NaN-at-extremes assert; wave gate</name>
-  <read_first>src/models/model_registry.c, src/omega.h (MODEL_PHY order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-VALIDATION.md (KICK-05 "modal freq/decay clamped (no NaN)"), B-RESEARCH.md (Pitfall 5, Pitfall 6)</read_first>
+  <name>Task 2: Register PHY (replace its NULL slot); extend param battery; add explicit NaN-at-extremes assert; wave gate</name>
+  <read_first>src/models/model_registry.c (designated-initializer array from B-01), src/omega.h (MODEL_PHY order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-VALIDATION.md (KICK-05 "modal freq/decay clamped (no NaN)"), B-RESEARCH.md (Pitfall 5, Pitfall 6)</read_first>
   <files>src/models/model_registry.c, tests/test_params.c</files>
   <action>
-    In `src/models/model_registry.c`: add extern decl + register `&g_phy_vtable` (MODEL_PHY) at its exact enum index; array stays in enum order (Pitfall 6). Depends on B-06 (sequential).
+    In `src/models/model_registry.c`: REPLACE the NULL at MODEL_PHY with `[MODEL_PHY] = &g_phy_vtable`, using a designated initializer (B-01 established the all-NULL array; B-04/B-05/B-06 replaced earlier slots). Add the designated line and remove the placeholder comment. Add `extern const kick_model_vtable_t g_phy_vtable;` if not already provided by omega.h. Array length stays MODEL_COUNT; the remaining unimplemented slots (USR/GEN) stay NULL until B-08.
+    These model plans are STRICTLY SEQUENTIAL by wave (B-04 → B-05 → B-06 → B-07); this plan replaces only its OWN NULL slot — no collision. `make test` compiles+links because the still-unimplemented USR/GEN slots remain NULL and are guarded (B-01 contract).
     In `tests/test_params.c`: add `assert_param_responsive` for PHY (PK_PHY_BEATER, PK_PHY_SHELL, PK_PHY_HEADTENS, PK_PHY_DAMPING + 8 Page-1). ADD an EXPLICIT extreme-bounds assertion for PHY (KICK-05 automated criterion): set HEAD TENS=1.0 (max freq), DAMPING=0.0 (min damping / longest decay), SHELL SIZE=1.0, trigger, render 2048 frames, assert every sample `isfinite` and `|x|<=1.0` (proves no modal blowup/NaN at the worst-case corner).
     Run full suite + cross-build + glibc gate.
   </action>
   <acceptance_criteria>
-    - `grep -q 'g_phy_vtable' src/models/model_registry.c`
+    - `grep -q '\[MODEL_PHY\] = &g_phy_vtable' src/models/model_registry.c`
+    - The `sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT` assert still present; array length unchanged
     - `tests/test_params.c` references PK_PHY_HEADTENS and has an explicit PHY extreme-bounds (isfinite) assertion
-    - `make test` exits 0; `tests/output/PHY_kick.wav` non-empty
+    - `make test` exits 0 (USR/GEN slots still NULL, guarded); `tests/output/PHY_kick.wav` non-empty
     - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes
   </acceptance_criteria>
   <verify>
     <automated>make test && make dsp.so && ./scripts/glibc_gate.sh build/dsp.so && echo WAVE_OK</automated>
   </verify>
-  <done>PHY registered in enum order; param battery + explicit NaN-at-extremes assertion cover PHY; per-model WAV written; full suite + cross-build + glibc gate green.</done>
+  <done>PHY registered by replacing its NULL slot with a designated initializer (array length still == MODEL_COUNT); param battery + explicit NaN-at-extremes assertion cover PHY; per-model WAV written; full suite + cross-build + glibc gate green.</done>
 </task>
 
 </tasks>
 
 <verification>
-- `make test` exits 0 with PHY registered and covered incl. the extreme-bounds NaN assertion.
+- `make test` exits 0 with PHY registered (its NULL replaced) and covered incl. the extreme-bounds NaN assertion; USR/GEN slots still NULL and guarded.
 - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes.
 - phy_state `_Static_assert` <= 4096; modal freq/decay clamped; routes through fx_process; fully re-inits on trigger.
 </verification>
@@ -129,4 +133,5 @@ Output: src/models/phy.c, registry entry, extended param battery.
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-07-SUMMARY.md`
+</output>
 </output>

@@ -3,7 +3,7 @@ phase: B-remaining-9-kick-models
 plan: 09
 type: execute
 wave: 8
-depends_on: ["B-01", "B-03", "B-04", "B-05", "B-06", "B-07", "B-08"]
+depends_on: ["B-01", "B-02", "B-03", "B-04", "B-05", "B-06", "B-07", "B-08"]
 files_modified:
   - src/ui.c
   - tests/test_switch.c
@@ -28,6 +28,10 @@ must_haves:
       to: "g_models[inst->model]->p2_slot_desc(inst, ...)"
       via: "dynamic splice of the active model's slots"
       pattern: "p2_slot_desc"
+    - from: "src/ui.c kick2 FX slots"
+      to: "PK_FX_TYPE / PK_FX_AMT + B-02 FX primitives"
+      via: "FX TYPE/AMT appended after the spliced model slots (B-02 fx_process is the DSP the FX slots drive)"
+      pattern: "PK_FX_TYPE"
     - from: "docs/VOICING_AUDIT.md"
       to: "on-device manual sign-off for all 10 models"
       via: "human-verify checkpoint (autonomous:false)"
@@ -36,6 +40,8 @@ must_haves:
 
 <objective>
 Complete KICK-13 by making Kick Page 2 assemble DYNAMICALLY from the active model's `p2_slot_desc` (ui.c currently INLINES FM2's Page-2 — it must splice the active model's slots so each of the 10 models shows its own 6 slots + FX TYPE/AMT). Then produce the phase's first-class voicing deliverable: `docs/VOICING_AUDIT.md`, a 10-model x D-B02-checklist matrix, and pause at a MANUAL on-device human-verify checkpoint for the D-B02 ear round (D-B04), mirroring the A-04 hardware checkpoint.
+
+This plan appends the FX TYPE/AMT slots (PK_FX_TYPE / PK_FX_AMT) after the spliced per-model slots; those slots drive the B-02 FX chain (fx_process), hence the dependency on B-02.
 
 Purpose: The automated batteries (B-03..B-08) prove each model is distinct/bounded/param-responsive; this plan wires the per-model Page-2 UI and gates the phase on the on-device voicing sign-off (the ear is the authority, per D-B01/D-B02).
 Output: Dynamic kick2 splice in ui.c, a p2_slot_desc JSON-validity test, docs/VOICING_AUDIT.md, and a blocking human-verify checkpoint.
@@ -65,6 +71,8 @@ Output: Dynamic kick2 splice in ui.c, a p2_slot_desc JSON-validity test, docs/VO
      into a bounded scratch, then append the FX TYPE/AMT slots + knobs. Each model's
      p2_slot_desc (B-03..B-08) now emits full {"key","name","type","min","max"} objects
      (research Pattern 3), so ui.c just wraps them into the kick2 level.
+     PK_FX_TYPE/PK_FX_AMT (omega.h) are the two post-kick FX slots; they drive the
+     B-02 fx_process chain each model routes through.
      omega_build_ui(inst, buf, buf_len) is bounded (ui_append reserves the terminator).
      docs/ON_DEVICE_VALIDATION.md is the A-04 runbook template to mirror. -->
 </interfaces>
@@ -189,4 +197,5 @@ Output: Dynamic kick2 splice in ui.c, a p2_slot_desc JSON-validity test, docs/VO
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-09-SUMMARY.md`
+</output>
 </output>

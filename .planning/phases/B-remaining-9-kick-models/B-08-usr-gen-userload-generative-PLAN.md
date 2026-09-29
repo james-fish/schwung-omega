@@ -3,7 +3,7 @@ phase: B-remaining-9-kick-models
 plan: 08
 type: execute
 wave: 7
-depends_on: ["B-01", "B-02", "B-03", "B-07"]
+depends_on: ["B-01", "B-02", "B-03", "B-04", "B-05", "B-06", "B-07"]
 files_modified:
   - src/omega.h
   - src/dsp.c
@@ -23,6 +23,7 @@ must_haves:
     - "GEN renders an audible generative kick: xorshift PRNG (seeded from SEED) + scale-quantize + Euclidean density gating, self-clocking for offline audition; same seed -> byte-identical render (determinism)"
     - "GEN Phase-B scope is the generative ENGINE only; transport-sync (get_beat_position) + full Groove Page 2 UI are explicitly deferred to Phase C"
     - "USR and GEN each render non-silent, bounded, param-responsive, distinct; expose their Page-2 slots; route through fx_process; re-init on trigger"
+    - "After this plan the registry has ALL 10 slots non-NULL (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN); the complete-registry assertion (Task 3) requires WTR/TRS (B-04), ANA/DIG (B-05), HRD/FM4 (B-06), PHY (B-07) to have already replaced their NULLs"
   artifacts:
     - path: "src/omega.h"
       provides: "USR sample/wavetable buffer added to bohm_instance (grows the single calloc; hard-capped)"
@@ -53,8 +54,10 @@ must_haves:
 <objective>
 Implement the last two models: USR (KICK-10, user WAV + user wavetable loaded off the render loop at create_instance) and GEN (KICK-11, the generative kick — PRNG + scale-quantize + Euclidean density). Both are the trickiest for different reasons: USR needs a file read that respects RT-safety (grows the single calloc; buffer does NOT fit in model_state[4096]); GEN must clearly scope Phase B = the generative engine only (transport-sync + Groove Page 2 UI are Phase C).
 
+This is the FINAL model plan. Its Task 3 asserts the COMPLETE 10-model registry, which requires every prior model plan to have already replaced its NULL slot: B-04 (WTR/TRS), B-05 (ANA/DIG), B-06 (HRD/FM4), B-07 (PHY). Hence this plan depends_on all of B-04..B-07 (in addition to B-01/B-02/B-03).
+
 Purpose: Complete all 10 models. USR proves the off-thread file-load pattern; GEN proves deterministic generative synthesis.
-Output: USR buffer in bohm_instance (omega.h), create_instance file load (dsp.c), usr.c, gen.c, registry, GEN determinism test, USR fixture WAV.
+Output: USR buffer in bohm_instance (omega.h), create_instance file load (dsp.c), usr.c, gen.c, registry (replacing the last two NULL slots), GEN determinism test, USR fixture WAV.
 </objective>
 
 <execution_context>
@@ -79,8 +82,11 @@ Output: USR buffer in bohm_instance (omega.h), create_instance file load (dsp.c)
 
 <interfaces>
 <!-- From B-01: MODEL_USR/MODEL_GEN, PK_USR_*/PK_GEN_*, extern g_usr_vtable/g_gen_vtable,
-     vtable has .set_param. From B-02: prng_t + prng_seed + prng_next_f, scale_quantize +
-     NUM_SCALES + g_scales, wt_read_bl/wt_read, g_sine_table, env_t, fx_process + fx_state_t.
+     vtable has .set_param. From B-01 registry: g_models uses designated initializers;
+     MODEL_USR and MODEL_GEN are the LAST two NULL slots — this plan REPLACES them and
+     asserts the array is now fully populated. From B-02: prng_t + prng_seed + prng_next_f,
+     scale_quantize + NUM_SCALES + g_scales, wt_read_bl/wt_read, g_sine_table, env_t,
+     fx_process + fx_state_t.
      tests/wav.h provides a WAV reader/writer (used by the harness). create_instance in
      dsp.c receives (const char *module_dir, const char *json_defaults) — currently ignored.
      Each state struct _Static_assert <= 4096; USR's large buffer lives in bohm_instance,
@@ -148,19 +154,21 @@ Output: USR buffer in bohm_instance (omega.h), create_instance file load (dsp.c)
 </task>
 
 <task type="auto">
-  <name>Task 3: Register USR + GEN; GEN determinism test; update Model enum options; final wave gate</name>
-  <read_first>src/models/model_registry.c, src/omega.h (MODEL_USR/MODEL_GEN order), tests/test_params.c, tests/test_render.c, src/ui.c (root Model enum "options" list — currently ["FM2"]), .planning/phases/B-remaining-9-kick-models/B-VALIDATION.md (GEN determinism Wave 0), B-RESEARCH.md (Pitfall 6, §Pattern 3 update Model enum options)</read_first>
+  <name>Task 3: Register USR + GEN (replace the last two NULL slots); complete-registry assert; GEN determinism test; update Model enum options; final wave gate</name>
+  <read_first>src/models/model_registry.c (designated-initializer array — 8 slots should now be non-NULL after B-04..B-07), src/omega.h (MODEL_USR/MODEL_GEN order), tests/test_params.c, tests/test_render.c, src/ui.c (root Model enum "options" list — currently ["FM2"]), .planning/phases/B-remaining-9-kick-models/B-VALIDATION.md (GEN determinism Wave 0), B-RESEARCH.md (Pitfall 6, §Pattern 3 update Model enum options)</read_first>
   <files>src/models/model_registry.c, tests/test_gen.c, tests/test_params.c, src/ui.c, Makefile</files>
   <action>
-    In `src/models/model_registry.c`: add extern decls + register `&g_usr_vtable` (MODEL_USR) and `&g_gen_vtable` (MODEL_GEN) at their exact enum indices. This is the LAST model plan, so after this edit `g_models[]` MUST list ALL 10 vtables in exact enum order (FM2, FM4, WTR, PHY, HRD, DIG, TRS, ANA, USR, GEN). Add `_Static_assert(sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT, "registry has all models")` (Pitfall 6) so a missing entry fails at compile time.
+    In `src/models/model_registry.c`: REPLACE the NULL at MODEL_USR with `[MODEL_USR] = &g_usr_vtable` and the NULL at MODEL_GEN with `[MODEL_GEN] = &g_gen_vtable`, using designated initializers (these are the LAST two NULL slots — B-04..B-07 replaced the other seven). Add each designated line and remove the placeholder comment. Add `extern const kick_model_vtable_t g_usr_vtable, g_gen_vtable;` if not already provided by omega.h. After this edit, ALL 10 slots are non-NULL. The `_Static_assert(sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT, "registry has all models")` from B-01 stays and continues to guarantee array length; if you want an additional runtime "no NULL slots remain" check it belongs in the test harness (see below), not as a _Static_assert (initializer values are not compile-time inspectable for NULL-ness).
     In `src/ui.c`: update the root-level Model enum `"options":["FM2"]` to list all 10 names in enum order: `["FM2","FM4","WTR","PHY","HRD","DIG","TRS","ANA","USR","GEN"]` (research §Pattern 3). (Full per-model Page-2 splice from p2_slot_desc is B-09's job; here just fix the enum options so the MODEL selector shows all 10.)
     Create `tests/test_gen.c` (KICK-11 determinism): render GEN with SEED=X twice → assert byte-identical (or hash-equal) buffers; render with SEED=Y → assert differs from SEED=X; render at low vs high DENSITY → assert hit-count differs. Wire a `test-gen` Makefile target and add it as a `test` prerequisite.
+    In `tests/test_gen.c` (or test_switch.c): add a runtime "all slots registered" assertion now that this is the final model plan — loop `for (int m=0;m<MODEL_COUNT;m++) assert(g_models[m] != NULL);` so a forgotten slot fails the suite.
     In `tests/test_params.c`: add `assert_param_responsive` for USR (PK_USR_SAMPLE, PK_USR_WTMORPH, PK_USR_LAYERVOL, PK_USR_PITCHENV + 8 Page-1) and GEN (PK_GEN_SEED, PK_GEN_SCALE, PK_GEN_DENSITY + 8 Page-1).
     Run the FULL suite: `make test` (all batteries incl. distinctness now covering all 10) + `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so`.
   </action>
   <acceptance_criteria>
-    - `grep -q 'g_usr_vtable' src/models/model_registry.c && grep -q 'g_gen_vtable' src/models/model_registry.c`
-    - `grep -q 'sizeof(g_models)/sizeof(g_models\[0\]) == MODEL_COUNT' src/models/model_registry.c`
+    - `grep -q '\[MODEL_USR\] = &g_usr_vtable' src/models/model_registry.c && grep -q '\[MODEL_GEN\] = &g_gen_vtable' src/models/model_registry.c`
+    - `grep -q 'sizeof(g_models)/sizeof(g_models\[0\]) == MODEL_COUNT' src/models/model_registry.c` (B-01 length assert still present)
+    - A runtime `g_models[m] != NULL` check for all MODEL_COUNT slots exists in the test harness
     - `src/ui.c` Model options list contains all 10 names (`grep -q '"GEN"' src/ui.c` and `grep -q '"FM4"' src/ui.c`)
     - `tests/test_gen.c` exists, references `PK_GEN_SEED`, and asserts seed-determinism
     - `make test` exits 0; all 10 `tests/output/<MODEL>_kick.wav` files non-empty; distinctness test now covers all 10 pairs
@@ -169,22 +177,23 @@ Output: USR buffer in bohm_instance (omega.h), create_instance file load (dsp.c)
   <verify>
     <automated>make test && make dsp.so && ./scripts/glibc_gate.sh build/dsp.so && grep -q '"GEN"' src/ui.c && echo ALLMODELS_OK</automated>
   </verify>
-  <done>All 10 models registered (compile-time count assert); Model enum lists 10 names; GEN determinism test green; param + distinctness batteries cover all 10; full suite + cross-build + glibc gate green.</done>
+  <done>USR + GEN registered by replacing the last two NULL slots (all 10 slots now non-NULL; array length assert + runtime no-NULL check green); Model enum lists 10 names; GEN determinism test green; param + distinctness batteries cover all 10; full suite + cross-build + glibc gate green.</done>
 </task>
 
 </tasks>
 
 <verification>
-- `make test` exits 0 with all 10 models registered and covered (param, distinctness, switch, gen-determinism, fx batteries).
+- `make test` exits 0 with all 10 models registered (all NULLs replaced) and covered (param, distinctness, switch, gen-determinism, fx batteries).
 - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes.
-- USR file I/O only in create_instance; bohm_instance < 800 KB; GEN deterministic + Phase-B-scoped; registry compile-time count assert present.
+- USR file I/O only in create_instance; bohm_instance < 800 KB; GEN deterministic + Phase-B-scoped; registry length assert + runtime no-NULL check present.
 </verification>
 
 <success_criteria>
 - USR (KICK-10) loads user content off-render with a non-silent fallback; GEN (KICK-11) is a deterministic self-clocking generative engine scoped to Phase B (transport/Groove Page 2 deferred to Phase C).
-- All 10 models are registered, distinct, non-silent, bounded, and param-responsive — every automated D-B02 criterion green across the full battery (manual ear sign-off tracked in B-09).
+- All 10 models are registered (no NULL slots remain), distinct, non-silent, bounded, and param-responsive — every automated D-B02 criterion green across the full battery (manual ear sign-off tracked in B-09).
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-08-SUMMARY.md`
+</output>
 </output>

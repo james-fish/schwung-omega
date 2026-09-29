@@ -19,9 +19,10 @@ must_haves:
     - "At FX amt=0 each mode is approximately transparent (passes a test tone through with small delta)"
     - "The band-limited wavetable read, modal resonator, xorshift PRNG, scale-quantize table, and noise burst are available as shared inline primitives for all models"
     - "g_wavetables lives in .rodata (static const), shared read-only across instances, with a 2048+1 guard sample per wave"
+    - "Crush's powf is computed ONCE at control rate (fx-config/set_param) into fx_state_t.crush_levels; the fx_process render path contains NO powf/sinf/expf/tanf"
   artifacts:
     - path: "src/dsp_primitives.h"
-      provides: "wt_read_bl, modal_t + modal_excite + modal_tick, prng_t + prng_seed + prng_next_f, scale_quantize, noise_t + noise_tick, fx_process + fx_state_t, crush()"
+      provides: "wt_read_bl, modal_t + modal_excite + modal_tick, prng_t + prng_seed + prng_next_f, scale_quantize, noise_t + noise_tick, fx_process + fx_state_t (with crush_levels), fx_config, crush()"
       contains: "fx_process"
     - path: "src/wavetables.h"
       provides: "static const _Alignas(16) g_wavetables[NUM_WAVES][BANDS][2049] in .rodata (build-time generated)"
@@ -37,6 +38,10 @@ must_haves:
       to: "bounded [-1,1] output"
       via: "x/(1+|x|) / triangle-fold / quantize forms (NO unbounded x/(1-x))"
       pattern: "fx_process"
+    - from: "src/dsp_primitives.h fx_config"
+      to: "fx_state_t.crush_levels (precomputed powf)"
+      via: "control-rate powf in fx_config/set_param, NEVER in fx_process render loop"
+      pattern: "crush_levels"
     - from: "tools/gen_wavetables.c"
       to: "src/wavetables.h"
       via: "Makefile generator target"
@@ -77,30 +82,41 @@ Output: Extended `dsp_primitives.h/.c`, generated `wavetables.h`, host generator
 
 <task type="auto" tdd="true">
   <name>Task 1: FX chain (KICK-14) — 5 bounded modes + crush(), with tests</name>
-  <read_first>src/dsp_primitives.h (env_t/wt_read/tpt1 style, static inline convention), src/dsp_primitives.c, tests/test_fm2.c (assert/render-loop pattern), .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (§FX Chain table + §Code Examples bounded FX, Pitfall 5, Don't-Hand-Roll fast_tanh warning), STATE.md (bug #2: unbounded fast_tanh forbidden)</read_first>
+  <read_first>src/dsp_primitives.h (env_t/wt_read/tpt1 style, static inline convention), src/dsp_primitives.c, tests/test_fm2.c (assert/render-loop pattern), .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (§FX Chain table + §Code Examples bounded FX, Pitfall 5, Don't-Hand-Roll fast_tanh warning), STATE.md (bug #2: unbounded fast_tanh forbidden), CLAUDE.md (precompute transcendentals — no powf/sinf/expf in the audio render inner loop)</read_first>
   <behavior>
     - Test: each mode 0..4 renders a 60 Hz test tone at amt=1.0 and high-pitch (say 400 Hz) input; output stays finite and |y| <= 1.0 for all samples (Pitfall 5, no divergence/aliasing blow-up).
     - Test: at amt=0.0 each mode is approximately transparent (RMS(out) within a small tolerance of RMS(in), and no NaN).
     - Test: at amt=1.0 each mode measurably alters the tone (RMS or spectral delta vs dry above a threshold) — proves the mode is audible.
     - Test: Crush is stateful across calls (its state struct holds last-sample + phase); two identical successive amt values produce a stepped/held waveform, not per-sample identity.
+    - Test: Crush uses the PRECOMPUTED crush_levels from fx_config — calling fx_process without ever computing crush_levels (levels==0) is handled safely (no div-by-zero / NaN).
   </behavior>
   <action>
-    Add to `src/dsp_primitives.h` (all `static inline`, all bounded to [-1,1], NO per-sample tanhf/expf — use rational/approx forms; the reference `fast_tanh` x/(1-x) is FORBIDDEN, STATE.md bug #2):
-    - `typedef struct { float last; int hold_ctr; } fx_state_t;` — the only stateful mode is Crush.
-    - `float fx_process(int mode, float x, float amt, fx_state_t *st)` dispatching on mode 0..4 → Diode/Clip/SAT/Fold/Crush. Use these EXACT bounded formulas from B-RESEARCH §FX Chain:
+    Add to `src/dsp_primitives.h` (all `static inline`, all bounded to [-1,1], NO per-sample tanhf/expf/powf — use rational/approx forms + PRECOMPUTED coefficients; the reference `fast_tanh` x/(1-x) is FORBIDDEN, STATE.md bug #2):
+    - `typedef struct { float last; int hold_ctr; float crush_levels; } fx_state_t;` — Crush is the only stateful mode; `crush_levels` caches the precomputed quantization step-count so `fx_process` needs NO powf.
+    - `void fx_config(fx_state_t *st, int mode, float amt)` — the CONTROL-RATE configurator called from each model's set_param / fx-parameter path (NOT per sample). For Crush it computes the bit-reduction levels ONCE:
+      `st->crush_levels = powf(2.0f, 16.0f - amt*12.0f);`  /* powf lives HERE, control rate only */
+      (For non-Crush modes fx_config may cache any per-amt gain constants similarly; the point is ALL powf/expf stay in fx_config.)
+    - `float fx_process(int mode, float x, float amt, fx_state_t *st)` dispatching on mode 0..4 → Diode/Clip/SAT/Fold/Crush. It reads only PRECOMPUTED state (`st->crush_levels`, `st->last`, `st->hold_ctr`) and does NO powf/sinf/expf/tanf in the render inner loop. Use these EXACT bounded formulas from B-RESEARCH §FX Chain:
       * Diode (0): `y = copysignf(1.0f - approx_exp_neg(fabsf(x)*k), x)`, `k = 1 + amt*K` (K ~ 6). approx_exp_neg = a cheap `.rodata` LUT OR the rational `1/(1+z+0.5f*z*z)` clamped for z>=0 — NO per-sample expf. Asymptotes to ±1 → always bounded.
       * Clip (1): symmetric bounded soft clip `y = gx/(1+fabsf(gx))`, `gx = (1+amt*G)*x` (G ~ 4). (Use the SYMMETRIC form — B-RESEARCH: prefer symmetric where "always bounded" matters; do NOT use the x/(1-x) asymmetric neg branch.)
       * SAT (2): warm parallel saturation `y = (1-amt)*x + amt*(x/(1+fabsf(x)))`. Bounded by construction.
       * Fold (3): triangle wavefolder `v = g*x + 1.0f; v = v - 4.0f*floorf(v*0.25f); y = fabsf(v-2.0f) - 1.0f;` with `g = 1 + amt*F` (F ~ 4). Bounded to [-1,1] by the triangle fold (B-RESEARCH §Code Examples fx_fold verbatim).
-      * Crush (4): bit + sample-rate reduction. bits: `float levels = powf(2.0f, 16.0f - amt*12.0f)` — precompute `levels` NOT per sample if possible; since amt is a param, compute levels once per block is out of scope here, so compute in fx_process but keep powf out of the inner path by using a small precomputed table indexed by a quantized amt, OR document that Crush's powf is acceptable at control rate only. SR reduction: sample-and-hold, `hold = 1 + (int)(amt*H)` (H ~ 15) samples held in `st->hold_ctr`/`st->last`. `y = roundf(held * levels)/levels`. Bounded (rounding a bounded input stays bounded).
-    - Add a standalone `float crush(float x, float bits)` bit-reducer in dsp_primitives.h reused by HRD/DIG (`levels = 2^bits; return roundf(x*levels)/levels;`) — the shared bit-reduction (Don't-Hand-Roll: HRD+DIG+FX share one impl).
+      * Crush (4): bit + sample-rate reduction using the PRECOMPUTED `st->crush_levels` (set in fx_config) — NO powf here. Guard `levels = (st->crush_levels > 0.0f) ? st->crush_levels : 1.0f;` for safety. SR reduction: sample-and-hold, `hold = 1 + (int)(amt*H)` (H ~ 15) samples held in `st->hold_ctr`/`st->last`. `y = roundf(held * levels)/levels`. Bounded (rounding a bounded input stays bounded).
+    - Add a standalone `float crush(float x, float bits)` bit-reducer in dsp_primitives.h reused by HRD/DIG (`levels = <precomputed by caller>; return roundf(x*levels)/levels;`) — models that use it must precompute `levels` at control rate (map bits→levels in set_param), keeping powf out of the render loop; the shared bit-reduction (Don't-Hand-Roll: HRD+DIG+FX share one impl).
     Clamp all gains so no branch can diverge. If a `.rodata` shaping LUT is used for Diode, define it in dsp_primitives.c.
-    Create `tests/test_fx.c` implementing the behavior cases above (plain C assert + tiny main). Wire a `test-fx` Makefile target (compile `tests/test_fx.c tests/malloc_trap.c src/dsp_primitives.c` natively, run it) and add it as a `test` prerequisite.
+    Create `tests/test_fx.c` implementing the behavior cases above (plain C assert + tiny main): each test calls `fx_config` to set up the state, then renders a tone through `fx_process`. Wire a `test-fx` Makefile target (compile `tests/test_fx.c tests/malloc_trap.c src/dsp_primitives.c` natively, run it) and add it as a `test` prerequisite.
   </action>
+  <acceptance_criteria>
+    - `grep -q 'crush_levels' src/dsp_primitives.h` and `fx_state_t` contains a `crush_levels` field
+    - `grep -q 'fx_config' src/dsp_primitives.h` — a control-rate configurator that computes crush_levels via powf exists
+    - The `fx_process` render function body contains NO `powf`/`sinf`/`expf`/`tanf` (extract the fx_process function and grep it): e.g. `! sed -n '/fx_process(int mode/,/^}/p' src/dsp_primitives.h | grep -Eq 'powf|sinf|expf|tanf'`
+    - `powf` appears ONLY in `fx_config` (control rate), not in `fx_process`
+    - `make test-fx` exits 0 (bounded-at-max + transparent-at-zero + audible-at-max + Crush statefulness + safe-uninitialized-levels)
+  </acceptance_criteria>
   <verify>
-    <automated>make test-fx && echo FX_OK</automated>
+    <automated>make test-fx && grep -q 'crush_levels' src/dsp_primitives.h && grep -q 'fx_config' src/dsp_primitives.h && ! sed -n '/fx_process(int mode/,/^}/p' src/dsp_primitives.h | grep -Eq 'powf|sinf|expf|tanf' && echo FX_OK</automated>
   </verify>
-  <done>fx_process implements all 5 bounded modes; crush() shared; test_fx.c asserts bounded-at-max + transparent-at-zero + audible-at-max + Crush statefulness; runs green under make.</done>
+  <done>fx_process implements all 5 bounded modes reading only precomputed state; Crush's powf is computed once in fx_config (control rate) into fx_state_t.crush_levels; no powf/sinf/expf/tanf in the fx_process render path; crush() shared; test_fx.c asserts bounded-at-max + transparent-at-zero + audible-at-max + Crush statefulness + safe uninitialized levels; runs green under make.</done>
 </task>
 
 <task type="auto">
@@ -163,17 +179,18 @@ Output: Extended `dsp_primitives.h/.c`, generated `wavetables.h`, host generator
 </tasks>
 
 <verification>
-- `make test-fx` exits 0 (5 FX modes bounded/transparent/audible/stateful).
+- `make test-fx` exits 0 (5 FX modes bounded/transparent/audible/stateful; Crush uses precomputed crush_levels).
 - `make test` exits 0 with the new primitives + generated wavetables linked.
-- grep gates confirm modal/PRNG/scale/noise/wt_read_bl/fx_process/crush present and rand()-free; g_wavetables in .rodata with guard sample.
+- grep gates confirm modal/PRNG/scale/noise/wt_read_bl/fx_process/crush present and rand()-free; g_wavetables in .rodata with guard sample; no powf/sinf/expf/tanf in the fx_process render path.
 </verification>
 
 <success_criteria>
-- The 5-mode FX chain is bounded at extremes (KICK-14 automated criterion) and transparent at amt=0.
+- The 5-mode FX chain is bounded at extremes (KICK-14 automated criterion) and transparent at amt=0, with Crush's powf precomputed at control rate (no transcendentals in the fx_process render loop).
 - All shared synthesis primitives (modal, PRNG, scale, noise, band-limited wt) are available for the model plans, RT-safe (no per-sample transcendentals in tick, no alloc/log/file-IO).
 - Band-limited wavetables are generated into .rodata at build time (KICK-15 pattern extended).
 </success_criteria>
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-02-SUMMARY.md`
+</output>
 </output>

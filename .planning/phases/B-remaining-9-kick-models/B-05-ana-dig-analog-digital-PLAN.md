@@ -27,7 +27,7 @@ must_haves:
   key_links:
     - from: "src/models/model_registry.c g_models[]"
       to: "g_ana_vtable at MODEL_ANA, g_dig_vtable at MODEL_DIG"
-      via: "append-only registry in exact enum order"
+      via: "designated initializer replacing the NULL slot (enum-indexed)"
       pattern: "g_ana_vtable"
     - from: "dig_render"
       to: "crush() (shared bit-reducer)"
@@ -39,7 +39,7 @@ must_haves:
 Implement the analog/digital wavetable family: ANA (KICK-09, the 808 sub-boom king — dedicated sub-oscillator + long decay) and DIG (KICK-07, the digital/retro kick — chip/bit-reduced waves + bit-depth as timbral character). Both reuse the B-02 band-limited wavetable read; DIG reuses the shared `crush()` bit-reducer.
 
 Purpose: The warmest model (ANA) vs the lo-fi digital model (DIG) — two distinct wavetable characters sharing the primitive set.
-Output: src/models/ana.c, src/models/dig.c, registry entries, extended param battery.
+Output: src/models/ana.c, src/models/dig.c, registry entries (replacing their NULL slots), extended param battery.
 </objective>
 
 <execution_context>
@@ -61,7 +61,9 @@ Output: src/models/ana.c, src/models/dig.c, registry entries, extended param bat
 
 <interfaces>
 <!-- Copy wtr.c/fm2.c as template. From B-01: MODEL_ANA/MODEL_DIG, PK_ANA_*/PK_DIG_*,
-     extern g_ana_vtable/g_dig_vtable, vtable has .set_param. From B-02: wt_read_bl,
+     extern g_ana_vtable/g_dig_vtable, vtable has .set_param. From B-01 registry:
+     g_models uses designated initializers; MODEL_ANA and MODEL_DIG are currently
+     NULL — this plan REPLACES those NULLs. From B-02: wt_read_bl,
      crush(float x, float bits), fx_process + fx_state_t, env_t, g_sine_table (sub-osc).
      Each state struct _Static_assert <= 4096. -->
 </interfaces>
@@ -121,30 +123,32 @@ Output: src/models/ana.c, src/models/dig.c, registry entries, extended param bat
 </task>
 
 <task type="auto">
-  <name>Task 3: Register ANA + DIG; extend param battery; wave gate</name>
-  <read_first>src/models/model_registry.c, src/omega.h (MODEL_ANA/MODEL_DIG order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6)</read_first>
+  <name>Task 3: Register ANA + DIG (replace their NULL slots); extend param battery; wave gate</name>
+  <read_first>src/models/model_registry.c (designated-initializer array from B-01), src/omega.h (MODEL_ANA/MODEL_DIG order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6)</read_first>
   <files>src/models/model_registry.c, tests/test_params.c</files>
   <action>
-    In `src/models/model_registry.c`: add extern decls + register `&g_ana_vtable` (MODEL_ANA) and `&g_dig_vtable` (MODEL_DIG) at their exact enum indices; keep the array in enum order (Pitfall 6). model_registry.c is shared across the model plans; this plan depends on B-04 so its registry edits build on B-04's (sequential, no parallel conflict).
+    In `src/models/model_registry.c`: REPLACE the NULL at MODEL_ANA with `[MODEL_ANA] = &g_ana_vtable` and the NULL at MODEL_DIG with `[MODEL_DIG] = &g_dig_vtable`, using designated initializers (B-01 established the all-NULL array; B-04 already replaced WTR/TRS). Add each designated line and remove the corresponding placeholder comment. Add `extern const kick_model_vtable_t g_ana_vtable, g_dig_vtable;` if not already provided by omega.h. The array length stays MODEL_COUNT; remaining unimplemented slots stay NULL.
+    These model plans are STRICTLY SEQUENTIAL by wave (B-04 → B-05 → B-06 → B-07); each replaces only its OWN NULL slot — no collision. `make test` compiles+links because unimplemented slots remain NULL and are guarded (B-01 contract).
     In `tests/test_params.c`: add `assert_param_responsive` calls for ANA (PK_ANA_MORPH, PK_ANA_SUBLVL, PK_ANA_SUBDEC, PK_ANA_SAMPLE + 8 Page-1) and DIG (PK_DIG_WAVEIDX, PK_DIG_SAMPLE, PK_DIG_BITDEPTH, PK_DIG_PITCHENV + 8 Page-1).
     Run full suite + cross-build + glibc gate.
   </action>
   <acceptance_criteria>
-    - `grep -q 'g_ana_vtable' src/models/model_registry.c && grep -q 'g_dig_vtable' src/models/model_registry.c`
+    - `grep -q '\[MODEL_ANA\] = &g_ana_vtable' src/models/model_registry.c && grep -q '\[MODEL_DIG\] = &g_dig_vtable' src/models/model_registry.c`
+    - The `sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT` assert still present; array length unchanged
     - `tests/test_params.c` references PK_ANA_MORPH and PK_DIG_BITDEPTH
-    - `make test` exits 0; `tests/output/ANA_kick.wav` and `tests/output/DIG_kick.wav` non-empty
+    - `make test` exits 0 (remaining unimplemented slots still NULL, guarded); `tests/output/ANA_kick.wav` and `tests/output/DIG_kick.wav` non-empty
     - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes
   </acceptance_criteria>
   <verify>
     <automated>make test && make dsp.so && ./scripts/glibc_gate.sh build/dsp.so && echo WAVE_OK</automated>
   </verify>
-  <done>ANA + DIG registered in enum order; param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
+  <done>ANA + DIG registered by replacing their NULL slots with designated initializers (array length still == MODEL_COUNT); param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
 </task>
 
 </tasks>
 
 <verification>
-- `make test` exits 0 with ANA + DIG registered and covered.
+- `make test` exits 0 with ANA + DIG registered (their NULLs replaced) and covered; remaining slots still NULL and guarded.
 - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes.
 - Both state structs `_Static_assert` <= 4096; both route through fx_process; both fully re-init on trigger.
 </verification>
@@ -155,4 +159,5 @@ Output: src/models/ana.c, src/models/dig.c, registry entries, extended param bat
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-05-SUMMARY.md`
+</output>
 </output>

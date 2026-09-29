@@ -27,12 +27,12 @@ must_haves:
       provides: "TRS engine (wavetable body + advanced transient click/noise), state <=4096, vtable g_trs_vtable"
       contains: "g_trs_vtable"
     - path: "src/models/model_registry.c"
-      provides: "g_wtr_vtable + g_trs_vtable registered at MODEL_WTR / MODEL_TRS indices"
+      provides: "g_wtr_vtable + g_trs_vtable registered by replacing the NULL at MODEL_WTR / MODEL_TRS with designated initializers"
       contains: "g_wtr_vtable"
   key_links:
     - from: "src/models/model_registry.c g_models[]"
       to: "g_wtr_vtable at index MODEL_WTR, g_trs_vtable at index MODEL_TRS"
-      via: "append-only registry in exact enum order"
+      via: "designated initializer replacing the NULL slot (append-only, enum-indexed)"
       pattern: "g_wtr_vtable"
     - from: "wtr_render / trs_render"
       to: "fx_process + wt_read_bl + noise_t"
@@ -44,7 +44,7 @@ must_haves:
 Implement the wavetable-body + dedicated-transient family: WTR (KICK-04, the clean/precise kick) and TRS (KICK-08, the 909 attack specialist). Both reuse the FM2 skeleton (Pattern 4), the B-02 band-limited wavetable read, the shared noise/transient + FX primitives, and the FM2 CURVE blend.
 
 Purpose: Two distinct wavetable+transient voices sharing one primitive set; TRS's advanced transient (click<->noise morph) is its distinctness lever vs WTR's cleanly-separable transient.
-Output: src/models/wtr.c, src/models/trs.c, registry entries, and extended param/render tests covering both.
+Output: src/models/wtr.c, src/models/trs.c, registry entries (replacing their NULL slots), and extended param/render tests covering both.
 </objective>
 
 <execution_context>
@@ -68,6 +68,8 @@ Output: src/models/wtr.c, src/models/trs.c, registry entries, and extended param
      trigger resets phases/filters + render + set_param + p2_slot_desc + vtable).
      From B-01 omega.h: MODEL_WTR, MODEL_TRS enum values; PK_WTR_*, PK_TRS_* keys;
      extern g_wtr_vtable/g_trs_vtable; kick_model_vtable_t now has .set_param.
+     From B-01 model_registry.c: g_models[MODEL_COUNT] uses designated initializers;
+     MODEL_WTR and MODEL_TRS are currently NULL — this plan REPLACES those NULLs.
      From B-02: wt_read_bl(wave,band,phase01), noise_t + noise_tick, tpt1_lp,
      fx_process + fx_state_t, env_t. Each state struct MUST _Static_assert <= 4096. -->
 </interfaces>
@@ -129,31 +131,33 @@ Output: src/models/wtr.c, src/models/trs.c, registry entries, and extended param
 </task>
 
 <task type="auto">
-  <name>Task 3: Register WTR + TRS; extend param/render batteries; wave gate</name>
-  <read_first>src/models/model_registry.c, src/omega.h (MODEL_WTR/MODEL_TRS enum order), tests/test_params.c + tests/test_render.c + tests/test_distinct.c (reusable batteries from B-03), .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6 registry order)</read_first>
+  <name>Task 3: Register WTR + TRS (replace their NULL slots); extend param/render batteries; wave gate</name>
+  <read_first>src/models/model_registry.c (designated-initializer array from B-01), src/omega.h (MODEL_WTR/MODEL_TRS enum order), tests/test_params.c + tests/test_render.c + tests/test_distinct.c (reusable batteries from B-03), .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6 registry order)</read_first>
   <files>src/models/model_registry.c, tests/test_params.c, tests/test_render.c</files>
   <action>
-    In `src/models/model_registry.c`: add `extern` decls and register `&g_wtr_vtable` and `&g_trs_vtable` at their EXACT enum-index positions (MODEL_WTR, MODEL_TRS). The `g_models[MODEL_COUNT]` array must stay in exact enum order (Pitfall 6). Positions between (e.g. MODEL_FM4, MODEL_PHY) that belong to other Wave-3 plans will be filled by those plans — since Wave-3 plans all touch model_registry.c, coordinate by leaving explicit `/* MODEL_FM4 (B-06) */`-style placeholder comments only where another plan owns the slot; DO NOT leave a NULL that breaks the array. IMPORTANT for parallel execution: model_registry.c is a shared file across Wave-3 plans — if executed in parallel this is a conflict. Treat model_registry.c edits as append-only initializer additions; if a merge conflict arises, the registry must list all 10 vtables in enum order at wave-merge time. (Planner note: registry is the one shared file; execute-phase serializes writers or merges — keep each plan's edit minimal and enum-ordered.)
+    In `src/models/model_registry.c`: REPLACE the NULL at index MODEL_WTR with `[MODEL_WTR] = &g_wtr_vtable` and the NULL at MODEL_TRS with `[MODEL_TRS] = &g_trs_vtable`, using designated initializers (B-01 established the array with all-NULL placeholders). Concretely: add the two designated-initializer lines to the `g_models[MODEL_COUNT]` initializer and remove the corresponding `[MODEL_WTR] = ...`/`[MODEL_TRS] = ...` placeholder comment lines. The array still has exactly MODEL_COUNT entries; the remaining unimplemented slots stay NULL (untouched). Add `extern const kick_model_vtable_t g_wtr_vtable, g_trs_vtable;` to model_registry.c if not already provided by omega.h.
+    These model plans are STRICTLY SEQUENTIAL by wave (B-04 → B-05 → B-06 → B-07); each plan replaces only its OWN NULL slot in model_registry.c — there is no collision. Every intermediate `make test` MUST compile and link because unimplemented slots remain NULL and dsp.c/tests guard NULL slots (B-01 contract).
     In `tests/test_params.c`: add calls to `assert_param_responsive` for WTR (keys: PK_WTR_WAVE, PK_WTR_BODYPITCH, PK_WTR_TRANSDEC, PK_WTR_TRANSCOL) and TRS (PK_TRS_TONE, PK_TRS_TDEC, PK_TRS_WTCOL, PK_TRS_CURVE), each also including the 8 Page-1 keys.
-    `tests/test_render.c` already loops MODEL_COUNT (B-03) — confirm WTR/TRS now produce non-silent WAVs (they auto-register). No change needed beyond confirming.
-    Run the full suite including cross-build + glibc gate (wave-merge gate).
+    `tests/test_render.c` already loops MODEL_COUNT (B-03) and skips NULL slots — confirm WTR/TRS now produce non-silent WAVs (they auto-cover once their NULL is replaced). No change needed beyond confirming.
+    Run the full suite including cross-build + glibc gate.
   </action>
   <acceptance_criteria>
-    - `grep -q 'g_wtr_vtable' src/models/model_registry.c && grep -q 'g_trs_vtable' src/models/model_registry.c`
+    - `grep -q '\[MODEL_WTR\] = &g_wtr_vtable' src/models/model_registry.c && grep -q '\[MODEL_TRS\] = &g_trs_vtable' src/models/model_registry.c`
+    - The `sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT` assert from B-01 still present; array unchanged in length
     - `tests/test_params.c` references PK_WTR_WAVE and PK_TRS_TONE
-    - `make test` exits 0; `tests/output/WTR_kick.wav` and `tests/output/TRS_kick.wav` written non-empty
+    - `make test` exits 0 (remaining unimplemented slots still NULL, guarded); `tests/output/WTR_kick.wav` and `tests/output/TRS_kick.wav` written non-empty
     - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes (no libmvec/_ZGV symbols, glibc <=2.35)
   </acceptance_criteria>
   <verify>
     <automated>make test && make dsp.so && ./scripts/glibc_gate.sh build/dsp.so && echo WAVE_OK</automated>
   </verify>
-  <done>WTR + TRS registered in enum order; param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
+  <done>WTR + TRS registered by replacing their NULL slots with designated initializers; array length still == MODEL_COUNT (other slots NULL); param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
 </task>
 
 </tasks>
 
 <verification>
-- `make test` exits 0 with WTR + TRS registered and covered by the param + distinctness batteries.
+- `make test` exits 0 with WTR + TRS registered (their NULLs replaced) and covered by the param + distinctness batteries; remaining slots still NULL and guarded.
 - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes.
 - Both state structs `_Static_assert` <= 4096; both route through fx_process; both fully re-init in trigger.
 </verification>
@@ -164,4 +168,5 @@ Output: src/models/wtr.c, src/models/trs.c, registry entries, and extended param
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-04-SUMMARY.md`
+</output>
 </output>

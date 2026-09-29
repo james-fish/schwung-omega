@@ -39,7 +39,7 @@ must_haves:
 Implement the distortion + FM family: HRD (KICK-06, the loudest/most aggressive kick — distortion + crush, all bounded) and FM4 (KICK-03, the complex 4-operator FM kick with selectable OPL3-style algorithms). HRD reuses the B-02 FX SAT/Fold + shared `crush()` for DRIVE/CRUSH (no bespoke unbounded distortion — STATE.md bug #2). FM4 extends the FM2 FM core to 4 ops with static routing tables.
 
 Purpose: The distorted kick and the deep-FM kick; both must stay bounded at extreme drive/index/feedback.
-Output: src/models/hrd.c, src/models/fm4.c, registry entries, extended param battery.
+Output: src/models/hrd.c, src/models/fm4.c, registry entries (replacing their NULL slots), extended param battery.
 </objective>
 
 <execution_context>
@@ -61,7 +61,9 @@ Output: src/models/hrd.c, src/models/fm4.c, registry entries, extended param bat
 
 <interfaces>
 <!-- From B-01: MODEL_HRD/MODEL_FM4, PK_HRD_*/PK_FM4_*, extern g_hrd_vtable/g_fm4_vtable,
-     vtable has .set_param. From B-02: fx_process + fx_state_t (SAT=mode2, Fold=mode3),
+     vtable has .set_param. From B-01 registry: g_models uses designated initializers;
+     MODEL_HRD and MODEL_FM4 are currently NULL — this plan REPLACES those NULLs.
+     From B-02: fx_process + fx_state_t (SAT=mode2, Fold=mode3),
      crush(float x, float bits), wt_read_bl, g_sine_table (FM4 ops), env_t.
      From fm2.c: the FM carrier/modulator phase-accum + own index env pattern.
      Each state struct _Static_assert <= 4096. -->
@@ -121,31 +123,33 @@ Output: src/models/hrd.c, src/models/fm4.c, registry entries, extended param bat
 </task>
 
 <task type="auto">
-  <name>Task 3: Register HRD + FM4; extend param battery; wave gate</name>
-  <read_first>src/models/model_registry.c, src/omega.h (MODEL_HRD/MODEL_FM4 order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6)</read_first>
+  <name>Task 3: Register HRD + FM4 (replace their NULL slots); extend param battery; wave gate</name>
+  <read_first>src/models/model_registry.c (designated-initializer array from B-01), src/omega.h (MODEL_HRD/MODEL_FM4 order), tests/test_params.c, .planning/phases/B-remaining-9-kick-models/B-RESEARCH.md (Pitfall 6)</read_first>
   <files>src/models/model_registry.c, tests/test_params.c</files>
   <action>
-    In `src/models/model_registry.c`: add extern decls + register `&g_fm4_vtable` (MODEL_FM4, index 1) and `&g_hrd_vtable` (MODEL_HRD) at their exact enum indices; array stays in enum order (Pitfall 6). Depends on B-05 (sequential, builds on prior registry state).
+    In `src/models/model_registry.c`: REPLACE the NULL at MODEL_FM4 (index 1) with `[MODEL_FM4] = &g_fm4_vtable` and the NULL at MODEL_HRD with `[MODEL_HRD] = &g_hrd_vtable`, using designated initializers (B-01 established the all-NULL array; B-04/B-05 replaced earlier slots). Add each designated line and remove the corresponding placeholder comment. Add `extern const kick_model_vtable_t g_hrd_vtable, g_fm4_vtable;` if not already provided by omega.h. Array length stays MODEL_COUNT; remaining unimplemented slots stay NULL.
+    These model plans are STRICTLY SEQUENTIAL by wave (B-04 → B-05 → B-06 → B-07); each replaces only its OWN NULL slot — no collision. `make test` compiles+links because unimplemented slots remain NULL and are guarded (B-01 contract).
     In `tests/test_params.c`: add `assert_param_responsive` for HRD (PK_HRD_SAMPLE, PK_HRD_MIX, PK_HRD_DRIVE, PK_HRD_CRUSH + 8 Page-1) and FM4 (PK_FM4_ALGO, PK_FM4_OPRATIO, PK_FM4_OPINDEX, PK_FM4_OPAMP, PK_FM4_FEEDBACK, PK_FM4_ALGO2 + 8 Page-1).
     Run full suite + cross-build + glibc gate.
   </action>
   <acceptance_criteria>
-    - `grep -q 'g_hrd_vtable' src/models/model_registry.c && grep -q 'g_fm4_vtable' src/models/model_registry.c`
+    - `grep -q '\[MODEL_HRD\] = &g_hrd_vtable' src/models/model_registry.c && grep -q '\[MODEL_FM4\] = &g_fm4_vtable' src/models/model_registry.c`
+    - The `sizeof(g_models)/sizeof(g_models[0]) == MODEL_COUNT` assert still present; array length unchanged
     - `tests/test_params.c` references PK_HRD_DRIVE and PK_FM4_ALGO
     - `grep -q 'g_fm4_algo' src/models/fm4.c` (static routing tables present)
-    - `make test` exits 0; `tests/output/HRD_kick.wav` and `tests/output/FM4_kick.wav` non-empty
+    - `make test` exits 0 (remaining unimplemented slots still NULL, guarded); `tests/output/HRD_kick.wav` and `tests/output/FM4_kick.wav` non-empty
     - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes
   </acceptance_criteria>
   <verify>
     <automated>make test && make dsp.so && ./scripts/glibc_gate.sh build/dsp.so && echo WAVE_OK</automated>
   </verify>
-  <done>HRD + FM4 registered in enum order; param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
+  <done>HRD + FM4 registered by replacing their NULL slots with designated initializers (array length still == MODEL_COUNT); param battery covers both; per-model WAVs written; full suite + cross-build + glibc gate green.</done>
 </task>
 
 </tasks>
 
 <verification>
-- `make test` exits 0 with HRD + FM4 registered and covered.
+- `make test` exits 0 with HRD + FM4 registered (their NULLs replaced) and covered; remaining slots still NULL and guarded.
 - `make dsp.so && ./scripts/glibc_gate.sh build/dsp.so` passes.
 - Both state structs `_Static_assert` <= 4096; HRD reuses bounded FX/crush (no fast_tanh); FM4 uses static routing tables (no per-sample branching); both fully re-init on trigger.
 </verification>
@@ -156,4 +160,5 @@ Output: src/models/hrd.c, src/models/fm4.c, registry entries, extended param bat
 
 <output>
 After completion, create `.planning/phases/B-remaining-9-kick-models/B-06-SUMMARY.md`
+</output>
 </output>
