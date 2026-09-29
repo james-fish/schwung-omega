@@ -249,16 +249,18 @@ static void fm2_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
     fm2_set_param(inst, key, val);
 }
 
-/* ---- Page-2 slot descriptor (JSON fragment consumed by A-03 ui.c) -------- */
-/* Emits a bounded JSON array of the 3 FM2-specific Page-2 slots. Format is a
- * simple list of {key,label} objects; ui.c wraps this into the full hierarchy.
+/* ---- Page-2 slot descriptor (full JSON objects; Pattern 3) --------------- */
+/* Emits the 3 FM2-specific Page-2 slots as full {key,name,type,min,max} objects
+ * (uniform with B-04..B-08) so ui.c (B-09) splices every model identically: a
+ * bare comma-separated interior with NO outer brackets. B-09 reconciled this
+ * from the old A-03 [{key,label}] form to match the other nine models.
  * Returns bytes written (excluding the null terminator), 0 on overflow. */
 static int fm2_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "[{\"key\":\"" PK_FM_RATIO "\",\"label\":\"FM RATIO\"},"
-        "{\"key\":\"" PK_FM_INDEX "\",\"label\":\"FM INDEX\"},"
-        "{\"key\":\"" PK_OP2_WAVE "\",\"label\":\"OP2 WAVE\"}]";
+        "{\"key\":\"" PK_FM_RATIO "\",\"name\":\"FM RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_FM_INDEX "\",\"name\":\"FM INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"OP2 WAVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
     int len = (int)(sizeof(json) - 1);   /* exclude null terminator */
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);
