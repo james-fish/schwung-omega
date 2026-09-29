@@ -17,14 +17,18 @@ const float g_kick_defaults[PKI_COUNT] = {
     [PKI_PITCH]=50.0f, [PKI_LENGTH]=0.5f, [PKI_SUSTAIN]=0.5f, [PKI_CURVE]=0.5f,
     [PKI_ATTACK]=0.5f, [PKI_TRS_DEC]=0.5f, [PKI_TRS_TNE]=0.5f, [PKI_COLOR]=0.5f,
     [PKI_FX_TYPE]=0.0f, [PKI_FX_AMT]=0.0f,
-    [PKI_FX_TONE]=0.5f, [PKI_FILTER_ROUTE]=0.0f,   /* tone centered; route=SYN */
-    /* FM2 */
-    [PKI_FM_RATIO]=0.5f, [PKI_FM_INDEX]=0.5f, [PKI_OP2_WAVE]=0.5f,
+    [PKI_FX_TONE]=0.5f, [PKI_FILTER_ROUTE]=2.0f,   /* tone centered; route=Both
+     * (matches the current whole-voice COLOR; Synth/Transient split is a per-
+     * model follow-up, see docs/VOICING_AUDIT_v1_1.md). */
+    /* FM2 — lower default ratio/index: v=0.5 was piercing/shrill (VOICE-06).
+     * 0.22 -> ratio ~2.15, 0.30 -> index ~2.4: warmer, punchy, clean tail. */
+    [PKI_FM_RATIO]=0.22f, [PKI_FM_INDEX]=0.30f, [PKI_OP2_WAVE]=0.35f,
     /* FM4 */
     [PKI_FM4_ALGO]=0.0f, [PKI_FM4_OPRATIO]=0.5f, [PKI_FM4_OPINDEX]=0.5f,
     [PKI_FM4_OPAMP]=0.5f, [PKI_FM4_FEEDBACK]=0.5f, [PKI_FM4_ALGO2]=0.5f,
-    /* WTR */
-    [PKI_WTR_WAVE]=0.5f, [PKI_WTR_BODYPITCH]=0.5f, [PKI_WTR_TRANSDEC]=0.5f,
+    /* WTR — raise WAVE + BODY PITCH defaults: v=0.5 sounded like just the
+     * transient (VOICE-06). More body wave + body pitch presence at default. */
+    [PKI_WTR_WAVE]=0.6f, [PKI_WTR_BODYPITCH]=0.7f, [PKI_WTR_TRANSDEC]=0.5f,
     [PKI_WTR_TRANSCOL]=0.5f,
     /* PHY */
     [PKI_PHY_BEATER]=0.5f, [PKI_PHY_SHELL]=0.5f, [PKI_PHY_HEADTENS]=0.5f,
@@ -38,8 +42,8 @@ const float g_kick_defaults[PKI_COUNT] = {
     /* TRS */
     [PKI_TRS_TONE]=0.5f, [PKI_TRS_TDEC]=0.5f, [PKI_TRS_WTCOL]=0.5f,
     [PKI_TRS_CURVE]=0.5f,
-    /* ANA */
-    [PKI_ANA_MORPH]=0.5f, [PKI_ANA_SUBLVL]=0.5f, [PKI_ANA_SUBDEC]=0.5f,
+    /* ANA — stronger default SUB LEVEL so the 808 boom is obvious (VOICE-06). */
+    [PKI_ANA_MORPH]=0.5f, [PKI_ANA_SUBLVL]=0.7f, [PKI_ANA_SUBDEC]=0.6f,
     [PKI_ANA_SAMPLE]=0.5f,
     /* USR */
     [PKI_USR_SAMPLE]=0.0f, [PKI_USR_WTMORPH]=0.5f, [PKI_USR_LAYERVOL]=0.5f,

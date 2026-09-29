@@ -240,7 +240,7 @@ static void ana_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         /* Sum: body + the prominent sub boom + the sample thump. Self-limited
          * below 1.0 (FM2 precedent; clamp is a net). The sub is weighted heavy
          * so ANA's low-end boom dominates (its 808 distinctness). */
-        float s = body * 0.5f + sub * 0.7f + samp * 0.4f;
+        float s = body * 0.45f + sub * 0.95f + samp * 0.4f;   /* sub dominant (VOICE-06) */
         s = tpt1_lp(&a->color_lp, s, a->color_g);       /* COLOR output LP */
 
         /* Post-kick FX (KICK-14): map fx_type 0..1 -> mode 0..4, bounded. */
