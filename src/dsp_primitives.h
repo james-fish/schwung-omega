@@ -15,10 +15,27 @@
 
 #include "omega.h"
 #include <math.h>
+#include <stdint.h>
+
+/* --- Shared table / scale dimensions (Task 2/3 contract) --------------- */
+/* NUM_WAVES/BANDS MUST match tools/gen_wavetables.c + src/wavetables.h.
+ * BANDS=1 to start: kicks live at 40-200 Hz where aliasing is negligible;
+ * add band-limited variants only if the voicing harness detects aliasing on
+ * a hi-pitch sweep (B-RESEARCH §New shared primitives / CLAUDE.md). */
+#define NUM_WAVES   6   /* sine, triangle, saw-ish, square, digital, analog */
+#define BANDS       1
+#define WT_LEN      2048            /* single-cycle length */
+#define WT_GUARD    (WT_LEN + 1)    /* 2049: guard sample t[2048]==t[0] */
+#define NUM_SCALES  4   /* chromatic, major, minor, minor-pentatonic */
 
 /* Shared single-cycle sine table (2048 + 1 guard). Defined in dsp_primitives.c
  * via the generated sine_table.h; every model reads this same table (D-04). */
 extern const float g_sine_table[2049];
+
+/* Band-limited factory wavetables. DEFINED in the generated wavetables.h
+ * (Task 3), included once from dsp_primitives.c; shared .rodata across all
+ * instances (KICK-15). Guard sample per wave so wt_read_bl needs no wrap mask. */
+extern const float g_wavetables[NUM_WAVES][BANDS][WT_GUARD];
 
 /* --- Envelope: one-pole exponential decay (D-05) ----------------------- */
 typedef struct { float value; float coeff; } env_t;
@@ -48,6 +65,88 @@ static inline float wt_read(const float *t, float phase01) {
     float fr = fp - (float)i;
     return t[i] + fr * (t[i + 1] - t[i]);
 }
+
+/* --- Band-limited wavetable read (WTR/DIG/ANA/HRD/USR) ----------------- */
+/* Same linear-interp + guard-sample math as wt_read, indexed into one of the
+ * factory band-limited waves. `wave` in [0,NUM_WAVES), `band` in [0,BANDS).
+ * Relies on g_wavetables[wave][band][WT_LEN]==[0] so the +1 read is unmasked. */
+static inline float wt_read_bl(int wave, int band, float phase01) {
+    if (wave < 0) wave = 0; else if (wave >= NUM_WAVES) wave = NUM_WAVES - 1;
+    if (band < 0) band = 0; else if (band >= BANDS) band = BANDS - 1;
+    const float *t = g_wavetables[wave][band];
+    float fp = phase01 * (float)WT_LEN;
+    int   i  = (int)fp;
+    float fr = fp - (float)i;
+    return t[i] + fr * (t[i + 1] - t[i]);
+}
+
+/* --- Modal resonator: complex-rotation form (PHY, KICK-05) ------------- */
+/* Per-sample: z *= e^{jw} * e^{-decay}. One complex multiply; the real part is
+ * a decaying sinusoid. cos_w/sin_w/decay are precomputed in modal_excite
+ * (trigger/set_param), NEVER per sample (Pitfall 3). */
+typedef struct { float re, im, cos_w, sin_w, decay; } modal_t;
+
+/* Excite (impulse) a mode. freq_hz clamped to [20, 0.45*SR] and
+ * decay_per_sample clamped to (0,1) to prevent NaN/blowup (Pitfall 5). */
+static inline void modal_excite(modal_t *m, float freq_hz,
+                                float decay_per_sample, float amp) {
+    if (freq_hz < 20.0f) freq_hz = 20.0f;
+    float fmax = 0.45f * OMEGA_SR;
+    if (freq_hz > fmax) freq_hz = fmax;
+    if (decay_per_sample <= 0.0f) decay_per_sample = 0.0001f;
+    if (decay_per_sample >= 1.0f) decay_per_sample = 0.9999f;
+    float w = 2.0f * (float)M_PI * freq_hz / OMEGA_SR;  /* transcendental at */
+    m->cos_w = cosf(w); m->sin_w = sinf(w);             /* excite only        */
+    m->decay = decay_per_sample;
+    m->re = amp; m->im = 0.0f;
+}
+
+/* One sample of the decaying sinusoid (no per-sample transcendentals). */
+static inline float modal_tick(modal_t *m) {
+    float re = m->re * m->cos_w - m->im * m->sin_w;
+    float im = m->re * m->sin_w + m->im * m->cos_w;
+    m->re = re * m->decay;
+    m->im = im * m->decay;
+    return m->re;
+}
+
+/* --- PRNG: xorshift64 (GEN, KICK-11) — deterministic, libc-independent - */
+/* Deterministic: same seed -> same sequence (reproducible musical randomness). */
+typedef struct { uint64_t s; } prng_t;
+
+static inline void prng_seed(prng_t *p, uint64_t seed) {
+    p->s = seed ? seed : 0x9E3779B97F4A7C15ULL;   /* avoid the zero fixed-point */
+}
+
+static inline uint64_t prng_next_u64(prng_t *p) {
+    uint64_t x = p->s;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    p->s = x;
+    return x;
+}
+
+/* Uniform float in [0,1). */
+static inline float prng_next_f(prng_t *p) {
+    /* top 24 bits -> [0,1) with 2^-24 spacing */
+    return (float)(prng_next_u64(p) >> 40) * (1.0f / 16777216.0f);
+}
+
+/* --- Noise burst (TRS/WTR/PHY excite/HRD) ------------------------------ */
+/* White noise in [-1,1]; color through tpt1 for pink-ish clicks. */
+typedef struct { prng_t rng; } noise_t;
+
+static inline void noise_seed(noise_t *n, uint64_t seed) { prng_seed(&n->rng, seed); }
+
+static inline float noise_tick(noise_t *n) {
+    return 2.0f * prng_next_f(&n->rng) - 1.0f;
+}
+
+/* --- Scale quantize (GEN, KICK-11) ------------------------------------- */
+/* Returns a semitone offset for `degree` within `scale`; free-freq mode
+ * bypasses at the caller. Defined in dsp_primitives.c (g_scales in .rodata). */
+int scale_quantize(int scale, int degree);
 
 /* --- TPT 1-pole lowpass (D-07, COLOR) ---------------------------------- */
 typedef struct { float s; } tpt1_t;

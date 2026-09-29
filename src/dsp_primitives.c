@@ -11,6 +11,27 @@
 #include "sine_table.h"   /* defines: const float _Alignas(16) g_sine_table[2049] */
 #include <assert.h>
 
+/* --- Scale-quantize tables (GEN, KICK-11) ------------------------------ */
+/* Semitone offsets per scale degree, in .rodata (branch-light lookup, no
+ * per-sample interval math). Rows: chromatic, major, minor, minor-pentatonic.
+ * Unused pentatonic slots repeat the octave root so any degree stays musical. */
+static const int8_t g_scales[NUM_SCALES][12] = {
+    /* chromatic          */ { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 },
+    /* major (Ionian)     */ { 0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19 },
+    /* natural minor      */ { 0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19 },
+    /* minor pentatonic   */ { 0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27 },
+};
+
+/* Map (scale, degree) -> semitone offset. degree wraps mod 12 with octave
+ * transposition so a long generative sequence keeps climbing musically. */
+int scale_quantize(int scale, int degree) {
+    if (scale < 0) scale = 0; else if (scale >= NUM_SCALES) scale = NUM_SCALES - 1;
+    int oct = degree / 12;
+    int idx = degree % 12;
+    if (idx < 0) { idx += 12; oct -= 1; }
+    return (int)g_scales[scale][idx] + 12 * oct;
+}
+
 /* KICK-15: the guard sample must duplicate index 0 so wt_read's t[i+1] at the
  * wrap point is branch-free and correct. Assert it at runtime from the harness. */
 void omega_primitives_selfcheck(void) {
