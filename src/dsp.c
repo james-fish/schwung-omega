@@ -63,25 +63,6 @@ static float dsp_parse_f(const char *s) {
  * OMEGA_HAS_UI). The temporary A-02 fallback has been removed; dsp.c only calls
  * through the omega.h declaration now. */
 
-/* ---- D-10 buf_len measurement spike -------------------------------------- */
-/* SPIKE (D-10): one-shot buf_len measurement to unblock Phase E hierarchy
- * sizing. host->log on the audio thread violates the no-log rule (A-RESEARCH
- * Pitfall 1 / Open Q4) — REMOVE or gate behind a debug build flag before ship.
- * Formats "ui_buflen=<v>" with manual digit extraction (no snprintf/atof/locale
- * dependency; UI-01 / CLAUDE.md). dst must hold at least 32 bytes. */
-static void omega_itoa_msg(char *dst, int v) {
-    static const char prefix[] = "ui_buflen=";
-    int i = 0;
-    for (const char *p = prefix; *p; p++) dst[i++] = *p;
-    if (v < 0) { dst[i++] = '-'; v = -v; }
-    /* Emit digits into a small reversed buffer, then copy in order. */
-    char rev[10];
-    int r = 0;
-    do { rev[r++] = (char)('0' + (v % 10)); v /= 10; } while (v > 0 && r < 10);
-    while (r > 0) dst[i++] = rev[--r];
-    dst[i] = '\0';
-}
-
 /* ---- vtable functions ---------------------------------------------------- */
 
 /* All 11 kick param keys, defaulted to mid on create. */
@@ -141,19 +122,21 @@ static void omega_set_param(void *instance, const char *key, const char *val) {
 static int omega_get_param(void *instance, const char *key, char *buf, int buf_len) {
     bohm_instance_t *inst = instance;
     if (strcmp(key, PK_UI_HIER) == 0) {
-        /* SPIKE (D-10): log the host-supplied buf_len exactly once, guarded by
-         * inst->logged_buflen. host->log on the audio thread is a deliberate
-         * one-shot diagnostic (A-RESEARCH Pitfall 1 / Open Q4) — REMOVE or gate
-         * behind a debug build flag before ship. */
-        if (!inst->logged_buflen && g_host && g_host->log) {
-            char m[32];
-            omega_itoa_msg(m, buf_len);
-            g_host->log(m);
-            inst->logged_buflen = true;
-        }
+        /* D-10 buf_len measurement removed: get_param runs on the SPI audio
+         * callback, where the real plugin_api_v1.h forbids logging of ANY kind
+         * (host->log included) — it is a write() syscall that causes device-
+         * wide audio dropouts. Capture buf_len off-thread in a later phase. */
         return omega_build_ui(inst, buf, buf_len);
     }
     return -1;   /* unhandled key (Pitfall 4) */
+}
+
+/* get_error: host queries this after create_instance to check init state.
+ * Omega has no error state in Phase A — always report "no error" (return 0). */
+static int omega_get_error(void *instance, char *buf, int buf_len) {
+    (void)instance;
+    if (buf && buf_len > 0) buf[0] = '\0';
+    return 0;
 }
 
 static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
@@ -184,6 +167,7 @@ plugin_api_v2_t *move_plugin_init_v2(const host_api_v1_t *host) {
     g_api.on_midi          = omega_on_midi;
     g_api.set_param        = omega_set_param;
     g_api.get_param        = omega_get_param;
+    g_api.get_error        = omega_get_error;
     g_api.render_block     = omega_render_block;
     return &g_api;
 }

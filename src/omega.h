@@ -21,17 +21,26 @@
  * 128-frame block. Never size scratch to exactly 2x128 (CLAUDE.md: add margin). */
 #define OMEGA_MAX_BLOCK 256
 
-/* --- Host ABI (Context/01 lines 30-50) — VERBATIM ---------------------- */
-/* The three Memory-Mapped Direct Access fields (mapped_memory/audio_out_offset/
- * audio_in_offset) sit BETWEEN frames_per_block and log — omitting them shifts
- * log onto the host's mapped_memory (a data pointer) and segfaults the D-10
- * spike on the first get_param. Do NOT alter field order or types. */
-typedef struct {
-    uint32_t api_version;        /* = 1 */
-    int sample_rate;             /* Fixed at 44100 Hz */
-    int frames_per_block;        /* typically 128 */
+/* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
+ * This MUST match the host struct byte-for-byte or callback offsets shift and
+ * the host/module call through garbage (device-wide crash / boot-loop). The
+ * `reserved[8]` tail is load-bearing: reserved must start at +120 (a shipped
+ * module over-reads there), enforced by the static_assert below. Do NOT insert
+ * fields before `reserved`, and do NOT shorten the run. New host capabilities
+ * arrive as dlsym'd exports, never as fields here. */
+typedef int  (*move_mod_emit_value_fn)(void *ctx, const char *source_id,
+                                       const char *target, const char *param,
+                                       float signal, float depth, float offset,
+                                       int bipolar, int enabled);
+typedef void (*move_mod_clear_source_fn)(void *ctx, const char *source_id);
 
-    /* Memory Mapped Direct Access */
+typedef struct host_api_v1 {
+    uint32_t api_version;
+
+    int sample_rate;
+    int frames_per_block;
+
+    /* Direct mailbox access */
     uint8_t *mapped_memory;
     int audio_out_offset;
     int audio_in_offset;
@@ -40,19 +49,44 @@ typedef struct {
     int (*midi_send_internal)(const uint8_t *msg, int len);
     int (*midi_send_external)(const uint8_t *msg, int len);
     int (*get_clock_status)(void);
-    double (*get_beat_position)(void); /* 24-PPQN synced */
+
+    /* Optional runtime modulation callbacks (NULL if unsupported). */
+    move_mod_emit_value_fn  mod_emit_value;
+    move_mod_clear_source_fn mod_clear_source;
+    void *mod_host_ctx;
+
+    float (*get_bpm)(void);
+    int (*midi_inject_to_move)(const uint8_t *msg, int len);
+    int (*slot_recv_channel)(void *instance);
+    double (*get_beat_position)(void);
+
+    /* Load-bearing zero-run: over-reads land on NULL and pass caller guards. */
+    void *reserved[8];
 } host_api_v1_t;
 
-/* --- Plugin ABI (Context/01 lines 54-66) — VERBATIM -------------------- */
-typedef struct {
+_Static_assert(offsetof(host_api_v1_t, reserved) == 120,
+               "host_api_v1_t::reserved must start at +120 (ABI contract)");
+
+/* --- Plugin ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h --
+ * get_error sits BETWEEN get_param and render_block. Omitting it put our
+ * render_block at the get_error offset and left render_block reading one slot
+ * past the struct — the host then called garbage (SIGSEGV 0x1000300000000). */
+typedef struct plugin_api_v2 {
     uint32_t api_version;        /* = 2 */
     void* (*create_instance)(const char *module_dir, const char *json_defaults);
     void  (*destroy_instance)(void *instance);
     void  (*on_midi)(void *instance, const uint8_t *msg, int len, int source);
     void  (*set_param)(void *instance, const char *key, const char *val);
     int   (*get_param)(void *instance, const char *key, char *buf, int buf_len);
-    void  (*render_block)(void *instance, int16_t *out_lr, int frames);
+    int   (*get_error)(void *instance, char *buf, int buf_len);
+    void  (*render_block)(void *instance, int16_t *out_interleaved_lr, int frames);
 } plugin_api_v2_t;
+
+/* Lock the vtable layout: render_block must land at +56 (after 7 slots on
+ * LP64). If a slot is dropped or reordered, the host reads render_block past
+ * the struct and calls garbage — this catches it at compile time. */
+_Static_assert(offsetof(plugin_api_v2_t, render_block) == 56,
+               "plugin_api_v2_t layout drift: render_block must be at +56");
 
 plugin_api_v2_t* move_plugin_init_v2(const host_api_v1_t *host);
 
