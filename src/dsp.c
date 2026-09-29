@@ -298,17 +298,21 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
         memset(r, 0, sizeof(float) * (size_t)frames);
     }
 
-    /* Groove rumble (Phase C). GEN's own output IS the rumble (DC-05, wired in
-     * C-03); for now every model feeds the kick-fed multitap. Update the tempo
-     * clock ONCE per block (Pattern 2 — never per sample), then tick the groove
-     * voice per sample and SUM it with the kick. No clamp here: the sum may
+    /* Groove rumble (Phase C). Update the tempo clock ONCE per block (Pattern 2
+     * — never per sample) UNCONDITIONALLY: GEN reads inst->groove.samples_per_16th
+     * to clock its generative sequence (GRV-02/DC-05), so the clock must run even
+     * for GEN. For NON-GEN models, the groove voice is the kick-fed multitap
+     * (DC-01) summed into the output. For GEN, that multitap is BYPASSED — GEN's
+     * own model output already IS the rumble (DC-05). No clamp here: the sum may
      * exceed 1.0 and is bounded only at the int16 boundary below (FNDTN-07);
      * headroom management (duck/DJ filter/soft clip) is Phase D. */
     groove_update_tempo(&inst->groove, (const struct host_api_v1 *)g_host, frames);
-    for (int n = 0; n < frames; n++) {
-        float gl, gr;
-        groove_tick(&inst->groove, l[n], r[n], &gl, &gr);
-        l[n] += gl;  r[n] += gr;                           /* kick + groove sum */
+    if (inst->model != MODEL_GEN) {
+        for (int n = 0; n < frames; n++) {
+            float gl, gr;
+            groove_tick(&inst->groove, l[n], r[n], &gl, &gr);
+            l[n] += gl;  r[n] += gr;                       /* kick + groove sum */
+        }
     }
     /* <<< PHASE D INSERTION POINT: duck -> DJ filter -> soft clip go HERE, on l[]/r[] >>> */
 

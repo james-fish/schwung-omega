@@ -332,20 +332,16 @@ static void gen_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
     gen_set_param(inst, key, val);
 }
 
-/* ---- Page-2 slot descriptor (Phase-B minimal set; Pattern 3) ------------- */
-/* Phase B exposes only SEED / SCALE / DENSITY. The full SEED/SCALE/SEQ LEN/
- * LPF FREQ/LPF POLE/DENSITY set lands on Groove Page 2 in Phase C (GRV-04). */
+/* ---- Page-2 slot descriptor --------------------------------------------- */
+/* GEN exposes ALL of its controls (SEED/SCALE/SEQ LEN/LPF FREQ/LPF POLE/
+ * DENSITY) on the conditional Groove Page 2 (GRV-04, DC-05), NOT Kick Page 2.
+ * So GEN's Kick Page 2 emits NO model interior — ui.c's splice then shows only
+ * the always-present FX TYPE/AMT (it drops the leading FX comma when slot_len
+ * is 0). Return 0 (empty, null-terminated). */
 static int gen_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
-    static const char json[] =
-        "{\"key\":\"" PK_GEN_SEED    "\",\"name\":\"SEED\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_GEN_SCALE   "\",\"name\":\"SCALE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_GEN_DENSITY "\",\"name\":\"DENSITY\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
-    int len = (int)(sizeof(json) - 1);
-    if (buf_len <= len) return 0;        /* bounded: no overflow */
-    memcpy(buf, json, (size_t)len);
-    buf[len] = '\0';
-    return len;
+    if (buf && buf_len > 0) buf[0] = '\0';
+    return 0;
 }
 
 /* ---- Vtable ------------------------------------------------------------- */

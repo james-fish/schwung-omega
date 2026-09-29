@@ -42,12 +42,14 @@ extern const kick_model_vtable_t *g_models[];
 
 /* Expected Page-2 slot count per model, indexed by model_id_t (KICK-13:
  * "each p2_slot_desc emits valid bounded JSON with the correct slot count").
- * FM2=3 (FM RATIO/FM INDEX/OP2 WAVE), FM4=6 (full operator set), the rest=4,
- * GEN=3 (Phase-B minimal SEED/SCALE/DENSITY). Kept in model_id_t order. */
+ * FM2=3 (FM RATIO/FM INDEX/OP2 WAVE), FM4=6 (full operator set), the rest=4.
+ * GEN=0 (C-03/GRV-04): GEN moved ALL its controls to the conditional Groove
+ * Page 2, so its KICK Page 2 emits no model interior (FX TYPE/AMT only). Kept
+ * in model_id_t order. */
 static const int g_expected_slots[MODEL_COUNT] = {
     [MODEL_FM2] = 3, [MODEL_FM4] = 6, [MODEL_WTR] = 4, [MODEL_PHY] = 4,
     [MODEL_HRD] = 4, [MODEL_DIG] = 4, [MODEL_TRS] = 4, [MODEL_ANA] = 4,
-    [MODEL_USR] = 4, [MODEL_GEN] = 3,
+    [MODEL_USR] = 4, [MODEL_GEN] = 0,
 };
 
 /* Count occurrences of a literal substring in a null-terminated string. */
@@ -77,33 +79,45 @@ static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
         const kick_model_vtable_t *vt = g_models[m];
         if (!vt || !vt->p2_slot_desc) continue;   /* forward-compatible skip */
 
-        /* 1. Bounded, non-empty, null-terminated interior. */
+        /* 1. Bounded, null-terminated interior. A model may legitimately emit
+         * a 0-length interior (GEN, C-03: its controls live on Groove Page 2,
+         * so Kick Page 2 is FX-only). In that case skip the interior-content
+         * asserts but STILL run the full-hierarchy balance check below. */
         char buf[1024];
         memset(buf, 0x7f, sizeof buf);            /* poison to catch missing NUL */
         int len = vt->p2_slot_desc(inst, buf, (int)sizeof buf);
-        assert(len > 0);                          /* emits something */
+        assert(len >= 0);                         /* never negative */
         assert(len < (int)sizeof buf);            /* bounded, no overflow */
-        assert(buf[len] == '\0');                 /* null-terminated at len */
-        assert((int)strlen(buf) == len);          /* no embedded NUL / matches */
+        assert(len == g_expected_slots[m]         /* 0 iff the model is FX-only */
+               ? (len == 0) : (len > 0));
 
-        /* 2. Balanced JSON: models emit a bare comma-separated object list
-         * (no outer [] wrap), so braces balance and there are no stray
-         * brackets in the interior. */
-        assert(count_char(buf, '{') == count_char(buf, '}'));
-        assert(count_char(buf, '[') == count_char(buf, ']'));
-        assert(count_char(buf, '[') == 0);        /* interior is bracket-free */
+        if (len > 0) {
+            assert(buf[len] == '\0');             /* null-terminated at len */
+            assert((int)strlen(buf) == len);      /* no embedded NUL / matches */
 
-        /* 3. Slot count matches the documented per-model count. */
-        int nkeys = count_substr(buf, "\"key\"");
-        assert(nkeys == g_expected_slots[m]);
-        assert(count_char(buf, '{') == g_expected_slots[m]);  /* one obj/slot */
+            /* 2. Balanced JSON: models emit a bare comma-separated object list
+             * (no outer [] wrap), so braces balance and there are no stray
+             * brackets in the interior. */
+            assert(count_char(buf, '{') == count_char(buf, '}'));
+            assert(count_char(buf, '[') == count_char(buf, ']'));
+            assert(count_char(buf, '[') == 0);    /* interior is bracket-free */
 
-        /* 4. A too-small buffer is refused (returns 0, no write past bound —
-         * the Pattern 3 overflow guard). Give it fewer bytes than it needs. */
-        char tiny[8];
-        memset(tiny, 0x7f, sizeof tiny);
-        int r = vt->p2_slot_desc(inst, tiny, (int)sizeof tiny);
-        assert(r == 0);                           /* bounded refusal */
+            /* 3. Slot count matches the documented per-model count. */
+            int nkeys = count_substr(buf, "\"key\"");
+            assert(nkeys == g_expected_slots[m]);
+            assert(count_char(buf, '{') == g_expected_slots[m]);  /* one obj/slot */
+
+            /* 4. A too-small buffer is refused (returns 0, no write past bound —
+             * the Pattern 3 overflow guard). Give it fewer bytes than it needs. */
+            char tiny[8];
+            memset(tiny, 0x7f, sizeof tiny);
+            int r = vt->p2_slot_desc(inst, tiny, (int)sizeof tiny);
+            assert(r == 0);                       /* bounded refusal */
+        } else {
+            /* 0-interior model (GEN): the descriptor still null-terminates its
+             * buffer and reports 0 (FX-only Kick Page 2). */
+            assert(g_expected_slots[m] == 0);
+        }
 
         /* 5. The FULL ui_hierarchy stays valid after switching to this model:
          * balanced braces/brackets + null-terminated + bytes-written contract. */
@@ -127,6 +141,46 @@ static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
     }
     assert(checked >= 1);
     printf("test_switch: p2_slot_desc JSON valid for %d models\n", checked);
+}
+
+/* GRV-04 gating: Groove Page 2 (`groove2`) must appear in ui_hierarchy ONLY
+ * when the active model is GEN, and be hidden for every other model. Groove
+ * Page 1 (`groove1`) is ALWAYS present. Also confirms the full hierarchy stays
+ * brace/bracket-balanced + null-terminated with the groove levels present. */
+static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
+    char idxbuf[4];
+    char ui[8192];
+
+    /* Non-GEN model (FM2): groove1 present, groove2 ABSENT. */
+    model_index_str(MODEL_FM2, idxbuf);
+    api->set_param(inst, PK_MODEL, idxbuf);
+    memset(ui, 0x7f, sizeof ui);
+    int fl = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+    assert(fl > 0 && fl < (int)sizeof ui);
+    assert(ui[fl] == '\0');
+    assert((int)strlen(ui) == fl);
+    assert(count_char(ui, '{') == count_char(ui, '}'));
+    assert(count_char(ui, '[') == count_char(ui, ']'));
+    assert(strstr(ui, "\"groove1\"") != NULL);        /* always present */
+    assert(strstr(ui, "\"groove2\"") == NULL);        /* hidden for non-GEN */
+
+    /* GEN: both groove1 AND groove2 present, with the six GRV-04 keys. */
+    model_index_str(MODEL_GEN, idxbuf);
+    api->set_param(inst, PK_MODEL, idxbuf);
+    memset(ui, 0x7f, sizeof ui);
+    int gl = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+    assert(gl > 0 && gl < (int)sizeof ui);
+    assert(ui[gl] == '\0');
+    assert((int)strlen(ui) == gl);
+    assert(count_char(ui, '{') == count_char(ui, '}'));
+    assert(count_char(ui, '[') == count_char(ui, ']'));
+    assert(strstr(ui, "\"groove1\"") != NULL);        /* always present */
+    assert(strstr(ui, "\"groove2\"") != NULL);        /* shown for GEN */
+    assert(strstr(ui, PK_GEN_SEQLEN)  != NULL);       /* SEQ LEN key */
+    assert(strstr(ui, PK_GEN_LPFFREQ) != NULL);       /* LPF FREQ key */
+    assert(strstr(ui, PK_GEN_LPFPOLE) != NULL);       /* LPF POLE key */
+
+    printf("test_switch: Groove Page 2 gating OK (groove2 iff GEN; groove1 always)\n");
 }
 
 /* Convert a model index to its decimal string for PK_MODEL (matches dsp.c's
@@ -180,6 +234,9 @@ int main(void) {
      * counted JSON, refuses overflow, and keeps the full ui_hierarchy balanced
      * across model switches (B-09 dynamic Page-2 splice). */
     assert_p2_json_valid(api, inst);
+
+    /* GRV-04 (C-03): Groove Page 2 appears iff model==GEN; Page 1 always. */
+    assert_groove2_gating(api, inst);
 
     /* get_param contract (Pitfall 4): an unknown key returns -1, no write. */
     {

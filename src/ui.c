@@ -79,6 +79,38 @@ static const char UI_KICK2_FX[] =
       "{\"key\":\"" PK_FX_AMT  "\",\"name\":\"FX AMT\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
     "],\"knobs\":[\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\"]}";
 
+/* groove1 level: the 8 always-present Groove Page-1 params (GRV-01/03/05).
+ * LEADING comma (it follows kick2, which ends `...}` with no trailing comma);
+ * NO trailing comma of its own (the following level or UI_CLOSE supplies the
+ * separator / closes the map). This leading-comma discipline keeps the levels
+ * map brace-balanced with no dangling comma before `}}` (C-RESEARCH Pitfall 6). */
+static const char UI_GROOVE1[] =
+    ",\"groove1\":{\"name\":\"Groove 1\",\"params\":["
+      "{\"key\":\"" PK_GRV_VOL    "\",\"name\":\"VOL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_LENGTH "\",\"name\":\"LENGTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_COLOR  "\",\"name\":\"COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_TAP1   "\",\"name\":\"TAP1\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_TAP2   "\",\"name\":\"TAP2\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_TAP3   "\",\"name\":\"TAP3\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_TAP4   "\",\"name\":\"TAP4\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GRV_MONO   "\",\"name\":\"MONO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
+    "],\"knobs\":[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR "\",\"" PK_GRV_TAP1
+      "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\",\"" PK_GRV_MONO "\"]}";
+
+/* groove2 level: the 6 Groove Page-2 controls (GRV-04). Emitted ONLY when the
+ * active model is GEN (DC-05); hidden for FM2..USR. Same LEADING-comma / no-
+ * trailing-comma discipline (it follows groove1). */
+static const char UI_GROOVE2[] =
+    ",\"groove2\":{\"name\":\"Groove 2\",\"params\":["
+      "{\"key\":\"" PK_GEN_SEED    "\",\"name\":\"SEED\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GEN_SCALE   "\",\"name\":\"SCALE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GEN_SEQLEN  "\",\"name\":\"SEQ LEN\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GEN_LPFFREQ "\",\"name\":\"LPF FREQ\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GEN_LPFPOLE "\",\"name\":\"LPF POLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+      "{\"key\":\"" PK_GEN_DENSITY "\",\"name\":\"DENSITY\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}"
+    "],\"knobs\":[\"" PK_GEN_SEED "\",\"" PK_GEN_SCALE "\",\"" PK_GEN_SEQLEN "\",\"" PK_GEN_LPFFREQ
+      "\",\"" PK_GEN_LPFPOLE "\",\"" PK_GEN_DENSITY "\"]}";
+
 /* Close the levels map + the top-level object. */
 static const char UI_CLOSE[] = "}}";
 
@@ -135,6 +167,14 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
          * params array is `[{FX TYPE},{FX AMT}]` — still valid JSON. */
         ui_append(buf, buf_len, &off, UI_KICK2_FX + 1, (int)(sizeof(UI_KICK2_FX) - 2));
     }
+
+    /* Groove Page 1 always follows kick2 (leading comma inside the fragment).
+     * Groove Page 2 is emitted ONLY for GEN (DC-05/GRV-04) — hidden otherwise.
+     * Both fragments carry a leading comma and no trailing comma, so the levels
+     * map closes cleanly with no dangling comma before UI_CLOSE `}}`. */
+    ui_append(buf, buf_len, &off, UI_GROOVE1, (int)(sizeof(UI_GROOVE1) - 1));
+    if (inst && inst->model == MODEL_GEN)
+        ui_append(buf, buf_len, &off, UI_GROOVE2, (int)(sizeof(UI_GROOVE2) - 1));
 
     ui_append(buf, buf_len, &off, UI_CLOSE, (int)(sizeof(UI_CLOSE) - 1));
 
