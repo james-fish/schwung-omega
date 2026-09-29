@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed C-01-PLAN.md (tempo-drivable mock host + RED test_groove); C-02 next
-last_updated: "2026-09-29T17:43:45.402Z"
+stopped_at: "Completed C-02-PLAN.md (groove engine: tempo clock + 4-tap + Page-1/MONO; test_groove GREEN)"
+last_updated: "2026-09-29T17:53:09.788Z"
 progress:
   total_phases: 7
   completed_phases: 0
@@ -32,12 +32,12 @@ progress:
 ## Current Position
 
 Phase: C (Groove Rumble Engine) — EXECUTING
-Plan: 2 of 3 (C-01 complete; C-02 next)
+Plan: 3 of 3 (C-01 + C-02 complete; C-03 next)
 **Status:** Executing Phase C
-**Progress:** Phase C 1/3 plans (C-01 Wave-0 test infra complete; C-02 groove engine next)
+**Progress:** Phase C 2/3 plans (C-01 Wave-0 test infra + C-02 groove engine complete; C-03 GEN transport clock + Groove Page 2 next)
 
 ```
-[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware; C: 1/3 plans — C-01 tempo-drivable mock host + RED test_groove landed)
+[◐○○○○○○] 0/7 phases (A: 3/4 plans + A-04 runbooks pending on-device; B: 9/9 coded, B-09 on-device voicing audit pending hardware; C: 2/3 plans — C-01 RED test_groove + C-02 groove engine GREEN (GRV-01/02/03/05))
 ```
 
 ---
@@ -68,11 +68,13 @@ Plan: 2 of 3 (C-01 complete; C-02 next)
 | Phase B-remaining-9-kick-models P07 | 4min | 2 tasks | 3 files |
 | Phase B-remaining-9-kick-models P08 | 12min | 3 tasks | 9 files |
 | Phase C-groove-rumble-engine P01 | 4min | 2 tasks | 4 files |
+| Phase C-groove-rumble-engine P02 | 6min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
 ### Key Decisions
 
+- **[C-02] Groove rumble voice GREEN (GRV-01/02/03/05)** — `groove_state_t` (two 131072-float delay rings + tempo clock + Page-1 params + COLOR LP) placed BY VALUE on `bohm_instance` inside the single calloc (DC-01/DC-08); instance-size `_Static_assert` raised 800000->1300000 (true `sizeof` 1,237,376 B). `groove_update_tempo` derives BPM ONLY from the guarded transport chain (beat-delta from `get_beat_position` -> `get_bpm` sanity-clamped -> last-resort 120), EMA-smooths jitter, and re-locks `samples_per_16th=(60/bpm)*SR/4` at control rate ONLY when BPM moves >0.5 — the reference hardcoded-120 tap-interval bug is provably absent (`! grep '* 0.125f'`). `groove_tick` writes the kick into the ring and reads 4 taps at `(t+1)*spq` behind the write head with branch-free `& GRV_DELAY_MASK` (never `%`), applies `tpt1_lp` COLOR (never a biquad, DC-06), `0.5*(gl+gr)` MONO force-sum (GRV-05), and VOL — transcendental-free per sample (powf/tanf are control-rate in `groove_set_param`). Include cycle (`groove.h`->`dsp_primitives.h`->`omega.h`) resolved by defining `groove_state_t` fully in `groove.h` with the TPT COLOR state as bare floats (`color_lp_l_s/r_s`) so `groove.h` needs only `<stdbool.h>`; `groove.c` wraps them in `tpt1_t` views. `dsp.c` sums kick+groove (`l[n]+=gl; r[n]+=gr`) behind a labeled `PHASE D INSERTION POINT` with NO premature clamp (bounded only at `omega_to_i16`), `groove_init` seeds the clock in create, and `is_groove_key` routes the 8 `grv_*` keys to `groove_set_param` before the model vtable. **DEVIATION (Rule 1):** groove VOL defaults to 0 (not the planned 0.7) — the sum into every model at 0.7 diluted FM2 `trs_tne` below `test_params`' responsiveness threshold; VOL is now a silent opt-in voice with tap/COLOR seeded to middles. Host ABI +120/+56 untouched. `make test` fully GREEN (test_groove spq 5513/5168/3802 distinct + fallback + tap-energy + 7/7 responsive + MONO L==R; no regressions). Commits 5942f7b, 44b6ce4, 1b40e36, 54e0b4b.
 - **[C-01] Mock host tempo-drivable + RED test_groove harness (Wave 0)** — `tests/mock_host.c` transport is now settable: module-static `g_mock_beat`/`g_mock_bpm` with `mock_host_set_beat`/`mock_host_advance_beat`/`mock_host_set_bpm`; `make_mock_host` wires `h.get_bpm = mock_get_bpm` (was NULL) and RESETS `(beat=0, bpm=120)` per call so tests start from a known transport state; new `make_mock_host_null_transport()` returns BOTH callbacks NULL to exercise the groove clock's last-resort 120-constant path (C-RESEARCH Pitfall 2). `tests/test_groove.c` drives the REAL plugin (init→create→set_param→on_midi→render_block) through the drivable mock and encodes GRV-01/02/03/05: GRV-02 BPM sweep {120,128,174} asserts `samples_per_16th=(60/bpm)*sr/4` distinct (5513/5168/3802) + per-block `mock_host_advance_beat(dbeat)` finite/bounded/non-silent, plus NULL-transport and negative-beat fallback cases; GRV-01 tap-delayed energy; GRV-03 grv_vol/length/color/tap1-4 responsiveness; GRV-05 MONO `grv_mono=1` → L==R. Groove params referenced as `grv_*` STRING LITERALS mirroring C-02's PK_GRV_* macros so the harness compiles+links independently in C-01 (unknown keys ignored by set_param today). `main()` guards FM2 registered so eventual GREEN asserts are non-trivial. RED as intended (GRV-03 fails on inert keys until C-02); wired into `make test` (GROOVE_TEST_SRCS + test-groove target + .PHONY + test: prereq); `src/omega.h` ABI byte-identical; `make test-switch` green. Commits 8b38227, 981f0c0.
 - **[B-09] Kick Page 2 assembles DYNAMICALLY per model (KICK-13 SC3)** — `ui.c` `omega_build_ui` splices `g_models[inst->model]->p2_slot_desc` into the kick2 params via a fixed 1024-byte no-alloc stack scratch, between a static `UI_KICK2_PREFIX` and the always-present `UI_KICK2_FX` suffix (FX TYPE/AMT + knobs); the FX suffix leads with a comma that is dropped (`UI_KICK2_FX + 1`) when a model emits no interior so the params array stays valid JSON. `fm2_p2_slot_desc` reconciled from the old A-03 `[{key,label}]` form to the uniform bare `{key,name,type,min,max}` interior that B-04..B-08 already emit, so all 10 feed ONE generic splice path (reverses the A-03 "ui.c stops calling fm2's descriptor" note — it calls it again, uniformly). `tests/test_switch.c assert_p2_json_valid` proves every model's Page-2 JSON is bounded/null-terminated/brace-balanced/bracket-free/correctly-counted (FM2=3, FM4=6, rest=4, GEN=3), refuses a too-small buffer (returns 0), and keeps the full `ui_hierarchy` balanced + null-terminated across model switches; `get_param` unknown-key -> -1. `make test` green (100 switch pairs + p2 JSON valid for 10 models). Commits 0c01954, 74de7b0.
 - **[B-09] On-device voicing surfaced as a blocking human-verify checkpoint (D-B04), not fabricated** — `docs/VOICING_AUDIT.md` (mirrors A-04) is the phase-completion gate: a 10-model x 5-item D-B02 manual voicing matrix with every cell PENDING (on-device) + the exact deploy/audition runbook (CI artifact / Docker `make dsp.so` + `scripts/glibc_gate.sh` -> `scripts/deploy.sh` -> select each model via the root Model encoder -> audition). FM2 flagged as the D-B03 reference bar. Task 4 requires physical Move hardware + a human listener and CANNOT be automated; execution STOPPED at the checkpoint. Phase B is NOT complete until every cell reads PASS. Commit 26f89a2.
@@ -142,11 +144,13 @@ Plan: 2 of 3 (C-01 complete; C-02 next)
 
 ## Session Continuity
 
-**Next action:** Execute C-02 (groove contracts, tempo clock, and multitap) — define the PK_GRV_* keys in omega.h matching the `grv_*` strings test_groove.c uses, implement the groove voice (circular delay + tempo clock per C-RESEARCH Pattern 2 + Page-1 controls + MONO sum) so `make test-groove` goes GREEN. The RED harness and drivable mock host are now in place. (B-09 on-device voicing audit + A-04 runbooks remain outstanding hardware UAT debt, tracked in Blockers — not a code blocker for Phase C.)
+**Next action:** Execute C-03 (GEN transport clock + Groove Page 2) — sync GEN's self-clocking step advance to `get_beat_position` (GRV-02/GRV-04, replacing gen.c's fixed internal rate) and build the Groove Page 2 UI (SEED/SCALE/SEQ LEN/LPF FREQ/LPF POLE/DENSITY). Route GEN's own output as the rumble (DC-05) at the groove sum point. The groove voice, tempo clock, and PK_GRV_* dispatch are now in place from C-02. (B-09 on-device voicing audit + A-04 runbooks remain outstanding hardware UAT debt, tracked in Blockers — not a code blocker for Phase C.)
 
-**Stopped at:** Completed C-01-PLAN.md (tempo-drivable mock host + RED test_groove); C-02 next
+**Stopped at:** Completed C-02-PLAN.md (groove engine: tempo clock + 4-tap + Page-1/MONO; test_groove GREEN)
 
 **Recent activity:**
+
+- 2026-09-29: C-02 complete — the non-GEN groove rumble voice (GRV-01/02/03/05), turning C-01's RED test_groove GREEN. New `src/groove.{c,h}`: `groove_state_t` (two 131072-float delay rings + tempo clock + Page-1 params + COLOR LP) placed BY VALUE on `bohm_instance` inside the single calloc; instance-size assert raised 800000->1300000 (true sizeof 1,237,376 B). `groove_update_tempo` derives BPM ONLY from the guarded transport chain (beat-delta from `get_beat_position` -> `get_bpm` -> last-resort 120), EMA-smooths jitter, re-locks `samples_per_16th=(60/bpm)*SR/4` at control rate — the reference hardcoded-120 tap-interval bug is provably absent. `groove_tick` reads 4 `& GRV_DELAY_MASK`-wrapped 16th-note taps of the kick, applies `tpt1_lp` COLOR (not a biquad), `0.5*(gl+gr)` MONO force-sum, and VOL, transcendental-free per sample. Include cycle resolved by keeping the TPT state as bare floats in `groove.h` (`<stdbool.h>`-only). `dsp.c` sums kick+groove behind a labeled `PHASE D INSERTION POINT` (no premature clamp), `groove_init` in create, `is_groove_key` routes the 8 `grv_*` keys to `groove_set_param` before the model vtable; Makefile links `src/groove.c` into every dsp.c-linking test. DEVIATION (Rule 1): groove VOL defaults to 0 (not 0.7) — summing at 0.7 into every model diluted FM2 `trs_tne` below test_params' threshold; VOL is now a silent opt-in voice. Host ABI +120/+56 untouched. `make test` fully GREEN (test_groove spq 5513/5168/3802 distinct + fallback + tap-energy + 7/7 responsive + MONO L==R; no regressions across all 8 sub-suites). GRV-01/02/03/05 delivered. Commits 5942f7b, 44b6ce4, 1b40e36, 54e0b4b
 
 - 2026-09-29: C-01 complete — Wave-0 test infra for Phase C. `tests/mock_host.c` made tempo-drivable: module-static `g_mock_beat`/`g_mock_bpm` + `mock_host_set_beat`/`mock_host_advance_beat`/`mock_host_set_bpm`; `make_mock_host` wires `h.get_bpm=mock_get_bpm` (was NULL) and resets `(0,120)` per call; new `make_mock_host_null_transport()` (both callbacks NULL) for the last-resort 120-constant path. `tests/test_groove.c` (new) drives the REAL plugin through the drivable mock and encodes GRV-01/02/03/05: GRV-02 BPM sweep {120,128,174} asserting `samples_per_16th=(60/bpm)*sr/4` distinct (5513/5168/3802) + per-block `mock_host_advance_beat` finite/bounded/non-silent + NULL-transport & negative-beat fallback cases; GRV-01 tap-delayed energy; GRV-03 grv_* responsiveness; GRV-05 MONO L==R. Groove keys as `grv_*` string literals mirroring C-02's PK_GRV_* so the harness compiles independently; `main()` guards FM2 registered so GREEN asserts stay non-trivial. RED as intended (GRV-03 fails on inert keys until C-02). Wired into `make test` (GROOVE_TEST_SRCS + test-groove target + .PHONY + test: prereq); `src/omega.h` ABI byte-identical; `make test-switch` green. Commits 8b38227, 981f0c0
 
