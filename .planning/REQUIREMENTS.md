@@ -21,10 +21,10 @@
 
 - [x] **KICK-01**: Model dispatcher vtable — 10+ models selectable via MODEL parameter; each model implements `trigger`, `render`, `set_p2`, and `p2_slot_desc` function pointers; model IDs are permanent (append-only, never renumber)
 - [x] **KICK-02**: FM2 model — 2-operator wavetable FM kick; carrier and modulator are both wavetable oscillators; FM index has its own decay envelope; model-specific Kick Page 2: FM RATIO, FM INDEX, OP2 WAVE
-- [ ] **KICK-03**: FM4 model — 4-operator FM with 4 selectable routing algorithms (OPL3-inspired); per-operator AM envelopes; model-specific Kick Page 2: ALGORITHM, OP RATIO, OP INDEX, OP AMP, FEEDBACK, ALGO
+- [x] **KICK-03**: FM4 model — 4-operator FM with 4 selectable routing algorithms (OPL3-inspired); per-operator AM envelopes; model-specific Kick Page 2: ALGORITHM, OP RATIO, OP INDEX, OP AMP, FEEDBACK, ALGO
 - [x] **KICK-04**: WTR model — wavetable body oscillator + dedicated transient impulse synth; body and click are independently enveloped; model-specific Kick Page 2: WAVE SELECT, BODY PITCH, TRANS DECAY, TRANS COLOR
 - [ ] **KICK-05**: PHY model — damped resonator physical model using 2–3 resonant modes (modal synthesis); represents shell/head/beater interaction without full waveguide; model-specific Kick Page 2: BEATER, SHELL SIZE, HEAD TENS, DAMPING
-- [ ] **KICK-06**: HRD model — hard techno: wavetable body + sample layer + post-distortion; drive and bit-crush available; model-specific Kick Page 2: SAMPLE LAYER, MIX, DRIVE, CRUSH
+- [x] **KICK-06**: HRD model — hard techno: wavetable body + sample layer + post-distortion; drive and bit-crush available; model-specific Kick Page 2: SAMPLE LAYER, MIX, DRIVE, CRUSH
 - [x] **KICK-07**: DIG model — digital wavetable (chip/additive/bit-reduced waveforms) + sample playback; bit-depth control for retro character; model-specific Kick Page 2: WAVE IDX, SAMPLE LAYER, BIT DEPTH, PITCH ENV
 - [x] **KICK-08**: TRS model — advanced wavetable + transient synthesizer modeling stick/beater clicks and noise bursts; 909-style attack clarity; model-specific Kick Page 2: TRANS TONE, TRANS DECAY, WT COLOR, CURVE
 - [x] **KICK-09**: ANA model — analog wavetable morphing (sampled vintage waveforms) + sub-oscillator + sample layer; 808 sub-boom character; model-specific Kick Page 2: WAVE MORPH, SUB LEVEL, SUB DECAY, SAMPLE
@@ -120,10 +120,10 @@
 | FNDTN-07 | Phase A | Complete |
 | KICK-01 | Phase A | Complete |
 | KICK-02 | Phase A | Complete |
-| KICK-03 | Phase B | Pending |
+| KICK-03 | Phase B | Complete |
 | KICK-04 | Phase B | Complete |
 | KICK-05 | Phase B | Pending |
-| KICK-06 | Phase B | Pending |
+| KICK-06 | Phase B | Complete |
 | KICK-07 | Phase B | Complete |
 | KICK-08 | Phase B | Complete |
 | KICK-09 | Phase B | Complete |
