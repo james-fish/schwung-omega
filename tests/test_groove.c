@@ -489,6 +489,38 @@ static void test_feedback_rumble(void) {
     printf("test_groove: GRVX-02 feedback rumble sustains + bounded OK (e2/e1=%.2f)\n", e2/e1);
 }
 
+/* ---- GRVX-03 (C1-02): groove FX (drive/filter/LFO/reverb) move + bound ----- */
+static void test_groove_fx(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+    static int16_t base[NSAMP], fx[NSAMP];
+    double dbeat = dbeat_for_bpm(128.0);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+
+    const char *keys[] = { PK_GRV_DRIVE, PK_GRV_RVMIX, PK_GRV_LFOAMT, PK_GRV_FILTYPE };
+    for (int k = 0; k < 4; k++) {
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        api->set_param(inst, KGRV_VOL, "0.9");
+        api->set_param(inst, keys[k], "0.0");
+        api->on_midi(inst, noteon, 3, 0);
+        render_driven(api, inst, dbeat, base);
+        prime_groove(api, inst);
+        api->set_param(inst, KGRV_VOL, "0.9");
+        api->set_param(inst, keys[k], k==3 ? "1" : "0.9");   /* filter: HP index */
+        api->on_midi(inst, noteon, 3, 0);
+        render_driven(api, inst, dbeat, fx);
+        for (int i = 0; i < NSAMP; i++) assert(fx[i] >= -32768 && fx[i] <= 32767);
+        assert(memcmp(base, fx, sizeof base) != 0);   /* FX audibly changes output */
+    }
+    api->destroy_instance(inst);
+    printf("test_groove: GRVX-03 groove FX (drive/reverb/LFO/filter) responsive + bounded OK\n");
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -508,6 +540,7 @@ int main(void) {
     test_page1_responsive();
     test_mono_sum();
     test_feedback_rumble();   /* GRVX-02: continuous rumble, not gated echo */
+    test_groove_fx();         /* GRVX-03: groove drive/filter/LFO/reverb */
 
     /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
      * LPF POLE 2/4-pole cascade toggle. Requires GEN registered. */

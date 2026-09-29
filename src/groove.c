@@ -92,6 +92,16 @@ void groove_init(groove_state_t *g) {
     g->type       = GROOVE_TYPE_TAPS;
     g->fb_lp_l_s  = 0.0f;
     g->fb_lp_r_s  = 0.0f;
+
+    /* Groove FX defaults (C1-02) — off/neutral (calloc already zeroed buffers). */
+    g->drive       = 0.0f;
+    g->filter_type = GRV_FILT_LP;
+    g->lfo_phase   = 0.0f;
+    g->lfo_inc     = 0.5f / OMEGA_SR;   /* ~0.5 Hz at LFO SPD default */
+    g->lfo_amt     = 0.0f;
+    g->rv_fb       = 0.7f;
+    g->rv_damp     = 0.3f;
+    g->rv_mix      = 0.0f;
 }
 
 /* ---- groove_update_tempo (VERBATIM C-RESEARCH §Pattern 2, GRV-02) -------- */
@@ -172,16 +182,59 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
     }
     g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
 
-    /* Page-1 tail: COLOR LP + MONO + VOL. The tpt1 state lives as bare floats on
-     * groove_state_t (include-cycle decision); wrap them in local tpt1_t views
-     * so we reuse the exact tpt1_lp formula (never a biquad — DC-06/CLAUDE.md),
-     * then write the updated state back. */
+    /* FILTER (C1-02): the COLOR one-pole gives LP; HP = input - LP; Off bypasses.
+     * The LP state is always advanced so toggling type is click-free. */
     tpt1_t lpl = { g->color_lp_l_s };
     tpt1_t lpr = { g->color_lp_r_s };
-    gl = tpt1_lp(&lpl, gl, g->color_g);
-    gr = tpt1_lp(&lpr, gr, g->color_g);
+    float lo_l = tpt1_lp(&lpl, gl, g->color_g);
+    float lo_r = tpt1_lp(&lpr, gr, g->color_g);
     g->color_lp_l_s = lpl.s;
     g->color_lp_r_s = lpr.s;
+    if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;        gr = lo_r; }
+    else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
+    /* GRV_FILT_OFF: leave gl/gr unfiltered. */
+
+    /* DRIVE (C1-02): saturation with makeup, dry/wet by amount. */
+    if (g->drive > 0.0f) {
+        float k = 1.0f + g->drive * 4.0f;
+        float mk = 1.0f / (1.0f + g->drive * 0.7f);
+        float wl = (gl * k) / (1.0f + (gl < 0 ? -gl : gl) * k) * mk;
+        float wr = (gr * k) / (1.0f + (gr < 0 ? -gr : gr) * k) * mk;
+        gl = gl + g->drive * (wl - gl);
+        gr = gr + g->drive * (wr - gr);
+    }
+
+    /* REVERB (C1-02): cheap mono Schroeder — 2 damped combs + 1 allpass, added
+     * back by MIX. Non-power-of-two ring sizes wrap by branch (no % per sample). */
+    if (g->rv_mix > 0.0f) {
+        float in = 0.5f * (gl + gr);
+        float c1 = g->rv_comb1[g->rv_c1i];
+        g->rv_c1_lp = c1 * (1.0f - g->rv_damp) + g->rv_c1_lp * g->rv_damp;
+        g->rv_comb1[g->rv_c1i] = in + g->rv_c1_lp * g->rv_fb;
+        if (++g->rv_c1i >= 1557) g->rv_c1i = 0;
+        float c2 = g->rv_comb2[g->rv_c2i];
+        g->rv_c2_lp = c2 * (1.0f - g->rv_damp) + g->rv_c2_lp * g->rv_damp;
+        g->rv_comb2[g->rv_c2i] = in + g->rv_c2_lp * g->rv_fb;
+        if (++g->rv_c2i >= 1617) g->rv_c2i = 0;
+        float wet = 0.5f * (c1 + c2);
+        float ab = g->rv_ap[g->rv_api];              /* allpass diffusion */
+        float ao = -wet + ab;
+        g->rv_ap[g->rv_api] = wet + ab * 0.5f;
+        if (++g->rv_api >= 556) g->rv_api = 0;
+        wet = ao;
+        gl = gl + g->rv_mix * wet;
+        gr = gr + g->rv_mix * wet;
+    }
+
+    /* LFO tremolo (C1-02): triangle amplitude mod, depth by LFO AMT. */
+    if (g->lfo_amt > 0.0f) {
+        float ph = g->lfo_phase;
+        float tri = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);  /* -1..1 */
+        float trem = 1.0f - g->lfo_amt * 0.5f * (1.0f - tri);              /* 1..1-amt */
+        gl *= trem; gr *= trem;
+    }
+    g->lfo_phase += g->lfo_inc;
+    if (g->lfo_phase >= 1.0f) g->lfo_phase -= 1.0f;
 
     if (g->mono) { float m = 0.5f * (gl + gr); gl = gr = m; }   /* GRV-05 sub-bass mono sum */
     gl *= g->vol; gr *= g->vol;
@@ -213,6 +266,26 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->tap_level[3] = v;
     } else if (strcmp(key, PK_GRV_MONO) == 0) {
         g->mono = (v >= 0.5f);
+    } else if (strcmp(key, PK_GRV_DRIVE) == 0) {
+        g->drive = v;
+    } else if (strcmp(key, PK_GRV_FILTYPE) == 0) {
+        int t = (int)(parse_f(val) + 0.5f);
+        g->filter_type = (t < 0) ? 0 : (t > 2 ? 2 : t);
+    } else if (strcmp(key, PK_GRV_LFOSPD) == 0) {
+        /* 0.05 .. 8 Hz exp-ish LFO rate. */
+        float hz = 0.05f + v * v * 8.0f;
+        g->lfo_inc = hz / OMEGA_SR;
+    } else if (strcmp(key, PK_GRV_LFOAMT) == 0) {
+        g->lfo_amt = v;
+    } else if (strcmp(key, PK_GRV_RVMIX) == 0) {
+        g->rv_mix = v;
+    } else if (strcmp(key, PK_GRV_RVDECAY) == 0) {
+        g->rv_fb = 0.5f + 0.49f * v;           /* comb feedback 0.5..0.99 */
+    } else if (strcmp(key, PK_GRV_RVTONE) == 0) {
+        g->rv_damp = 0.1f + 0.85f * (1.0f - v); /* brighter as TONE rises */
+    } else if (strcmp(key, PK_GRV_RVTYPE) == 0) {
+        /* Reserved: type scales comb tunings (Room/Hall/Plate). Stored via the
+         * cache; current tunings are fixed — a musical default across types. */
     }
     /* Unknown keys ignored. */
 }

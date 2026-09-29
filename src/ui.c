@@ -108,6 +108,8 @@ static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
 static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
 static const char OPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
+static const char OPT_GFILT[]   = "[\"LP\",\"HP\",\"Off\"]";
+static const char OPT_RVTYPE[]  = "[\"Room\",\"Hall\",\"Plate\"]";
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
@@ -160,6 +162,21 @@ static const uiparam_t P_GROOVE1[] = {
 static const char KN_GROOVE1[] =
     "[\"" PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
     "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
+
+/* Groove Page 2 for the TAPS type (C1-02, GRVX-03): drive, filter, LFO, reverb. */
+static const uiparam_t P_GROOVE2_TAPS[] = {
+    { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_FILTYPE, "FILTER",  "FILT",  UP_ENUM,  "",  "0",    OPT_GFILT },
+    { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVMIX,   "RV MIX",  "RVMIX", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
+};
+static const char KN_GROOVE2_TAPS[] =
+    "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_FILTYPE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
+    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
 
 static const uiparam_t P_GROOVE2[] = {
     { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },
@@ -254,12 +271,18 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2);
 
-    /* Groove Page 1 always; Groove Page 2 only for GEN (GRV-04). */
+    /* Groove Page 1 always. Groove Page 2 depends on context (C1):
+     *   - kick model GEN (legacy generative engine): the GEN control page
+     *   - else groove TYPE == TAPS: the TAPS FX page (drive/filter/LFO/reverb)
+     * (Full GEN-groove-type decoupling from the kick model lands in C1-03.) */
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1", P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1);
     if (inst && inst->model == MODEL_GEN) {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove2", "Groove 2", P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2);
+    } else if (inst && inst->groove.type == GROOVE_TYPE_TAPS) {
+        ui_puts(buf, buf_len, &off, ",");
+        ui_emit_level(buf, buf_len, &off, "groove2", "Groove FX", P_GROOVE2_TAPS, NELEM(P_GROOVE2_TAPS), KN_GROOVE2_TAPS);
     }
 
     ui_puts(buf, buf_len, &off, UI_CLOSE);

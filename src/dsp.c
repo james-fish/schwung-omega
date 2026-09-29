@@ -318,7 +318,11 @@ static bool is_groove_key(const char *key) {
            strcmp(key, PK_GRV_VOL)    == 0 || strcmp(key, PK_GRV_LENGTH) == 0 ||
            strcmp(key, PK_GRV_COLOR)  == 0 || strcmp(key, PK_GRV_TAP1)   == 0 ||
            strcmp(key, PK_GRV_TAP2)   == 0 || strcmp(key, PK_GRV_TAP3)   == 0 ||
-           strcmp(key, PK_GRV_TAP4)   == 0 || strcmp(key, PK_GRV_MONO)   == 0;
+           strcmp(key, PK_GRV_TAP4)   == 0 || strcmp(key, PK_GRV_MONO)   == 0 ||
+           strcmp(key, PK_GRV_DRIVE)  == 0 || strcmp(key, PK_GRV_FILTYPE)== 0 ||
+           strcmp(key, PK_GRV_LFOSPD) == 0 || strcmp(key, PK_GRV_LFOAMT) == 0 ||
+           strcmp(key, PK_GRV_RVMIX)  == 0 || strcmp(key, PK_GRV_RVDECAY)== 0 ||
+           strcmp(key, PK_GRV_RVTONE) == 0 || strcmp(key, PK_GRV_RVTYPE) == 0;
 }
 
 static void omega_set_param(void *instance, const char *key, const char *val) {

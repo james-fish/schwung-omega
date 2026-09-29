@@ -56,9 +56,24 @@ typedef struct groove_state {
     int   type;                   /* GROOVE_TYPE_TAPS / _GEN */
     float fb_amount;              /* feedback gain 0..~0.9 (from LENGTH) */
     float fb_lp_l_s, fb_lp_r_s;   /* one-pole LP state in the feedback path */
+
+    /* --- Groove FX (C1-02, GRVX-03) — TAPS Page 2 ------------------------- */
+    float drive;                  /* DRIVE 0..1 (saturation + makeup) */
+    int   filter_type;            /* 0 LP (COLOR), 1 HP, 2 Off */
+    float lfo_phase;              /* tremolo LFO phase [0,1) */
+    float lfo_inc;               /* per-sample phase increment (from LFO SPD) */
+    float lfo_amt;                /* LFO depth 0..1 */
+    /* Cheap mono Schroeder reverb: 2 combs + 1 allpass. Buffers by value. */
+    float rv_comb1[1557], rv_comb2[1617], rv_ap[556];
+    int   rv_c1i, rv_c2i, rv_api;
+    float rv_c1_lp, rv_c2_lp;     /* comb damping LP state */
+    float rv_fb;                  /* comb feedback (from DECAY) */
+    float rv_damp;                /* comb damping coeff (from TONE) */
+    float rv_mix;                 /* dry/wet mix */
 } groove_state_t;
 
 enum { GROOVE_TYPE_TAPS = 0, GROOVE_TYPE_GEN = 1 };
+enum { GRV_FILT_LP = 0, GRV_FILT_HP = 1, GRV_FILT_OFF = 2 };
 
 /* Groove API (implemented in src/groove.c). host_api_v1 is defined in omega.h;
  * this header is included by omega.h AFTER host_api_v1 is declared, so the type

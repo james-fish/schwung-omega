@@ -163,7 +163,11 @@ static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     assert(count_char(ui, '{') == count_char(ui, '}'));
     assert(count_char(ui, '[') == count_char(ui, ']'));
     assert(strstr(ui, "\"groove1\"") != NULL);        /* always present */
-    assert(strstr(ui, "\"groove2\"") == NULL);        /* hidden for non-GEN */
+    /* C1: non-GEN now shows a TAPS-type Groove FX page (drive/filter/LFO/reverb),
+     * not the GEN control page. groove2 present + carries an FX key, NOT a GEN key. */
+    assert(strstr(ui, "\"groove2\"") != NULL);
+    assert(strstr(ui, PK_GRV_RVMIX) != NULL);         /* TAPS FX reverb mix */
+    assert(strstr(ui, PK_GEN_SEQLEN) == NULL);        /* not the GEN page */
 
     /* GEN: both groove1 AND groove2 present, with the six GRV-04 keys. */
     model_index_str(MODEL_GEN, idxbuf);

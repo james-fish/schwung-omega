@@ -60,6 +60,10 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_VOL]=0.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
     [GKI_GRV_TAP1]=0.6f, [GKI_GRV_TAP2]=0.6f, [GKI_GRV_TAP3]=0.6f,
     [GKI_GRV_TAP4]=0.6f, [GKI_GRV_MONO]=0.0f,
+    /* Groove FX defaults (C1-02): off/neutral so the rumble is unchanged until
+     * the user opens them. */
+    [GKI_GRV_DRIVE]=0.0f, [GKI_GRV_FILTYPE]=0.0f, [GKI_GRV_LFOSPD]=0.3f, [GKI_GRV_LFOAMT]=0.0f,
+    [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -101,6 +105,10 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_GRV_COLOR]=PK_GRV_COLOR, [GKI_GRV_TAP1]=PK_GRV_TAP1,
     [GKI_GRV_TAP2]=PK_GRV_TAP2, [GKI_GRV_TAP3]=PK_GRV_TAP3,
     [GKI_GRV_TAP4]=PK_GRV_TAP4, [GKI_GRV_MONO]=PK_GRV_MONO,
+    [GKI_GRV_DRIVE]=PK_GRV_DRIVE, [GKI_GRV_FILTYPE]=PK_GRV_FILTYPE,
+    [GKI_GRV_LFOSPD]=PK_GRV_LFOSPD, [GKI_GRV_LFOAMT]=PK_GRV_LFOAMT,
+    [GKI_GRV_RVMIX]=PK_GRV_RVMIX, [GKI_GRV_RVDECAY]=PK_GRV_RVDECAY,
+    [GKI_GRV_RVTONE]=PK_GRV_RVTONE, [GKI_GRV_RVTYPE]=PK_GRV_RVTYPE,
 };
 
 int pk_kick_index(const char *key) {

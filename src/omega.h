@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 11   /* == GKI_COUNT (master/model + groove type + 8 groove) */
+#define OMEGA_GKI_COUNT 19   /* == GKI_COUNT (master/model + groove type + 8 groove + 8 groove FX) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -247,6 +247,16 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_GRV_TAP3   "grv_tap3"
 #define PK_GRV_TAP4   "grv_tap4"
 #define PK_GRV_MONO   "grv_mono"
+
+/* --- Groove FX keys (C1-02, GRVX-03) — TAPS Page 2 --------------------- */
+#define PK_GRV_DRIVE   "grv_drive"
+#define PK_GRV_FILTYPE "grv_filtype"
+#define PK_GRV_LFOSPD  "grv_lfospd"
+#define PK_GRV_LFOAMT  "grv_lfoamt"
+#define PK_GRV_RVMIX   "grv_rvmix"
+#define PK_GRV_RVDECAY "grv_rvdecay"
+#define PK_GRV_RVTONE  "grv_rvtone"
+#define PK_GRV_RVTYPE  "grv_rvtype"
 
 /* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
 /* Each key is unique across all models (dispatch is a flat strcmp chain).
