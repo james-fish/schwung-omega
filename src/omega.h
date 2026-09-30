@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 28   /* master/model + grv type + 8 groove + 8 grv FX + 9 GEN groove */
+#define OMEGA_GKI_COUNT 35   /* + 7 performer (Phase D) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -194,6 +194,19 @@ struct bohm_instance {
      * Zeroed by the calloc. */
     float fx_tone_lp_l, fx_tone_lp_r;
 
+    /* --- Performer chain (Phase D, PERF-01..05) --------------------------- */
+    float duck_depth;             /* DUCK depth 0..1 */
+    float duck_rel_coef;          /* per-sample duck-env decay (from DUCK REL) */
+    float duck_smt_a;             /* gain-slew coefficient (from DUCK SMT) */
+    float duck_bs_g;              /* DUCK BS crossover cutoff (tpt g) */
+    float duck_env;              /* duck envelope: 1 on note-on -> 0 over release */
+    float duck_gain_s;            /* smoothed duck gain state */
+    float duck_bs_lp_l, duck_bs_lp_r;  /* BS crossover LP state (duck the lows) */
+    float dj_g, dj_a0, dj_k;      /* DJ SVF coefficients (control rate) */
+    int   dj_mode;                /* 0 LP, 1 HP, 2 bypass */
+    float svf1_l, svf2_l, svf1_r, svf2_r;  /* SVF integrator states */
+    bool  clip_on;                /* end-of-chain soft clip toggle */
+
     /* --- Sample bank (B3, SMPL-01..03) — loaded off-thread in create -------
      * Enumerated one-shots (mono, bounded). sample_count is how many loaded;
      * sample_name[i] is the display name (basename, no extension) for the
@@ -233,6 +246,15 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_MODEL      "model"
 #define PK_MASTER_VOL "master_vol"
 #define PK_UI_HIER    "ui_hierarchy"
+
+/* --- Performer chain keys (Phase D, PERF-01..05) ----------------------- */
+#define PK_DUCK      "duck"        /* sidechain duck depth */
+#define PK_DUCK_REL  "duck_rel"    /* duck release time */
+#define PK_DUCK_SMT  "duck_smt"    /* duck envelope smoothing (slew) */
+#define PK_DUCK_BS   "duck_bs"     /* duck bass focus (crossover) */
+#define PK_DJ_FILT   "dj_filt"     /* bidirectional LP<->neutral<->HP */
+#define PK_DJ_RESO   "dj_reso"     /* DJ filter resonance */
+#define PK_CLIP      "clip"        /* end-of-chain soft clip on/off */
 
 /* --- Groove Page-1 param keys (Phase C, GRV-03/05) --------------------- */
 /* Model-independent groove-voice keys; dsp.c routes these to groove_set_param

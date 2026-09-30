@@ -99,8 +99,12 @@ READBACK_TEST_SRCS = tests/test_readback.c tests/mock_host.c tests/wav.c \
 SAMPLES_TEST_SRCS = tests/test_samples.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
+# Performer chain harness (Phase D, PERF-01..05): duck + DJ filter + soft clip.
+PERF_TEST_SRCS = tests/test_perf.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples fixtures wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -139,7 +143,7 @@ dsp.so: | src/wavetables.h
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples test-perf | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -201,6 +205,11 @@ test-samples: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(SAMPLES_TEST_SRCS) -o build/test_samples $(LDLIBS)
 	./build/test_samples
+
+test-perf: | src/wavetables.h
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(PERF_TEST_SRCS) -o build/test_perf $(LDLIBS)
+	./build/test_perf
 
 clean:
 	rm -rf build tests/output

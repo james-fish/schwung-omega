@@ -113,6 +113,23 @@ static const char OPT_RVTYPE[]  = "[\"Room\",\"Hall\",\"Plate\"]";
 static const char OPT_SCALE[]   = "[\"Chromatic\",\"Major\",\"Minor\",\"Penta\"]";
 static const char OPT_GWAVE[]   = "[\"Sine\",\"Tri\",\"Saw\",\"Square\",\"Digital\",\"Analog\"]";
 static const char OPT_RETRIG[]  = "[\"None\",\"1 Bar\",\"2 Bar\",\"4 Bar\",\"8 Bar\",\"On Note\"]";
+static const char OPT_ONOFF[]   = "[\"Off\",\"On\"]";
+
+/* Performer chain page (Phase D, PERF-05): duck -> DJ filter -> clip. DJ FILT is
+ * a bidirectional centered sweep (0.5 = neutral). */
+static const uiparam_t P_PERF[] = {
+    { PK_MASTER_VOL, "MSTR VOL", "MVOL",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK,       "DUCK",     "DUCK",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_REL,   "DUCK REL", "DKREL", UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_SMT,   "DUCK SMT", "DKSMT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_BS,    "DUCK BS",  "DKBS",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DJ_FILT,    "DJ FILT",  "DJFLT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_DJ_RESO,    "DJ RESO",  "DJRES", UP_FLOAT, "%", "0.01", NULL },
+    { PK_CLIP,       "CLIP",     "CLIP",  UP_ENUM,  "",  "1",    OPT_ONOFF },
+};
+static const char KN_PERF[] =
+    "[\"" PK_MASTER_VOL "\",\"" PK_DUCK "\",\"" PK_DUCK_REL "\",\"" PK_DUCK_SMT
+    "\",\"" PK_DUCK_BS "\",\"" PK_DJ_FILT "\",\"" PK_DJ_RESO "\",\"" PK_CLIP "\"]";
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
@@ -323,6 +340,10 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove2", "Groove FX", P_GROOVE2_TAPS, NELEM(P_GROOVE2_TAPS), KN_GROOVE2_TAPS);
     }
+
+    /* Performer chain page (Phase D) — always present. */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "perf1", "Performer", P_PERF, NELEM(P_PERF), KN_PERF);
 
     ui_puts(buf, buf_len, &off, UI_CLOSE);
     buf[off] = '\0';

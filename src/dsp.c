@@ -23,6 +23,11 @@
 #include <stdint.h>
 #include <stdio.h>   /* USR (KICK-10): bounded one-time WAV read in create ONLY */
 #include <dirent.h>  /* B3 (SMPL-01): sample-folder enumeration in create ONLY */
+#include <math.h>    /* Phase D: performer coefficient math (control rate only) */
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* ---- Host handle + returned plugin vtable -------------------------------- */
 static const host_api_v1_t *g_host = NULL;
@@ -241,6 +246,54 @@ static void omega_prime_model(bohm_instance_t *inst, model_id_t m) {
     }
 }
 
+/* Performer chain coefficient configurator (Phase D). Recomputes all duck / DJ-
+ * filter / clip coefficients from the cached raw values. ALL transcendentals
+ * (expf/tanf) live here at CONTROL rate — the render chain is transcendental-
+ * free. Called on any performer param change and once at create. */
+static void perf_config(bohm_instance_t *inst) {
+    float duck = inst->global_cache[GKI_DUCK];
+    float rel  = inst->global_cache[GKI_DUCK_REL];
+    float smt  = inst->global_cache[GKI_DUCK_SMT];
+    float bs   = inst->global_cache[GKI_DUCK_BS];
+    float filt = inst->global_cache[GKI_DJ_FILT];
+    float reso = inst->global_cache[GKI_DJ_RESO];
+    float clip = inst->global_cache[GKI_CLIP];
+
+    inst->duck_depth = duck < 0 ? 0 : (duck > 1 ? 1 : duck);
+    float rel_ms = 10.0f + rel * 490.0f;                       /* 10..500 ms (PERF-01) */
+    inst->duck_rel_coef = expf(-1.0f / (rel_ms * 0.001f * OMEGA_SR));
+    inst->duck_smt_a = 0.02f + (1.0f - smt) * 0.6f;           /* slew: more SMT = slower */
+    float bs_fc = 60.0f + bs * 540.0f;                        /* 60..600 Hz crossover */
+    inst->duck_bs_g = tanf((float)M_PI * bs_fc / OMEGA_SR);
+
+    /* DJ filter: LP below neutral, HP above (PERF-03). */
+    if (filt < 0.48f) {
+        inst->dj_mode = 0;                                    /* LP */
+        float t = filt / 0.48f;                               /* 0..1 */
+        float fc = 120.0f * powf(18000.0f / 120.0f, t);       /* closed->open */
+        float g = tanf((float)M_PI * fc / OMEGA_SR);
+        float k = 2.0f - 1.7f * reso;                         /* resonance (PERF-03) */
+        inst->dj_g = g; inst->dj_k = k; inst->dj_a0 = 1.0f / (1.0f + g * (g + k));
+    } else if (filt > 0.52f) {
+        inst->dj_mode = 1;                                    /* HP */
+        float t = (filt - 0.52f) / 0.48f;                     /* 0..1 */
+        float fc = 30.0f * powf(3000.0f / 30.0f, t);          /* open->high */
+        float g = tanf((float)M_PI * fc / OMEGA_SR);
+        float k = 2.0f - 1.7f * reso;
+        inst->dj_g = g; inst->dj_k = k; inst->dj_a0 = 1.0f / (1.0f + g * (g + k));
+    } else {
+        inst->dj_mode = 2;                                    /* neutral bypass */
+    }
+    inst->clip_on = (clip >= 0.5f);
+}
+
+static bool is_perf_key(const char *key) {
+    return strcmp(key, PK_DUCK)==0 || strcmp(key, PK_DUCK_REL)==0 ||
+           strcmp(key, PK_DUCK_SMT)==0 || strcmp(key, PK_DUCK_BS)==0 ||
+           strcmp(key, PK_DJ_FILT)==0 || strcmp(key, PK_DJ_RESO)==0 ||
+           strcmp(key, PK_CLIP)==0;
+}
+
 static void *omega_create(const char *module_dir, const char *json_defaults) {
     (void)json_defaults;
     /* Single allocation for the whole instance (CLAUDE.md single-alloc). calloc
@@ -292,6 +345,12 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
     for (int i = 0; i < GKI_COUNT; i++)
         inst->global_cache[i] = g_global_defaults[i];
     omega_prime_model(inst, inst->model);
+
+    /* Performer chain (Phase D): seed the duck gain to unity (no duck) and
+     * compute coefficients from the seeded cache. */
+    inst->duck_gain_s = 1.0f;
+    inst->duck_env    = 0.0f;
+    perf_config(inst);
     return inst;
 }
 
@@ -313,6 +372,9 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
         if (inst->groove.type == GROOVE_TYPE_GEN &&
             inst->groove.gen_retrig == GRV_RETRIG_NOTE)
             groove_gen_restart(&inst->groove);
+        /* Sidechain duck triggers on the kick note-on (PERF-01), not amplitude —
+         * set the duck envelope to full; it recovers over DUCK REL. */
+        inst->duck_env = 1.0f;
     }
 }
 
@@ -362,6 +424,10 @@ static void omega_set_param(void *instance, const char *key, const char *val) {
         /* Groove Page-1 keys are model-independent (Phase C) — they must NOT go
          * through the kick model vtable. Route to groove_set_param directly. */
         groove_set_param(&inst->groove, key, val);
+    } else if (is_perf_key(key)) {
+        /* Performer chain keys (Phase D): the raw value is already cached above;
+         * recompute the control-rate coefficients. */
+        perf_config(inst);
     } else {
         /* All kick keys (Page 1 + Page 2) dispatch through the active model's
          * vtable (Pitfall 2 fix). NULL-guarded so an unimplemented slot is a
@@ -446,14 +512,60 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
         for (int n = 0; n < frames; n++) {
             float gl, gr;
             groove_tick(&inst->groove, l[n], r[n], &gl, &gr);
-            l[n] += gl;  r[n] += gr;                       /* kick + groove sum */
+            /* SIDECHAIN DUCK (Phase D, PERF-01/02): the kick note-on set duck_env=1;
+             * it recovers to 0 over DUCK REL. The duck gain (smoothed by DUCK SMT)
+             * attenuates the groove LOWS (below the DUCK BS crossover) so the kick
+             * punches through while the rumble pumps. Transcendental-free here. */
+            inst->duck_env *= inst->duck_rel_coef;
+            float target = 1.0f - inst->duck_depth * inst->duck_env;
+            inst->duck_gain_s += inst->duck_smt_a * (target - inst->duck_gain_s);
+            float dg = inst->duck_gain_s;
+            inst->duck_bs_lp_l += inst->duck_bs_g * (gl - inst->duck_bs_lp_l) /
+                                  (1.0f + inst->duck_bs_g);
+            inst->duck_bs_lp_r += inst->duck_bs_g * (gr - inst->duck_bs_lp_r) /
+                                  (1.0f + inst->duck_bs_g);
+            float dl = inst->duck_bs_lp_l * dg + (gl - inst->duck_bs_lp_l);
+            float dr = inst->duck_bs_lp_r * dg + (gr - inst->duck_bs_lp_r);
+            l[n] += dl;  r[n] += dr;                       /* kick + ducked groove */
         }
     }
-    /* <<< PHASE D INSERTION POINT: duck -> DJ filter -> soft clip go HERE, on l[]/r[] >>> */
 
+    /* DJ FILTER (Phase D, PERF-03): TPT state-variable filter, bidirectional
+     * LP<->neutral<->HP with resonance. Coefficients precomputed in perf_config;
+     * the per-sample loop is a handful of multiplies (no transcendental). */
+    if (inst->dj_mode != 2) {
+        float g = inst->dj_g, k = inst->dj_k, a0 = inst->dj_a0;
+        int hp = (inst->dj_mode == 1);
+        for (int n = 0; n < frames; n++) {
+            float x = l[n];
+            float v3 = x - inst->svf2_l;
+            float v1 = a0 * (inst->svf1_l + g * v3);
+            float v2 = inst->svf2_l + g * v1;
+            inst->svf1_l = 2.0f * v1 - inst->svf1_l;
+            inst->svf2_l = 2.0f * v2 - inst->svf2_l;
+            l[n] = hp ? (x - k * v1 - v2) : v2;
+            x = r[n];
+            v3 = x - inst->svf2_r;
+            v1 = a0 * (inst->svf1_r + g * v3);
+            v2 = inst->svf2_r + g * v1;
+            inst->svf1_r = 2.0f * v1 - inst->svf1_r;
+            inst->svf2_r = 2.0f * v2 - inst->svf2_r;
+            r[n] = hp ? (x - k * v1 - v2) : v2;
+        }
+    }
+
+    /* Master volume + end-of-chain SOFT CLIP (Phase D, PERF-04): y = x/(1+|x|),
+     * bounded, no positive-side divergence; toggled by CLIP. Then the FNDTN-07
+     * clamped int16 boundary. */
     for (int n = 0; n < frames; n++) {
-        out_lr[n * 2]     = omega_to_i16(l[n] * inst->main_volume);   /* FNDTN-07 */
-        out_lr[n * 2 + 1] = omega_to_i16(r[n] * inst->main_volume);
+        float sl = l[n] * inst->main_volume;
+        float sr = r[n] * inst->main_volume;
+        if (inst->clip_on) {
+            sl = sl / (1.0f + (sl < 0.0f ? -sl : sl));
+            sr = sr / (1.0f + (sr < 0.0f ? -sr : sr));
+        }
+        out_lr[n * 2]     = omega_to_i16(sl);
+        out_lr[n * 2 + 1] = omega_to_i16(sr);
     }
     g_audio_thread_active = false;
 }

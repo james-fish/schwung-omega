@@ -68,6 +68,9 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
     [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,
     [GKI_GRV_GRETRIG]=0.0f,
+    /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
+    [GKI_DUCK]=0.0f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
+    [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=1.0f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -118,6 +121,9 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_GRV_GROTATE]=PK_GRV_GROTATE, [GKI_GRV_GSWING]=PK_GRV_GSWING,
     [GKI_GRV_GWAVE]=PK_GRV_GWAVE, [GKI_GRV_GFOLD]=PK_GRV_GFOLD,
     [GKI_GRV_GRETRIG]=PK_GRV_GRETRIG,
+    [GKI_DUCK]=PK_DUCK, [GKI_DUCK_REL]=PK_DUCK_REL, [GKI_DUCK_SMT]=PK_DUCK_SMT,
+    [GKI_DUCK_BS]=PK_DUCK_BS, [GKI_DJ_FILT]=PK_DJ_FILT, [GKI_DJ_RESO]=PK_DJ_RESO,
+    [GKI_CLIP]=PK_CLIP,
 };
 
 int pk_kick_index(const char *key) {
