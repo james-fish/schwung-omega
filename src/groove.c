@@ -294,6 +294,14 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
             gr += g->buf_r[rp] * w;
         }
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
+
+        /* TAP MAKEUP GAIN: the 4-tap weighted sum at default settings (tap_level=0.6,
+         * LENGTH=0.5) produces ~0.85 of ring content. Multiply by 3.0 so the TAPS
+         * voice level-matches the kick at grv_vol=1.0 without the user needing to
+         * add DRIVE. This gain is before the filter/drive/reverb/vol chain, so those
+         * controls retain their full range. (Bug #3 fix.) */
+        gl *= 3.0f;
+        gr *= 3.0f;
     }
 
     /* FILTER (C1-02): the COLOR one-pole gives LP; HP = input - LP; Off bypasses.

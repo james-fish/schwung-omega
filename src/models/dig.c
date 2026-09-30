@@ -154,10 +154,10 @@ void dig_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* SAMPLE LAYER: the attack-thump mix. */
         d->samp_mix = v;
     } else if (strcmp(key, PK_DIG_BITDEPTH) == 0) {
-        /* BIT DEPTH as TIMBRE: map v -> bits in [6,14] (default ~10 at v=0.5).
-         * Higher v = MORE bits = cleaner; lower v = fewer bits = crunchier.
+        /* BIT DEPTH as TIMBRE: map v -> bits inverted so turning up = MORE crush.
+         * Higher v = FEWER bits = crunchier (v=0: 14-bit clean, v=1: 6-bit crush).
          * Precompute the level count so crush() per sample is a bounded round. */
-        float bits = 6.0f + v * (14.0f - 6.0f);
+        float bits = 14.0f - v * 8.0f;   /* v=0 -> 14-bit clean, v=1 -> 6-bit maximum crush */
         d->bit_levels = bits_to_levels(bits);
     } else if (strcmp(key, PK_DIG_PITCHENV) == 0) {
         /* PITCH ENV: dedicated pitch-sweep-depth scalar (chip "pew"). */

@@ -231,14 +231,13 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
     float pbase = (p->pitch_hz > 0.0f) ? p->pitch_hz : 50.0f;
     float head_f = pbase * (0.75f + 0.5f * p->head_tens);
 
-    /* Downward head sweep: bias the excitation freq upward by the CURVE-blended
-     * envelope amount so the head mode settles from a higher pitch. The modal
-     * primitive does not re-tune per sample, so we excite the head at a start
-     * freq = head_f * (1 + sweep_amount); pitch_env decays -> the AUDIBLE sweep
-     * comes from a short high-pitched head-click layered with the settled tone.
-     * We approximate by exciting the head at a freq between head_f and its swept
-     * start, weighted by curve (909 = deeper/faster drop -> higher start). */
-    float sweep_mult = 1.0f + (0.8f + 1.2f * p->curve);   /* 909 sweeps deeper */
+    /* Downward head sweep: bias the excitation freq upward by the CURVE amount
+     * so the modal mode starts high and settles toward head_f. CURVE=0 excites
+     * at the target frequency (pure modal thud, no pitch drop). CURVE=0.5
+     * excites at 2x target (a moderate 909-style sweep). CURVE=1.0 excites at
+     * 3x target (deep drop). sweep_mult = 1 + curve*2 (no minimum offset, so
+     * CURVE=0 is truly a straight, non-sweeping tone). */
+    float sweep_mult = 1.0f + p->curve * 2.0f;   /* curve=0: no sweep; curve=1: 3x sweep */
     float head_start = clampf(head_f * sweep_mult, 20.0f, 0.45f * OMEGA_SR);
 
     /* SHELL SIZE -> body-mode freqs. Bigger shell (high v) = LOWER freq.
