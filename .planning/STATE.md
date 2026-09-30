@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refinement
 status: completed
-stopped_at: Completed E1-03-PLAN.md (tap makeup gain 3x; params defaults CLIP/CRUSH/DRIVE/VOL/DUCK; PHY BEATER+TRS_TNE responsive; make test GREEN)
-last_updated: "2026-09-30T10:00:13.433Z"
+stopped_at: Completed E2 — all 9 discrete-controls bugs (#8-#16) fixed inline from research, 11 suites GREEN, commit 93e00a1
+last_updated: "2026-09-30T11:30:00.000Z"
 last_activity: 2026-09-30
 progress:
   total_phases: 8
@@ -25,7 +25,7 @@ progress:
 
 **What it is:** A native C Schwung module for Ableton Move — a multi-engine kick synthesizer (10 models) + 4-tap groove rumble generator + live performer mixer, in a single `dsp.so` loadable in Schwung slots, DR32 pads, and Movy tracks.
 
-**Current focus:** Phase E1 — Critical Audio Fixes
+**Current focus:** Phase E2 — complete (commit 93e00a1)
 
 ---
 
@@ -34,7 +34,7 @@ progress:
 Phase: E1
 Plan: Not started
 **Status:** Milestone complete
-**Last activity:** 2026-09-30
+**Last activity:** 2026-09-30 - Completed quick task 260930-vhr: TAPS rumble redesign (on-device listening pending)
 
 ```
 v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
@@ -152,6 +152,13 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 ### Blockers
 
 - **[B-09 ON-DEVICE PENDING] Complete `docs/VOICING_AUDIT.md` on the Move — the D-B02 manual ear round for all 10 models (Task 4 blocking human-verify checkpoint).** Deploy a gate-passing `dsp.so` (CI artifact or Docker build + `scripts/glibc_gate.sh`), `scripts/deploy.sh`, select each model via the root Model encoder, audition the 5 D-B02 items (usable default / PITCH-CURVE musical / knobs useful range / distinct character / no live artifacts), record PASS or the issue per cell, re-voice any failing model (re-map ranges/curves in its `.c`, rebuild, redeploy). Sign off FM2 first (D-B03 reference bar). Phase B is NOT complete until every cell reads PASS (D-B04). Not a code blocker — awaiting hardware, same as A-04.
+- **[TAPS REDESIGN ON-DEVICE PENDING] Run the on-device listening checklist from quick task 260930-vhr (Task 4, human-verify)** — LENGTH sweep (drone to clean 16th copies), REVERB pre/off/post, COLOR darkness, loudness vs kick without DRIVE. Checklist is in `.planning/quick/260930-vhr-pick-up-taps-rumble-redesign-with-full-d/260930-vhr-SUMMARY.md`. Needs an aarch64 build (Docker was unavailable here; rely on CI + `scripts/glibc_gate.sh`).
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260930-vhr | TAPS rumble redesign: bidirectional LENGTH, equal-power taps, fractional/slewed reads, COLOR 2-pole LP, pre/post REVERB | 2026-09-30 | 3b67629 | Needs Review (on-device listening pending) | [260930-vhr-pick-up-taps-rumble-redesign-with-full-d](./quick/260930-vhr-pick-up-taps-rumble-redesign-with-full-d/) |
 
 ---
 
