@@ -36,26 +36,48 @@ typedef struct groove_state {
     bool   have_prev_beat;
     float  bpm_smooth;            /* one-pole EMA of the derived BPM */
     float  last_bpm;              /* last BPM the interval was locked to */
-    int    samples_per_16th;      /* current 16th-note tap spacing (frames) */
+    int    samples_per_16th;      /* current 16th-note tap spacing (frames) — GEN clock */
+
+    /* Fractional slewed 16th-note tap spacing (TAPS redesign, vhr §A.6).
+     * The TAPS branch reads at k*spq (fractional, linear-interpolated) so live
+     * BPM changes GLIDE (spq slews toward spq_target) instead of jumping whole
+     * samples (which clicks). The integer samples_per_16th above is kept for the
+     * GEN branch verbatim. */
+    float spq;                    /* current fractional samples/16th (slewed) */
+    float spq_target;             /* BPM-derived target (re-locked at control rate) */
 
     /* Page-1 params (control-rate). */
     float vol;                    /* VOL 0..1 */
     float tap_level[4];           /* TAP1..4 level 0..1 */
-    float tap_decay[4];           /* LENGTH-derived per-tap decay weights */
+    float tap_trim;               /* single global tap trim (LENGTH loudness comp) */
+    float tap_norm;               /* equal-power divisor 1/sqrt(max(sum gains,1)) precompute */
     float color_g;               /* TPT COLOR coefficient tanf(pi*fc/SR) */
     float color_lp_l_s;          /* tpt1 lowpass state (the tpt1_t `.s`), L */
     float color_lp_r_s;          /* tpt1 lowpass state (the tpt1_t `.s`), R */
+    float color_lp2_l_s;         /* 2nd cascade stage state (2-pole COLOR), L */
+    float color_lp2_r_s;         /* 2nd cascade stage state (2-pole COLOR), R */
     bool  mono;                   /* MONO force-sum toggle (GRV-05) */
 
-    /* --- Redesign (C1, GRVX-01/02) ---------------------------------------
+    /* --- Redesign (C1 + vhr) ---------------------------------------------
      * type: 0 = TAPS (feedback multitap rumble), 1 = GEN (generative groove).
-     * The feedback loop turns the dry 4-tap echo into a CONTINUOUS resonant
-     * rumble (fixes "bit-crushed & quiet"): energy recirculates through the ring
-     * at the 16th-note interval, darkened by a one-pole LP in the loop and
-     * bounded by a gentle saturator. fb_amount comes from LENGTH. */
+     * TAPS is ONE 16th-note feedback delay line read at 4 fractional tap points.
+     * A bidirectional LENGTH knob morphs between (right) fb=0 / equal taps =
+     * exact clean kick copies on every 16th, and (left) high feedback + in-loop
+     * diffusion + COLOR-linked damping = a smeared resonant drone. The RAW kick
+     * is written to the ring (the ~30 Hz HP is feedback-path ONLY). */
     int   type;                   /* GROOVE_TYPE_TAPS / _GEN */
-    float fb_amount;              /* feedback gain 0..~0.9 (from LENGTH) */
-    float fb_lp_l_s, fb_lp_r_s;   /* one-pole LP state in the feedback path */
+    float fb_amount;              /* feedback gain 0..0.85 (from LENGTH; 0 at v=1) */
+    float diffuse_amt;            /* in-loop allpass smear 0 (clean) .. 1 (drone) */
+    float fb_lp_l_s, fb_lp_r_s;   /* COLOR-linked 2-pole loop LP state (stage 1) */
+    float fb_lp2_l_s, fb_lp2_r_s; /* COLOR-linked 2-pole loop LP state (stage 2) */
+    float loop_hp_l_s, loop_hp_r_s; /* ~30 Hz feedback-path HP state (structural) */
+    float loop_hp_g;              /* fixed ~30 Hz HP coefficient (control-rate) */
+    /* In-loop Schroeder diffusion allpasses (mutually prime, ~2.6/5.5 ms). */
+    float ap1[241]; int ap1i;
+    float ap2[113]; int ap2i;
+    /* Bidirectional reverb routing amounts (vhr §B.2): center = off. */
+    float rv_pre_amt;             /* PRE mode: reverb(kick) into ring input */
+    float rv_post_amt;            /* POST mode: reverb(tap sum) mixed to output */
 
     /* --- Groove FX (C1-02, GRVX-03) — TAPS Page 2 ------------------------- */
     float drive;                  /* DRIVE 0..1 (saturation + makeup) */
@@ -69,7 +91,6 @@ typedef struct groove_state {
     float rv_c1_lp, rv_c2_lp;     /* comb damping LP state */
     float rv_fb;                  /* comb feedback (from DECAY) */
     float rv_damp;                /* comb damping coeff (from TONE) */
-    float rv_mix;                 /* dry/wet mix */
 
     /* --- GEN groove voice (C1-03, GRVX-04/05) — decoupled from the kick model.
      * A transport-clocked, scale-quantized step sequencer driving a wavetable

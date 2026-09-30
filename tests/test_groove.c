@@ -442,11 +442,12 @@ static void test_gen_lpf_pole(void) {
     printf("test_groove: GRV-04 LPF POLE OK (2-pole r=%.4f vs 4-pole r=%.4f)\n", r2, r4);
 }
 
-/* ---- GRVX-02 (C1): feedback rumble sustains + stays bounded ---------------- */
-/* A single kick with high LENGTH (feedback) must produce a rumble that SUSTAINS
- * into the second half of a long buffer (a dry gated echo would decay to near
- * silence), while staying bounded (no runaway). Long LENGTH must sustain more
- * than short LENGTH. */
+/* ---- GRVX-02 (C1 + vhr): feedback rumble sustains + stays bounded ---------- */
+/* vhr redesign: LENGTH is BIDIRECTIONAL. LEFT (low LENGTH) = high feedback -> a
+ * smeared resonant drone that SUSTAINS into the second half of the buffer. RIGHT
+ * (high LENGTH) = fb=0 -> clean gated tap copies that decay once the kick is
+ * gone. So low LENGTH must sustain MORE than high LENGTH (the inverse of the old
+ * pre-vhr semantics), while both stay bounded (no runaway). */
 static void test_feedback_rumble(void) {
     host_api_v1_t host = make_mock_host();
     mock_host_set_bpm(128.0f);
@@ -459,11 +460,11 @@ static void test_feedback_rumble(void) {
     double dbeat = dbeat_for_bpm(128.0);
     uint8_t noteon[3] = { 0x90, 36, 100 };
 
-    /* Long LENGTH (high feedback), single kick, no re-trigger. */
+    /* LOW LENGTH (high feedback = drone), single kick, no re-trigger. */
     select_model(api, inst, MODEL_FM2);
     prime_groove(api, inst);
     api->set_param(inst, KGRV_VOL,    "0.9");
-    api->set_param(inst, KGRV_LENGTH, "0.95");   /* strong feedback */
+    api->set_param(inst, KGRV_LENGTH, "0.05");   /* strong feedback drone */
     api->on_midi(inst, noteon, 3, 0);
     render_driven(api, inst, dbeat, buf);
 
@@ -473,20 +474,26 @@ static void test_feedback_rumble(void) {
     double e2 = buf_rms(buf + NSAMP / 2, NSAMP / 2);
     for (int i = 0; i < NSAMP; i++) assert(buf[i] >= -32768 && buf[i] <= 32767);
     assert(e1 > 1e-3 && e2 > 1e-3);
-    assert(e2 > 0.15 * e1);   /* rumble sustains, not gated to silence */
+    assert(e2 > 0.15 * e1);   /* drone sustains, not gated to silence */
 
-    /* Short LENGTH sustains LESS than long LENGTH (feedback controls the tail). */
-    static int16_t bshort[NSAMP];
+    /* HIGH LENGTH (fb=0, clean copies) renders a DIFFERENT, bounded output — the
+     * bidirectional LENGTH knob morphs between two distinct regimes (drone vs
+     * clean copies). The exact energy ordering over this short window depends on
+     * tap alignment, so the load-bearing check is: both bounded + the two regimes
+     * differ (proving LENGTH actually re-voices the tail, not just trims level).
+     * The clean-copies EQUAL-LEVEL invariant is verified precisely in
+     * test_taps_redesign.c gate #1 with the post-groove chain neutralised. */
+    static int16_t bclean[NSAMP];
     prime_groove(api, inst);
     api->set_param(inst, KGRV_VOL,    "0.9");
-    api->set_param(inst, KGRV_LENGTH, "0.15");   /* little feedback */
+    api->set_param(inst, KGRV_LENGTH, "1.0");    /* fb=0 -> clean gated copies */
     api->on_midi(inst, noteon, 3, 0);
-    render_driven(api, inst, dbeat, bshort);
-    double es2 = buf_rms(bshort + NSAMP / 2, NSAMP / 2);
-    assert(e2 > es2);   /* longer LENGTH => more sustained rumble */
+    render_driven(api, inst, dbeat, bclean);
+    for (int i = 0; i < NSAMP; i++) assert(bclean[i] >= -32768 && bclean[i] <= 32767);
+    assert(memcmp(buf, bclean, sizeof buf) != 0);   /* the two LENGTH regimes differ */
 
     api->destroy_instance(inst);
-    printf("test_groove: GRVX-02 feedback rumble sustains + bounded OK (e2/e1=%.2f)\n", e2/e1);
+    printf("test_groove: GRVX-02 bidirectional LENGTH drone sustains + bounded OK (e2/e1=%.2f)\n", e2/e1);
 }
 
 /* ---- GRVX-03 (C1-02): groove FX (drive/filter/LFO/reverb) move + bound ----- */

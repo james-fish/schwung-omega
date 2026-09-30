@@ -45,19 +45,57 @@ static inline float clampf(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
 }
 
-/* ---- LENGTH -> per-tap decay curve + feedback amount (control-rate) ------- */
-/* A longer LENGTH keeps the later taps louder AND raises the feedback gain so
- * the rumble sustains into a continuous drone (GRVX-02). base drives the tap
- * decay; fb_amount 0.30..0.88 recirculates energy through the ring. */
-static void groove_set_length(groove_state_t *g, float v) {
-    float base = 0.3f + 0.65f * v;
-    for (int t = 0; t < 4; t++)
-        g->tap_decay[t] = powf(base, (float)(t + 1));
-    g->fb_amount = 0.30f + 0.58f * v;   /* longer LENGTH -> more sustained rumble */
+/* Fractional-tap slew rate (~30 ms one-pole toward spq_target; vhr §A.6). */
+#define SPQ_SLEW 0.0005f
+
+/* ---- Mono Schroeder reverb helper (vhr §B.2, ONE instance, pre OR post) ----
+ * Runs the existing 2-comb + 1-allpass Schroeder on a mono input and returns
+ * the mono wet. Called at the PRE point (on the kick) OR the POST point (on the
+ * tap sum) — never both duplicated. NO transcendental; buffers wrap by branch
+ * (non-power-of-two sizes), never `%` per sample. */
+static inline float groove_reverb_mono(groove_state_t *g, float in) {
+    float c1 = g->rv_comb1[g->rv_c1i];
+    g->rv_c1_lp = c1 * (1.0f - g->rv_damp) + g->rv_c1_lp * g->rv_damp;
+    g->rv_comb1[g->rv_c1i] = in + g->rv_c1_lp * g->rv_fb;
+    if (++g->rv_c1i >= 1557) g->rv_c1i = 0;
+    float c2 = g->rv_comb2[g->rv_c2i];
+    g->rv_c2_lp = c2 * (1.0f - g->rv_damp) + g->rv_c2_lp * g->rv_damp;
+    g->rv_comb2[g->rv_c2i] = in + g->rv_c2_lp * g->rv_fb;
+    if (++g->rv_c2i >= 1617) g->rv_c2i = 0;
+    float wet = 0.5f * (c1 + c2);
+    float ab = g->rv_ap[g->rv_api];              /* allpass diffusion */
+    float ao = -wet + ab;
+    g->rv_ap[g->rv_api] = wet + ab * 0.5f;
+    if (++g->rv_api >= 556) g->rv_api = 0;
+    return ao;
 }
 
 static inline float tpt_g_from_hz(float fc) {
     return tanf((float)M_PI * fc / OMEGA_SR);   /* control-rate only */
+}
+
+/* ---- Equal-power tap normalisation (control-rate, vhr §A.3) --------------- */
+/* Precompute 1/sqrt(max(sum of active tap gains, 1)) so the per-sample tap sum
+ * needs NO sqrt. sum = Σ tap_level[t] (the global tap_trim is applied per tap
+ * separately). At LENGTH=1 with all four taps=1 this divisor is sqrt(4)=2, so
+ * each clean copy comes out at 0.5x the raw kick (× vol) — the stated
+ * equal-power scale for the clean-copies invariant. */
+static void groove_update_tap_norm(groove_state_t *g) {
+    float sum = 0.0f;
+    for (int t = 0; t < 4; t++) sum += g->tap_level[t];
+    if (sum < 1.0f) sum = 1.0f;
+    g->tap_norm = 1.0f / sqrtf(sum);
+}
+
+/* ---- LENGTH -> opposing feedback / tap-trim / diffusion (control-rate) ---- */
+/* Bidirectional morph (vhr §A.2). RIGHT (v=1): fb EXACTLY 0 + full tap trim ->
+ * exact clean copies. LEFT (v=0): fb 0.85 (stability cap) + reduced tap trim
+ * (equal-power loudness comp) + full diffusion -> smeared resonant drone. NO
+ * per-tap pow decay (the deleted loudness bug). */
+static void groove_set_length(groove_state_t *g, float v) {
+    g->fb_amount   = 0.85f * (1.0f - v);   /* 0 at v=1 (clean), 0.85 at v=0 (drone) */
+    g->tap_trim    = 0.6f + 0.4f * v;      /* 0.6 (drone) .. 1.0 (clean) */
+    g->diffuse_amt = 1.0f - v;             /* bypass diffusion at the clean end */
 }
 
 /* ---- GEN groove sequencer (C1-03, GRVX-04/05) ---------------------------- */
@@ -114,6 +152,10 @@ void groove_init(groove_state_t *g) {
     g->samples_per_16th = (int)((60.0f / 120.0f) * OMEGA_SR / 4.0f + 0.5f);
     if (g->samples_per_16th < 1) g->samples_per_16th = 1;
 
+    /* Fractional slewed tap spacing (TAPS): seed to the 120-BPM target. */
+    g->spq_target = (60.0f / 120.0f) * OMEGA_SR / 4.0f;
+    g->spq        = g->spq_target;
+
     /* Page-1 defaults. VOL starts at 0 so the groove rumble is SILENT on a bare
      * create and does not color the per-model kick voicing (the groove is an
      * opt-in performance voice the user opens via grv_vol; the FX voicing
@@ -123,15 +165,28 @@ void groove_init(groove_state_t *g) {
     g->vol = 0.0f;
     for (int t = 0; t < 4; t++) g->tap_level[t] = 0.6f;
     groove_set_length(g, 0.5f);
-    g->color_g      = tpt_g_from_hz(8000.0f);
-    g->color_lp_l_s = 0.0f;
-    g->color_lp_r_s = 0.0f;
-    g->mono         = false;
+    groove_update_tap_norm(g);
+    g->color_g       = tpt_g_from_hz(8000.0f);
+    g->color_lp_l_s  = 0.0f;
+    g->color_lp_r_s  = 0.0f;
+    g->color_lp2_l_s = 0.0f;
+    g->color_lp2_r_s = 0.0f;
+    g->mono          = false;
 
-    /* Redesign defaults (C1). */
-    g->type       = GROOVE_TYPE_TAPS;
-    g->fb_lp_l_s  = 0.0f;
-    g->fb_lp_r_s  = 0.0f;
+    /* Redesign defaults (C1 + vhr). */
+    g->type        = GROOVE_TYPE_TAPS;
+    g->fb_lp_l_s   = 0.0f;
+    g->fb_lp_r_s   = 0.0f;
+    g->fb_lp2_l_s  = 0.0f;
+    g->fb_lp2_r_s  = 0.0f;
+    g->loop_hp_l_s = 0.0f;
+    g->loop_hp_r_s = 0.0f;
+    /* ~30 Hz feedback-path HP coefficient (structural sub-cleaner; vhr §C.2). */
+    g->loop_hp_g   = tpt_g_from_hz(30.0f);
+    g->ap1i = 0; g->ap2i = 0;
+    /* Reverb routing: center = off on a bare create (vhr §B.2). */
+    g->rv_pre_amt  = 0.0f;
+    g->rv_post_amt = 0.0f;
 
     /* Groove FX defaults (C1-02) — off/neutral (calloc already zeroed buffers). */
     g->drive       = 0.0f;
@@ -141,7 +196,6 @@ void groove_init(groove_state_t *g) {
     g->lfo_amt     = 0.0f;
     g->rv_fb       = 0.7f;
     g->rv_damp     = 0.3f;
-    g->rv_mix      = 0.0f;
 
     /* GEN groove voice defaults (C1-03 / E3). */
     g->gen_unquantized = false;
@@ -208,7 +262,16 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
         int spq = (int)((60.0f / g->bpm_smooth) * OMEGA_SR / 4.0f + 0.5f);  /* samples_per_16th */
         if (spq < 1) spq = 1;
         if (spq * 4 > (int)(GRV_DELAY_MASK)) spq = (int)(GRV_DELAY_MASK) / 4;  /* clamp reach */
-        g->samples_per_16th = spq;
+        g->samples_per_16th = spq;                          /* integer clock (GEN) */
+
+        /* TAPS: set the FLOAT slew target (no rounding); groove_tick glides
+         * g->spq toward it so live BPM changes do not click (vhr §A.6). Clamp
+         * the reach so 4*spq stays inside the ring. */
+        float fspq = (60.0f / g->bpm_smooth) * OMEGA_SR / 4.0f;
+        if (fspq < 1.0f) fspq = 1.0f;
+        float fmaxspq = (float)((int)(GRV_DELAY_MASK) / 4);
+        if (fspq > fmaxspq) fspq = fmaxspq;
+        g->spq_target = fspq;
     }
 
     /* If the host exposes NO transport at all, treat the GEN sequencer as free-
@@ -278,49 +341,161 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         g->buf_l[g->write_pos] = 0.0f; g->buf_r[g->write_pos] = 0.0f;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
     } else {
-        /* TAPS: FEEDBACK RUMBLE (GRVX-02): recirculate the signal one 16th behind
-         * into the write head, darkened by a one-pole LP and bounded by a gentle
-         * saturator, so the ring sustains a continuous resonant rumble instead of
-         * a dry gated echo. All algebraic — no transcendental per sample. */
-        unsigned rp1 = (g->write_pos - (unsigned)g->samples_per_16th) & GRV_DELAY_MASK;
-        const float FB_LP_A = 0.20f;                 /* ~1.5 kHz one-pole in the loop */
-        g->fb_lp_l_s += FB_LP_A * (g->buf_l[rp1] - g->fb_lp_l_s);
-        g->fb_lp_r_s += FB_LP_A * (g->buf_r[rp1] - g->fb_lp_r_s);
-        float wl = kick_l + g->fb_amount * g->fb_lp_l_s;
-        float wr = kick_r + g->fb_amount * g->fb_lp_r_s;
-        wl = wl / (1.0f + 0.25f * (wl < 0.0f ? -wl : wl));   /* bounded feedback */
-        wr = wr / (1.0f + 0.25f * (wr < 0.0f ? -wr : wr));
+        /* TAPS (vhr redesign): ONE 16th-note feedback delay line read at 4
+         * fractional tap points. LENGTH morphs between clean equal-level copies
+         * (fb=0, right) and a smeared damped resonant drone (fb=0.85, left). The
+         * RAW kick is written to the ring; the ~30 Hz HP is FEEDBACK-PATH ONLY,
+         * so at fb=0 the taps are exact copies of the raw kick. All algebraic —
+         * only floorf per sample (single aarch64 instruction). */
+
+        /* (1) Per-sample slew of the fractional 16th spacing (§A.6). */
+        g->spq += (g->spq_target - g->spq) * SPQ_SLEW;
+        float spq = g->spq;
+        if (spq < 1.0f) spq = 1.0f;                  /* guard read distance */
+        float fmaxspq = (float)((int)(GRV_DELAY_MASK) / 4);
+        if (spq > fmaxspq) spq = fmaxspq;            /* 4*spq inside the ring */
+
+        /* (2) Feedback tap read at 1*spq behind the write head (fractional). */
+        float d1  = spq;
+        float rp1 = (float)g->write_pos - d1;
+        float f1  = rp1 - floorf(rp1);
+        int   a0  = ((int)floorf(rp1)) & GRV_DELAY_MASK;
+        int   a1  = (a0 + 1) & GRV_DELAY_MASK;
+        float fb_l = g->buf_l[a0] + f1 * (g->buf_l[a1] - g->buf_l[a0]);
+        float fb_r = g->buf_r[a0] + f1 * (g->buf_r[a1] - g->buf_r[a0]);
+
+        /* (3) ~30 Hz HP on the FEEDBACK signal ONLY (structural sub-cleaner +
+         * stability; §C.2/§A.4). hp = x - lp(x@30Hz). Do NOT high-pass the ring
+         * input — the raw kick must stay intact for the clean-copies invariant. */
+        {
+            tpt1_t hl = { g->loop_hp_l_s };
+            tpt1_t hr = { g->loop_hp_r_s };
+            float lo_l = tpt1_lp(&hl, fb_l, g->loop_hp_g);
+            float lo_r = tpt1_lp(&hr, fb_r, g->loop_hp_g);
+            g->loop_hp_l_s = hl.s;
+            g->loop_hp_r_s = hr.s;
+            fb_l = fb_l - lo_l;
+            fb_r = fb_r - lo_r;
+        }
+
+        /* (4) In-loop diffusion: two short Schroeder allpasses in series,
+         * crossfaded by diffuse_amt (0 clean .. 1 drone; §A.5). Mono-diffuse the
+         * L/R average through each allpass, then re-apply to both channels
+         * (rumble is sub-bass / near-mono; keeps RAM tiny and stays stable). */
+        {
+            const float g_ap = 0.5f;
+            float in_m  = 0.5f * (fb_l + fb_r);
+            float ab1   = g->ap1[g->ap1i];
+            float ao1   = -g_ap * in_m + ab1;
+            g->ap1[g->ap1i] = in_m + g_ap * ao1;
+            if (++g->ap1i >= 241) g->ap1i = 0;
+            float d1m   = in_m + g->diffuse_amt * (ao1 - in_m);
+            float ab2   = g->ap2[g->ap2i];
+            float ao2   = -g_ap * d1m + ab2;
+            g->ap2[g->ap2i] = d1m + g_ap * ao2;
+            if (++g->ap2i >= 113) g->ap2i = 0;
+            float d2m   = d1m + g->diffuse_amt * (ao2 - d1m);
+            float delta = d2m - in_m;                /* diffusion contribution */
+            fb_l += delta;
+            fb_r += delta;
+        }
+
+        /* (5) COLOR-linked 2-pole LP in the loop (darkens the drone as it
+         * decays; §C.3). Two cascaded tpt1 stages share the COLOR coefficient. */
+        {
+            tpt1_t l1 = { g->fb_lp_l_s },  r1 = { g->fb_lp_r_s };
+            fb_l = tpt1_lp(&l1, fb_l, g->color_g);
+            fb_r = tpt1_lp(&r1, fb_r, g->color_g);
+            g->fb_lp_l_s = l1.s;  g->fb_lp_r_s = r1.s;
+            tpt1_t l2 = { g->fb_lp2_l_s }, r2 = { g->fb_lp2_r_s };
+            fb_l = tpt1_lp(&l2, fb_l, g->color_g);
+            fb_r = tpt1_lp(&r2, fb_r, g->color_g);
+            g->fb_lp2_l_s = l2.s; g->fb_lp2_r_s = r2.s;
+        }
+
+        /* (6) Ring input = RAW kick + pre-reverb (if PRE) + fb_amount*feedback.
+         * NO ~30 Hz HP on this sum. NO x3.0 makeup. At fb=0 and rv_pre_amt=0 the
+         * ring input is EXACTLY the raw kick (the clean-copies invariant). The
+         * reverb-into-ring send is attenuated to <= ~0.5 for stability (§B.2). */
+        float wl = kick_l + g->fb_amount * fb_l;
+        float wr = kick_r + g->fb_amount * fb_r;
+        if (g->rv_pre_amt > 0.0f) {
+            float rin = 0.5f * (kick_l + kick_r);        /* reverb is mono-in */
+            float rwet = groove_reverb_mono(g, rin);
+            float send = 0.5f * g->rv_pre_amt * rwet;    /* cap effective send <= ~0.5 */
+            wl += send;
+            wr += send;
+        }
         g->buf_l[g->write_pos] = wl;
         g->buf_r[g->write_pos] = wr;
 
+        /* (7) Sum 4 EQUAL taps at k*spq behind the write head (fractional reads),
+         * each weighted by tap_level[t]*tap_trim, normalised equal-power by the
+         * precomputed tap_norm (1/sqrt(sum active gains); §A.3). NO per-tap pow
+         * decay, NO per-sample sqrt. */
         for (int t = 0; t < 4; t++) {
-            unsigned rp = (g->write_pos - (unsigned)((t + 1) * g->samples_per_16th)) & GRV_DELAY_MASK;
-            float w = g->tap_level[t] * g->tap_decay[t];   /* TAP level * LENGTH decay weight */
-            gl += g->buf_l[rp] * w;
-            gr += g->buf_r[rp] * w;
+            float dk  = (float)(t + 1) * spq;
+            float rpk = (float)g->write_pos - dk;
+            float fk  = rpk - floorf(rpk);
+            int   k0  = ((int)floorf(rpk)) & GRV_DELAY_MASK;
+            int   k1  = (k0 + 1) & GRV_DELAY_MASK;
+            float sl  = g->buf_l[k0] + fk * (g->buf_l[k1] - g->buf_l[k0]);
+            float sr  = g->buf_r[k0] + fk * (g->buf_r[k1] - g->buf_r[k0]);
+            float w   = g->tap_level[t] * g->tap_trim;
+            gl += sl * w;
+            gr += sr * w;
         }
+        gl *= g->tap_norm;
+        gr *= g->tap_norm;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
-
-        /* TAP MAKEUP GAIN: the 4-tap weighted sum at default settings (tap_level=0.6,
-         * LENGTH=0.5) produces ~0.85 of ring content. Multiply by 3.0 so the TAPS
-         * voice level-matches the kick at grv_vol=1.0 without the user needing to
-         * add DRIVE. This gain is before the filter/drive/reverb/vol chain, so those
-         * controls retain their full range. (Bug #3 fix.) */
-        gl *= 3.0f;
-        gr *= 3.0f;
     }
 
-    /* FILTER (C1-02): the COLOR one-pole gives LP; HP = input - LP; Off bypasses.
-     * The LP state is always advanced so toggling type is click-free. */
-    tpt1_t lpl = { g->color_lp_l_s };
-    tpt1_t lpr = { g->color_lp_r_s };
-    float lo_l = tpt1_lp(&lpl, gl, g->color_g);
-    float lo_r = tpt1_lp(&lpr, gr, g->color_g);
-    g->color_lp_l_s = lpl.s;
-    g->color_lp_r_s = lpr.s;
-    if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;        gr = lo_r; }
-    else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
-    /* GRV_FILT_OFF: leave gl/gr unfiltered. */
+    /* FILTER: the COLOR LP gives LP; HP = input - LP; Off is a TRUE bypass (no
+     * attenuation, no phase shift) so the clean-copies gate can neutralise the
+     * output LP via GRV_FILTYPE=OFF. TAPS uses a 2-pole cascade (12 dB/oct — the
+     * "dial in darkness" authority, vhr §C.1); the GEN branch keeps the original
+     * 1-pole behaviour BYTE-IDENTICAL (constraint 6). The LP state is always
+     * advanced so toggling type is click-free. */
+    if (g->filter_type == GRV_FILT_OFF) {
+        /* True bypass: still advance the LP state(s) so re-enabling is click-free.
+         * For GEN keep advancing only the single stage (byte-identical to before
+         * when it later re-enables). */
+        tpt1_t lpl = { g->color_lp_l_s };
+        tpt1_t lpr = { g->color_lp_r_s };
+        (void)tpt1_lp(&lpl, gl, g->color_g);
+        (void)tpt1_lp(&lpr, gr, g->color_g);
+        g->color_lp_l_s = lpl.s;
+        g->color_lp_r_s = lpr.s;
+        if (g->type == GROOVE_TYPE_TAPS) {
+            tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
+            (void)tpt1_lp(&l2, gl, g->color_g);
+            (void)tpt1_lp(&r2, gr, g->color_g);
+            g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+        }
+        /* leave gl/gr unfiltered */
+    } else if (g->type == GROOVE_TYPE_TAPS) {
+        /* 2-pole cascade LP (two tpt1 stages sharing the COLOR coefficient). */
+        tpt1_t lpl = { g->color_lp_l_s },  lpr = { g->color_lp_r_s };
+        float s1l = tpt1_lp(&lpl, gl, g->color_g);
+        float s1r = tpt1_lp(&lpr, gr, g->color_g);
+        g->color_lp_l_s = lpl.s; g->color_lp_r_s = lpr.s;
+        tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
+        float lo_l = tpt1_lp(&l2, s1l, g->color_g);
+        float lo_r = tpt1_lp(&r2, s1r, g->color_g);
+        g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+        if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;      gr = lo_r; }
+        else /* GRV_FILT_HP */                  { gl = gl - lo_l; gr = gr - lo_r; }
+    } else {
+        /* GEN: original 1-pole COLOR (byte-identical). */
+        tpt1_t lpl = { g->color_lp_l_s };
+        tpt1_t lpr = { g->color_lp_r_s };
+        float lo_l = tpt1_lp(&lpl, gl, g->color_g);
+        float lo_r = tpt1_lp(&lpr, gr, g->color_g);
+        g->color_lp_l_s = lpl.s;
+        g->color_lp_r_s = lpr.s;
+        if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;        gr = lo_r; }
+        else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
+    }
 
     /* DRIVE (C1-02): saturation with makeup, dry/wet by amount. */
     if (g->drive > 0.0f) {
@@ -332,26 +507,15 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         gr = gr + g->drive * (wr - gr);
     }
 
-    /* REVERB (C1-02): cheap mono Schroeder — 2 damped combs + 1 allpass, added
-     * back by MIX. Non-power-of-two ring sizes wrap by branch (no % per sample). */
-    if (g->rv_mix > 0.0f) {
+    /* REVERB POST (vhr §B.2): when the bidirectional MIX knob is on the RIGHT,
+     * run the SAME Schroeder reverb on the tap-summed (or GEN) output and mix
+     * rv_post_amt wet. The PRE point (§B.2) is handled inside the TAPS branch
+     * above; only ONE reverb instance exists. */
+    if (g->rv_post_amt > 0.0f) {
         float in = 0.5f * (gl + gr);
-        float c1 = g->rv_comb1[g->rv_c1i];
-        g->rv_c1_lp = c1 * (1.0f - g->rv_damp) + g->rv_c1_lp * g->rv_damp;
-        g->rv_comb1[g->rv_c1i] = in + g->rv_c1_lp * g->rv_fb;
-        if (++g->rv_c1i >= 1557) g->rv_c1i = 0;
-        float c2 = g->rv_comb2[g->rv_c2i];
-        g->rv_c2_lp = c2 * (1.0f - g->rv_damp) + g->rv_c2_lp * g->rv_damp;
-        g->rv_comb2[g->rv_c2i] = in + g->rv_c2_lp * g->rv_fb;
-        if (++g->rv_c2i >= 1617) g->rv_c2i = 0;
-        float wet = 0.5f * (c1 + c2);
-        float ab = g->rv_ap[g->rv_api];              /* allpass diffusion */
-        float ao = -wet + ab;
-        g->rv_ap[g->rv_api] = wet + ab * 0.5f;
-        if (++g->rv_api >= 556) g->rv_api = 0;
-        wet = ao;
-        gl = gl + g->rv_mix * wet;
-        gr = gr + g->rv_mix * wet;
+        float wet = groove_reverb_mono(g, in);
+        gl = gl + g->rv_post_amt * wet;
+        gr = gr + g->rv_post_amt * wet;
     }
 
     /* LFO tremolo (C1-02): triangle amplitude mod, depth by LFO AMT. */
@@ -389,13 +553,13 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->color_g = tpt_g_from_hz(fc);
         g->filter_type = GRV_FILT_LP;
     } else if (strcmp(key, PK_GRV_TAP1) == 0) {
-        g->tap_level[0] = v;
+        g->tap_level[0] = v; groove_update_tap_norm(g);
     } else if (strcmp(key, PK_GRV_TAP2) == 0) {
-        g->tap_level[1] = v;
+        g->tap_level[1] = v; groove_update_tap_norm(g);
     } else if (strcmp(key, PK_GRV_TAP3) == 0) {
-        g->tap_level[2] = v;
+        g->tap_level[2] = v; groove_update_tap_norm(g);
     } else if (strcmp(key, PK_GRV_TAP4) == 0) {
-        g->tap_level[3] = v;
+        g->tap_level[3] = v; groove_update_tap_norm(g);
     } else if (strcmp(key, PK_GRV_MONO) == 0) {
         g->mono = (v >= 0.5f);
     } else if (strcmp(key, PK_GRV_DRIVE) == 0) {
@@ -410,7 +574,21 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_LFOAMT) == 0) {
         g->lfo_amt = v;
     } else if (strcmp(key, PK_GRV_RVMIX) == 0) {
-        g->rv_mix = v;
+        /* Bidirectional reverb routing (vhr §B.2): center (0.5) = OFF (deadzone
+         * +/-0.03); LEFT = PRE (reverb pre-smear into the tap ring input); RIGHT
+         * = POST (reverb on the tap-summed output). ONE reverb instance; the sign
+         * of the knob selects its input/output tap point. The old linear
+         * post-only rv_mix=v semantics are gone. */
+        if (v < 0.47f) {                       /* PRE */
+            g->rv_pre_amt  = (0.5f - v) * 2.0f;
+            g->rv_post_amt = 0.0f;
+        } else if (v > 0.53f) {                /* POST */
+            g->rv_post_amt = (v - 0.5f) * 2.0f;
+            g->rv_pre_amt  = 0.0f;
+        } else {                               /* center deadzone: OFF */
+            g->rv_pre_amt  = 0.0f;
+            g->rv_post_amt = 0.0f;
+        }
     } else if (strcmp(key, PK_GRV_RVDECAY) == 0) {
         g->rv_fb = 0.5f + 0.49f * v;           /* comb feedback 0.5..0.99 */
     } else if (strcmp(key, PK_GRV_RVTONE) == 0) {
