@@ -61,9 +61,11 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_TAP1]=0.6f, [GKI_GRV_TAP2]=0.6f, [GKI_GRV_TAP3]=0.6f,
     [GKI_GRV_TAP4]=0.6f, [GKI_GRV_MONO]=0.0f,
     /* Groove FX defaults (C1-02): off/neutral so the rumble is unchanged until
-     * the user opens them. */
+     * the user opens them. RVMIX is now the vhr bidirectional reverb knob:
+     * CENTER (0.5) = reverb OFF (deadzone), LEFT = pre-smear, RIGHT = post. A
+     * bare create therefore sits neutral (rv_pre_amt/rv_post_amt both 0). */
     [GKI_GRV_DRIVE]=0.0f, [GKI_GRV_FILTYPE]=0.0f, [GKI_GRV_LFOSPD]=0.3f, [GKI_GRV_LFOAMT]=0.0f,
-    [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
+    [GKI_GRV_RVMIX]=0.5f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
     [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
     [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,

@@ -168,9 +168,11 @@ static const char KN_KICK2[] =
     "[\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR
     "\",\"" PK_FILTER_ROUTE "\",\"" PK_FX_TYPE "\",\"" PK_FX_AMT "\",\"" PK_FX_TONE "\"]";
 
-/* Groove Page 1 (C1 redesign): leads with the TYPE selector (TAPS/GEN, GRVX-01),
- * then the rumble controls. LENGTH now drives feedback sustain (GRVX-02). MONO
- * moved to Groove Page 2 to keep Page 1 at 8 encoders. */
+/* Groove Page 1 (C1 + vhr redesign): leads with the TYPE selector (TAPS/GEN,
+ * GRVX-01), then the rumble controls. LENGTH is now a BIDIRECTIONAL clean<->drone
+ * morph (vhr): RIGHT = clean equal-level kick copies on every 16th (feedback=0),
+ * LEFT = a smeared/diffused resonant feedback drone (no longer per-tap decay).
+ * MONO moved to Groove Page 2 to keep Page 1 at 8 encoders. */
 static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_TYPE,   "TYPE",   "TYPE", UP_ENUM,  "",  "0",    OPT_GRVTYPE },
     { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
@@ -186,12 +188,15 @@ static const char KN_GROOVE1[] =
     "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
 
 /* P_GROOVE_FX: shared "Groove Effects" page — identical layout for TAPS and GEN
- * (E3/SC5). TAPS uses it as groove2; GEN uses it as groove3. */
+ * (E3/SC5). TAPS uses it as groove2; GEN uses it as groove3.
+ * REVERB (vhr §B.2): the RV MIX knob is now BIDIRECTIONAL — CENTER = off,
+ * LEFT = pre-smear (reverb into the tap ring input), RIGHT = post reverb. Same
+ * key (PK_GRV_RVMIX), one Schroeder instance; the label communicates the range. */
 static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVMIX,   "RV MIX",  "RVMIX", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
