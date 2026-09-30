@@ -107,6 +107,42 @@ int main(void) {
         }
     }
 
+    /* T6: FX type dispatch integration — verify modes 1-4 produce DIFFERENT
+     * output from Diode (mode 0). After Bug #1 fix, each mode must be distinct.
+     * Uses direct fx_config/fx_process (FM2 model lifecycle unnecessary here —
+     * the unit test confirms the DSP path; test_params confirms per-model wiring).
+     * mode dispatch */
+    {
+        /* Verify calling fx_config(0..4) and fx_process(0..4) produces 5 distinct
+         * waveform outputs on the same input. If the model dispatch sends everything
+         * to mode 4 (Crush), diff_rms between adjacent modes would be ~0. */
+        fx_state_t sts[5];
+        for (int m = 0; m < 5; m++) {
+            memset(&sts[m], 0, sizeof sts[m]);
+            fx_config(&sts[m], m, 1.0f);
+        }
+
+        /* Each pair of modes must differ by at least 1% RMS waveform energy. */
+        for (int a = 0; a < 5; a++) {
+            for (int b = a + 1; b < 5; b++) {
+                /* Compute waveform difference energy between mode a and mode b */
+                fx_state_t sa, sb;
+                memset(&sa, 0, sizeof sa); memset(&sb, 0, sizeof sb);
+                fx_config(&sa, a, 1.0f); fx_config(&sb, b, 1.0f);
+                double diff_e = 0.0;
+                for (int i = 0; i < NSAMP; i++) {
+                    float ya = fx_process(a, dry_lo[i], 1.0f, &sa);
+                    float yb = fx_process(b, dry_lo[i], 1.0f, &sb);
+                    double d = (double)ya - (double)yb;
+                    diff_e += d * d;
+                }
+                double diff_rms = sqrt(diff_e / NSAMP);
+                /* Modes must not be identical — diff_rms > 0.01 threshold */
+                assert(diff_rms > 0.01 && "FX modes are not distinct — dispatch broken");
+            }
+        }
+    }
+
     printf("test_fx: ALL TESTS PASSED\n");
     return 0;
 }
