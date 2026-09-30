@@ -45,11 +45,11 @@
 
 ### Performer
 
-- [ ] **PERF-01**: Sidechain ducking triggered from MIDI note-on event (not amplitude threshold — amplitude trigger chatters on the kick waveform); parameterized attack (~1ms) and release (10–500ms) using per-sample coefficient derived from ms value
-- [ ] **PERF-02**: Duck smoothing (DUCK SMT): one-pole slew on ducking envelope to eliminate low-frequency pops; high-pass detection threshold (DUCK BS) to set the frequency below which ducking activates
-- [ ] **PERF-03**: DJ filter: TPT state-variable filter with bidirectional LP↔HP sweep; single knob crossfades LP/HP outputs; resonance via SVF damping term; cutoff clamped to `[20Hz, 0.45×sr]` to prevent coefficient blowup
-- [ ] **PERF-04**: End-of-chain soft clipper: `y = x / (1 + |x|)` (symmetric, bounded, no positive-side divergence); on/off toggle; applied as final stage before int16 conversion
-- [ ] **PERF-05**: Performer Page 1 (8 encoders): MSTR VOL, DUCK, DUCK REL, DUCK SMT, DUCK BS, DJ FILT, DJ RESO, CLIP
+- [x] **PERF-01**: Sidechain ducking triggered from MIDI note-on event (not amplitude threshold — amplitude trigger chatters on the kick waveform); parameterized attack (~1ms) and release (10–500ms) using per-sample coefficient derived from ms value
+- [x] **PERF-02**: Duck smoothing (DUCK SMT): one-pole slew on ducking envelope to eliminate low-frequency pops; high-pass detection threshold (DUCK BS) to set the frequency below which ducking activates
+- [x] **PERF-03**: DJ filter: TPT state-variable filter with bidirectional LP↔HP sweep; single knob crossfades LP/HP outputs; resonance via SVF damping term; cutoff clamped to `[20Hz, 0.45×sr]` to prevent coefficient blowup
+- [x] **PERF-04**: End-of-chain soft clipper: `y = x / (1 + |x|)` (symmetric, bounded, no positive-side divergence); on/off toggle; applied as final stage before int16 conversion
+- [x] **PERF-05**: Performer Page 1 (8 encoders): MSTR VOL, DUCK, DUCK REL, DUCK SMT, DUCK BS, DJ FILT, DJ RESO, CLIP
 
 ### UI & Navigation
 
@@ -196,11 +196,11 @@ Derived from on-device testing of Phases B/C. Authoritative brief: `.planning/RE
 | GRVX-03 | Phase C1 (v1.1) | Complete |
 | GRVX-04 | Phase C1 (v1.1) | Complete |
 | GRVX-05 | Phase C1 (v1.1) | Complete |
-| PERF-01 | Phase D (v1.1) | Pending |
-| PERF-02 | Phase D (v1.1) | Pending |
-| PERF-03 | Phase D (v1.1) | Pending |
-| PERF-04 | Phase D (v1.1) | Pending |
-| PERF-05 | Phase D (v1.1) | Pending |
+| PERF-01 | Phase D (v1.1) | Complete |
+| PERF-02 | Phase D (v1.1) | Complete |
+| PERF-03 | Phase D (v1.1) | Complete |
+| PERF-04 | Phase D (v1.1) | Complete |
+| PERF-05 | Phase D (v1.1) | Complete (on-device CPU measure pending) |
 | UI-01 | Phase E (FUTURE) | Pending |
 | UI-02 | Phase F (FUTURE) | Pending |
 | UI-03 | Phase F (FUTURE) | Pending |

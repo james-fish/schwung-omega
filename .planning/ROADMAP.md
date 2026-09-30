@@ -82,7 +82,7 @@
 - [x] **Phase B2: Kick Voicing & Page Reorg** - Lower/deeper pitch + stronger CURVE, merge redundant params, model-unique params on Page 1 / transients on Page 2, per-model voicing fixes (completed 2026-09-30, native tests GREEN; on-device voicing audit + TRS transient-source redesign + FILTER ROUTE syn/trans split pending — docs/VOICING_AUDIT_v1_1.md)
 - [x] **Phase B3: Sample Infrastructure** - Module samples folder + optional SD browse, enumerated off-thread at create_instance; string list-picker for sample selection (completed 2026-09-30, native tests GREEN; SD mount path is a best-guess to confirm on-device)
 - [x] **Phase C1: Groove Redesign** - TAPS/GEN type selector decoupled from kick model; feedback/resonant rumble (fixes "bit-crushed & quiet"); per-type pages with reverb/drive/filter/LFO; GEN retrigger modes + seqlen 1–32 + tone shaping (completed 2026-09-30, native tests GREEN)
-- [ ] **Phase D: Performer Chain** - Full kick→groove→duck→DJ filter→soft clip chain, CPU-measured on-device inside the 10–15% budget
+- [x] **Phase D: Performer Chain** - Full kick→groove→duck→DJ filter→soft clip chain (completed 2026-09-30, native tests GREEN; on-device CPU measurement pending hardware)
 
 ### Phase Details (v1.1)
 
@@ -189,7 +189,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 | B2. Kick Voicing & Page Reorg | 3/3 | Complete (VOICE-01..06; native GREEN, on-device audit pending) | 2026-09-30 |
 | B3. Sample Infrastructure | 1/1 | Complete (SMPL-01..03; native GREEN, SD path on-device) | 2026-09-30 |
 | C1. Groove Redesign | 3/3 | Complete (GRVX-01..05; native GREEN, on-device pending) | 2026-09-30 |
-| D. Performer Chain | 0/? | Not started | - |
+| D. Performer Chain | 1/1 | Complete (PERF-01..05; native GREEN, on-device CPU pending) | 2026-09-30 |
 
 ### Future (post-v1.1)
 
