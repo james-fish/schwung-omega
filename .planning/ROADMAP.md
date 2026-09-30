@@ -158,7 +158,7 @@
 
 ### Phases (v1.2)
 
-- [ ] **Phase E1: Critical Audio Fixes** - Fix everything that is broken or silent: FX chain (4 broken modes), ducking, TAPS bit-crush/gain, FM2 attack/transient, PHY curve inversion, DIG bit-depth range, soft clipper
+- [x] **Phase E1: Critical Audio Fixes** - Fix everything that is broken or silent: FX chain (4 broken modes), ducking, TAPS bit-crush/gain, FM2 attack/transient, PHY curve inversion, DIG bit-depth range, soft clipper (completed 2026-09-30)
 - [ ] **Phase E2: Discrete Controls & UI Cleanup** - Convert all disguised-continuous controls to proper list pickers/enum selectors: FM4 ALG, FM2 OP WAVE (+ draw waveform), HRD sample layer, DIG wave index; fix GEN wave audio (square/saw broken); convert TAPS+GEN filters to continuous LP sweep; remove GEN from kick model list; relabel opaque performer controls; rename USR blend
 - [ ] **Phase E3: GEN Groove Enhancements** - Add 8+ more scales (Dorian, Phrygian, Mixolydian, Hirajoshi, Hungarian, Whole Tone, Blues, Diminished); add root note selector (scale mode C-3→C3) + unquantized mode with root pitch; add seq range control; rework GEN groove page 1 layout (SCALE/ROOT/RANGE/RETRIG replacing taps controls); rename+align gen tone page to match TAPS effects layout
 - [ ] **Phase E4: Voicing Defaults & Curve Polish** - Default pitch 50 Hz all models, length 50%, FM4 op defaults ~0.1; fix CURVE to be more aggressive earlier; fix PHY HEAD TENS direction; fix TRS wavetable color second half; improve ANA wave morph audibility; add DUCK CURVE parameter
@@ -181,7 +181,7 @@
 Plans:
 - [x] E1-01-PLAN.md — Fix FX type dispatch in all 9 model files (Bug #1)
 - [x] E1-02-PLAN.md — Fix PHY CURVE, DIG BIT DEPTH direction, HRD DRIVE/CRUSH (Bugs #5, #6, #7)
-- [ ] E1-03-PLAN.md — Fix TAPS tap gain and soft clip + HRD CRUSH defaults (Bugs #3, #17)
+- [x] E1-03-PLAN.md — Fix TAPS tap gain and soft clip + HRD CRUSH defaults (Bugs #3, #17)
 
 ### Phase E2: Discrete Controls & UI Cleanup
 **Goal:** Every control that selects from a fixed set of options renders as a list picker or enum selector — never a bare continuous knob. All wave selectors draw the waveform. GEN wave audio matches the displayed waveform. TAPS and GEN use a single continuous LP filter knob. The kick model list no longer includes GEN.
@@ -264,7 +264,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| E1. Critical Audio Fixes | 2/3 | In Progress|  |
+| E1. Critical Audio Fixes | 3/3 | Complete   | 2026-09-30 |
 | E2. Discrete Controls & UI Cleanup | 0/? | Not started | — |
 | E3. GEN Groove Enhancements | 0/? | Not started | — |
 | E4. Voicing Defaults & Curve Polish | 0/? | Not started | — |
