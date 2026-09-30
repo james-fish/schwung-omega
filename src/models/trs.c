@@ -2,19 +2,25 @@
  *
  * The 909 attack specialist (B-RESEARCH §TRS): like WTR (a band-limited
  * wavetable body pitch-swept with the dual-env CURVE blend) but with a MORE
- * ADVANCED transient synth whose spectrum morphs from a sharp stick/beater
- * CLICK to a white/pink NOISE burst (TRANS TONE), a WT COLOR body-timbre morph,
- * and its OWN Page-2 pitch-sweep-CURVE (PK_TRS_CURVE, distinct from the Page-1
- * PK_CURVE) biased to the fast 909 side for a bright, clear attack + thick sub
- * tail (Context/02 §2.7). Distinctness vs WTR: WTR = clean/neutral transient;
- * TRS = aggressive 909 attack with a click<->noise morph.
+ * ADVANCED transient synth that morphs between TWO GENUINELY DIFFERENT sources
+ * (TRANS TONE), a WT COLOR body-timbre morph, and its OWN Page-2 pitch-sweep-
+ * CURVE (PK_TRS_CURVE). Distinctness vs WTR: WTR = clean/neutral transient;
+ * TRS = aggressive 909 attack with a click<->modal-snap morph.
+ *
+ * Transient sources (TRANS TONE 0→1):
+ *   CLICK (0): sharp decaying sine tick at ~2.5 kHz — tight 909 beater stick
+ *   SNAP  (1): modal resonator burst (frequency set by TRS TNE, 100–1200 Hz) —
+ *              a pitched "snap" with body-focused tonal character
+ *
+ * FILTER ROUTE (Kick Page 2, shared): routes the COLOR lowpass to the synthesised
+ * body only (Synth=0), the transient only (Trans=1), or the full mix (Both=2).
  *
  * Signal flow:
  *   body   = wt_read_bl(wave_a/b morph by WT COLOR) * amp_env
- *   click  = decaying sine impulse (sharp beater "tick")
- *   noise  = white burst * env
- *   trans  = TRANS TONE morph(click <-> noise), TRANS DECAY = length
- *   s = body*0.5 + trans*1.1 (self-limited < 1.0), COLOR LP, fx_process
+ *   click  = decaying sine tick (~2.5 kHz) * trs_env
+ *   snap   = modal_tick (self-decaying at trs_dec_ms rate)
+ *   trans  = (click*(1-trs_tone) + snap*trs_tone) * trs_amp
+ *   route → apply COLOR LP to body, trans, or sum; then fx_process
  *
  * All coeff/transcendental work is in set_param/trigger; render is
  * powf/expf/tanf-free. Copies WTR's structure (Pattern 4).
@@ -47,18 +53,19 @@ typedef struct trs_state {
     float sustain;            /* tail contour scalar (from SUSTAIN) */
     float length_ms;          /* amp decay time (from LENGTH) */
 
-    /* Advanced transient synth: click (decaying sine) <-> noise burst */
+    /* Advanced transient synth: click (sine tick) <-> modal snap */
     float   click_phase;      /* sharp beater "tick" oscillator phase */
-    float   click_hz;         /* click pitch (bright, fixed-ish) */
-    env_t   trs_env;          /* transient decay (shared by click + noise) */
-    noise_t trs_noise;        /* white-noise source */
+    float   click_hz;         /* click pitch (bright, fixed ~2.5 kHz) */
+    env_t   trs_env;          /* transient decay gate (click side) */
+    modal_t trs_modal;        /* modal resonator — the SNAP transient source */
+    float   trs_modal_hz;     /* snap resonant freq (100..1200 Hz, from TRS TNE) */
     float   trs_amp;          /* transient amplitude (from ATTACK) */
     float   trs_dec_ms;       /* TRANS DECAY (from PK_TRS_TDEC / Page-1 TRS DEC) */
-    float   trs_tone;         /* TRANS TONE: click(0) <-> noise(1) morph */
-    tpt1_t  trs_tne_lp; float trs_tne_g;   /* Page-1 TRS TNE: noise brightness LP */
+    float   trs_tone;         /* TRANS TONE: click(0) <-> modal-snap(1) morph */
 
-    /* Output COLOR lowpass */
+    /* Output COLOR lowpass + FILTER ROUTE */
     tpt1_t color_lp;    float color_g;
+    int    filter_route;  /* 0=Synth, 1=Trans, 2=Both (from PK_FILTER_ROUTE) */
 
     /* Post-kick FX chain (KICK-14). */
     float      fx_type;
@@ -114,16 +121,20 @@ void trs_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* Page-1 TRS DEC also sets the transient length (2..40 ms). */
         t->trs_dec_ms = 2.0f + v * (40.0f - 2.0f);
     } else if (strcmp(key, PK_TRS_TNE) == 0) {
-        /* Page-1 TRS TNE: noise-side brightness LP (500 Hz..16 kHz). */
-        float fc = 500.0f + v * (16000.0f - 500.0f);
-        t->trs_tne_g = tpt_g_from_hz(fc);
+        /* TRS TNE: tuning for the modal SNAP source (100..1200 Hz).
+         * Low = deep thuddy impact; high = crisp mid-range snap. */
+        t->trs_modal_hz = 100.0f + v * (1200.0f - 100.0f);
     } else if (strcmp(key, PK_COLOR) == 0) {
         float fc = 200.0f + v * (18000.0f - 200.0f);
         t->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_TRS_TONE) == 0) {
-        /* TRANS TONE: morph the click spectrum from a sharp stick/beater CLICK
-         * (0, a decaying bright sine tick) to a white/pink NOISE burst (1). */
+        /* TRANS TONE: morph from a sharp sine tick CLICK (0) to a pitched
+         * modal SNAP (1). Genuinely different character endpoints. */
         t->trs_tone = v;
+    } else if (strcmp(key, PK_FILTER_ROUTE) == 0) {
+        /* FILTER ROUTE: 0=Synth body only, 1=Transient only, 2=Both. */
+        int r = (int)(parse_f(val) + 0.5f);
+        t->filter_route = (r < 0) ? 0 : (r > 2) ? 2 : r;
     } else if (strcmp(key, PK_TRS_TDEC) == 0) {
         /* TRANS DECAY: transient length (2..40 ms; ~10-18 default at v=0.5). */
         t->trs_dec_ms = 2.0f + v * (40.0f - 2.0f);
@@ -137,11 +148,13 @@ void trs_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * higher = faster, deeper sweep = punchier 909 snap. */
         t->p2_curve = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        t->fx_type = v;
-        fx_config(&t->fx, (int)(t->fx_type * 4.0f + 0.5f), t->fx_amt);
+        t->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (t->fx_type < 0.0f) t->fx_type = 0.0f;
+        if (t->fx_type > 4.0f) t->fx_type = 4.0f;
+        fx_config(&t->fx, (int)t->fx_type, t->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         t->fx_amt = v;
-        fx_config(&t->fx, (int)(t->fx_type * 4.0f + 0.5f), t->fx_amt);
+        fx_config(&t->fx, (int)t->fx_type, t->fx_amt);
     }
     /* Unknown keys ignored. */
 }
@@ -172,18 +185,20 @@ static void trs_trigger(bohm_instance_t *inst, int note, int velocity) {
 
     /* Transient decay from TRANS DECAY. */
     float trs_ms = t->trs_dec_ms > 0.0f ? t->trs_dec_ms : 12.0f;
-    env_trigger(&t->trs_env, 1.0f, env_coeff_from_ms(trs_ms));
+    float trs_decay = env_coeff_from_ms(trs_ms);
+    env_trigger(&t->trs_env, 1.0f, trs_decay);
 
-    /* Bright beater "tick" pitch — high, fixed, for a sharp 909 stick click. */
-    t->click_hz    = 1800.0f;
+    /* CLICK: bright beater tick at ~2.5 kHz (sharp 909 stick). */
+    t->click_hz    = 2500.0f;
     t->click_phase = 0.0f;
 
-    noise_seed(&t->trs_noise, 0x5EED909ULL ^ (uint64_t)(unsigned)velocity);
+    /* SNAP: modal resonator at TRS TNE frequency; same decay rate as click. */
+    float snap_hz = t->trs_modal_hz > 0.0f ? t->trs_modal_hz : 650.0f;
+    modal_excite(&t->trs_modal, snap_hz, trs_decay, 1.0f);
 
-    /* Reset body phase + all filter states for a deterministic attack. */
-    t->body_phase   = 0.0f;
-    t->color_lp.s   = 0.0f;
-    t->trs_tne_lp.s = 0.0f;
+    /* Reset body phase + COLOR filter for deterministic attack. */
+    t->body_phase = 0.0f;
+    t->color_lp.s = 0.0f;
 
     /* Reset FX sample-and-hold, preserve precomputed crush_levels. */
     t->fx.last     = 0.0f;
@@ -213,22 +228,37 @@ static void trs_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float amp = env_tick(&t->amp_env) * (0.5f + 0.5f * t->sustain);
         body *= amp;
 
-        /* Advanced transient: a sharp decaying sine CLICK <-> a white NOISE
-         * burst, morphed by TRANS TONE. Both share the transient env. The click
-         * gives a tight beater "tick"; the noise gives a bright snap. */
+        /* CLICK: sharp decaying sine tick (~2.5 kHz), gated by trs_env. */
         float tenv  = env_tick(&t->trs_env);
-        float click = wt_read(g_sine_table, t->click_phase);
+        float click = wt_read(g_sine_table, t->click_phase) * tenv;
         t->click_phase += t->click_hz / OMEGA_SR;
         if (t->click_phase >= 1.0f) t->click_phase -= 1.0f;
-        float nz = tpt1_lp(&t->trs_tne_lp, noise_tick(&t->trs_noise), t->trs_tne_g);
-        float trans = (click + t->trs_tone * (nz - click)) * tenv * t->trs_amp;
 
-        /* Self-limit; the bright transient LEADS the attack while the low body
-         * ramps from zero, giving the 909 clarity + a thick sub tail. */
-        float s = body * 0.5f + trans * 1.1f;
-        s = tpt1_lp(&t->color_lp, s, t->color_g);       /* COLOR output LP */
+        /* SNAP: modal resonator self-decays at the same rate (modal_excite set
+         * trs_decay as its per-sample multiplier). Genuinely different from the
+         * click — tonal, body-focused, pitched by TRS TNE. */
+        float snap  = modal_tick(&t->trs_modal);
 
-        int fx_mode = (int)(t->fx_type * 4.0f + 0.5f);
+        /* TRANS TONE: crossfade click(0) <-> modal snap(1). */
+        float trans = (click * (1.0f - t->trs_tone) + snap * t->trs_tone) * t->trs_amp;
+
+        /* FILTER ROUTE: apply COLOR LP selectively.
+         *   0 = Synth  → filter body only;  transient stays bright
+         *   1 = Trans  → filter transient;  body stays full-bandwidth
+         *   2 = Both   → filter the mix (original behavior) */
+        float s;
+        if (t->filter_route == 0) {
+            float fb = tpt1_lp(&t->color_lp, body, t->color_g);
+            s = fb * 0.5f + trans * 1.1f;
+        } else if (t->filter_route == 1) {
+            float ft = tpt1_lp(&t->color_lp, trans, t->color_g);
+            s = body * 0.5f + ft * 1.1f;
+        } else {
+            s = tpt1_lp(&t->color_lp, body * 0.5f + trans * 1.1f, t->color_g);
+        }
+
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)t->fx_type;
         s = fx_process(fx_mode, s, t->fx_amt, &t->fx);
 
         out_l[n] = out_r[n] = s;
@@ -239,7 +269,7 @@ static void trs_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
 static int trs_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_TRS_TONE  "\",\"name\":\"TRANS TONE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_TRS_TONE  "\",\"name\":\"CLICK/SNAP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_TRS_TDEC  "\",\"name\":\"TRANS DEC\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_TRS_WTCOL "\",\"name\":\"WT COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_TRS_CURVE "\",\"name\":\"CURVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";

@@ -200,11 +200,13 @@ void fm4_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         f->algo2 = v;                       /* ALGO: per-op detune / metallic spread */
         fm4_recompute_ratios(f);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        f->fx_type = v;
-        fx_config(&f->fx, (int)(f->fx_type * 4.0f + 0.5f), f->fx_amt);
+        f->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (f->fx_type < 0.0f) f->fx_type = 0.0f;
+        if (f->fx_type > 4.0f) f->fx_type = 4.0f;
+        fx_config(&f->fx, (int)f->fx_type, f->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         f->fx_amt = v;
-        fx_config(&f->fx, (int)(f->fx_type * 4.0f + 0.5f), f->fx_amt);
+        fx_config(&f->fx, (int)f->fx_type, f->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -335,8 +337,8 @@ static void fm4_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float s = voice * 0.7f + click * 0.4f;
         s = tpt1_lp(&f->color_lp, s, f->color_g);       /* COLOR output LP */
 
-        /* Post-kick FX (KICK-14). */
-        int fx_mode = (int)(f->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)f->fx_type;
         s = fx_process(fx_mode, s, f->fx_amt, &f->fx);
 
         out_l[n] = out_r[n] = s;

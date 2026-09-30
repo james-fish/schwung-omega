@@ -184,11 +184,13 @@ void hrd_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float bits = 16.0f - v * (16.0f - 4.0f);
         h->crush_levels = bits_to_levels(bits);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        h->fx_type = v;
-        fx_config(&h->fx, (int)(h->fx_type * 4.0f + 0.5f), h->fx_amt);
+        h->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (h->fx_type < 0.0f) h->fx_type = 0.0f;
+        if (h->fx_type > 4.0f) h->fx_type = 4.0f;
+        fx_config(&h->fx, (int)h->fx_type, h->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         h->fx_amt = v;
-        fx_config(&h->fx, (int)(h->fx_type * 4.0f + 0.5f), h->fx_amt);
+        fx_config(&h->fx, (int)h->fx_type, h->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -272,8 +274,8 @@ static void hrd_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         /* COLOR output LP. */
         float s = tpt1_lp(&h->color_lp, sig, h->color_g);
 
-        /* Post-kick FX (KICK-14) with its OWN fx_state, bounded. */
-        int fx_mode = (int)(h->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)h->fx_type;
         s = fx_process(fx_mode, s, h->fx_amt, &h->fx);
 
         out_l[n] = out_r[n] = s;

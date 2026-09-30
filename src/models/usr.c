@@ -167,11 +167,13 @@ void usr_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* PITCH ENV: extra downward sweep depth applied to the wavetable body. */
         u->pitch_env_amt = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        u->fx_type = v;
-        fx_config(&u->fx, (int)(u->fx_type * 4.0f + 0.5f), u->fx_amt);
+        u->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (u->fx_type < 0.0f) u->fx_type = 0.0f;
+        if (u->fx_type > 4.0f) u->fx_type = 4.0f;
+        fx_config(&u->fx, (int)u->fx_type, u->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         u->fx_amt = v;
-        fx_config(&u->fx, (int)(u->fx_type * 4.0f + 0.5f), u->fx_amt);
+        fx_config(&u->fx, (int)u->fx_type, u->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -305,7 +307,8 @@ static void usr_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float s = voice * 0.5f + click * 1.1f;
         s = tpt1_lp(&u->color_lp, s, u->color_g);   /* COLOR output LP */
 
-        int fx_mode = (int)(u->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)u->fx_type;
         s = fx_process(fx_mode, s, u->fx_amt, &u->fx);
 
         out_l[n] = out_r[n] = s;

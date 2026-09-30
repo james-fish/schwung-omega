@@ -214,11 +214,13 @@ void gen_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* LPF POLE -> 0 = 2-pole (1 stage), 1 = 4-pole (2 stages), DC-06. */
         g->lpf_pole = (v >= 0.5f);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        g->fx_type = v;
-        fx_config(&g->fx, (int)(g->fx_type * 4.0f + 0.5f), g->fx_amt);
+        g->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (g->fx_type < 0.0f) g->fx_type = 0.0f;
+        if (g->fx_type > 4.0f) g->fx_type = 4.0f;
+        fx_config(&g->fx, (int)g->fx_type, g->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         g->fx_amt = v;
-        fx_config(&g->fx, (int)(g->fx_type * 4.0f + 0.5f), g->fx_amt);
+        fx_config(&g->fx, (int)g->fx_type, g->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -320,7 +322,8 @@ static void gen_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         s = tpt1_lp(&g->lpf1, s, g->lpf_g);
         if (g->lpf_pole) s = tpt1_lp(&g->lpf2, s, g->lpf_g);
 
-        int fx_mode = (int)(g->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)g->fx_type;
         s = fx_process(fx_mode, s, g->fx_amt, &g->fx);
 
         out_l[n] = out_r[n] = s;

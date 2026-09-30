@@ -177,11 +177,13 @@ void phy_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * mapped ms->decay_per_sample at trigger, CLAMPED into (0,1). */
         p->damping = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        p->fx_type = v;
-        fx_config(&p->fx, (int)(p->fx_type * 4.0f + 0.5f), p->fx_amt);
+        p->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (p->fx_type < 0.0f) p->fx_type = 0.0f;
+        if (p->fx_type > 4.0f) p->fx_type = 4.0f;
+        fx_config(&p->fx, (int)p->fx_type, p->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         p->fx_amt = v;
-        fx_config(&p->fx, (int)(p->fx_type * 4.0f + 0.5f), p->fx_amt);
+        fx_config(&p->fx, (int)p->fx_type, p->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -303,8 +305,8 @@ static void phy_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         /* COLOR output LP. */
         s = tpt1_lp(&p->color_lp, s, p->color_g);
 
-        /* Post-kick FX (KICK-14): bounded, reads only precomputed fx state. */
-        int fx_mode = (int)(p->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)p->fx_type;
         s = fx_process(fx_mode, s, p->fx_amt, &p->fx);
 
         /* Final safety self-limit (modal sums can transiently exceed 1.0 at the

@@ -144,13 +144,16 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
     } else if (strcmp(key, PK_OP2_WAVE) == 0) {
         fm->op2_wave = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        fm->fx_type = v;   /* 0..1 -> mode 0..4 (Diode/Clip/SAT/Fold/Crush) */
-        /* Reconfigure FX at CONTROL rate: Crush's powf runs here, never in
-         * render (KICK-14 / CLAUDE.md control-rate/render-rate split). */
-        fx_config(&fm->fx, (int)(fm->fx_type * 4.0f + 0.5f), fm->fx_amt);
+        /* Integer enum 0..4 (Diode/Clip/SAT/Fold/Crush). Round-parse the raw
+         * string directly — do NOT clamp through 0..1 which would collapse all
+         * non-zero modes to 1.0 (Bug #1 fix). */
+        fm->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (fm->fx_type < 0.0f) fm->fx_type = 0.0f;
+        if (fm->fx_type > 4.0f) fm->fx_type = 4.0f;
+        fx_config(&fm->fx, (int)fm->fx_type, fm->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         fm->fx_amt = v;
-        fx_config(&fm->fx, (int)(fm->fx_type * 4.0f + 0.5f), fm->fx_amt);
+        fx_config(&fm->fx, (int)fm->fx_type, fm->fx_amt);
     }
     /* Unknown keys are ignored (dsp.c handles PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -232,11 +235,10 @@ static void fm2_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float s = car_out * amp * 0.6f + click * 0.4f;
         s = tpt1_lp(&fm->color_lp, s, fm->color_g);               /* COLOR */
 
-        /* Post-kick FX (KICK-14): map fx_type 0..1 -> mode 0..4, apply the
-         * selected bounded mode scaled by fx_amt. fx_process reads only the
-         * precomputed fx_state_t (crush_levels + LUT) — no powf/sinf/expf/tanf
-         * in this render loop. amt=0 is transparent; output stays in [-1,1]. */
-        int fx_mode = (int)(fm->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is an integer 0..4 (Bug #1 fix —
+         * no * 4.0f scaling). fx_process reads only precomputed fx_state_t;
+         * no powf/sinf/expf/tanf in render. amt=0 is transparent. */
+        int fx_mode = (int)fm->fx_type;
         s = fx_process(fx_mode, s, fm->fx_amt, &fm->fx);
 
         out_l[n] = out_r[n] = s;

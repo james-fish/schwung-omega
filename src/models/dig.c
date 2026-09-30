@@ -163,11 +163,13 @@ void dig_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* PITCH ENV: dedicated pitch-sweep-depth scalar (chip "pew"). */
         d->pitchenv = v;
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
-        d->fx_type = v;
-        fx_config(&d->fx, (int)(d->fx_type * 4.0f + 0.5f), d->fx_amt);
+        d->fx_type = (float)(int)(parse_f(val) + 0.5f);
+        if (d->fx_type < 0.0f) d->fx_type = 0.0f;
+        if (d->fx_type > 4.0f) d->fx_type = 4.0f;
+        fx_config(&d->fx, (int)d->fx_type, d->fx_amt);
     } else if (strcmp(key, PK_FX_AMT) == 0) {
         d->fx_amt = v;
-        fx_config(&d->fx, (int)(d->fx_type * 4.0f + 0.5f), d->fx_amt);
+        fx_config(&d->fx, (int)d->fx_type, d->fx_amt);
     }
     /* Unknown keys ignored (dsp.c owns PK_MODEL/PK_MASTER_VOL/PK_UI_HIER). */
 }
@@ -250,8 +252,8 @@ static void dig_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float s = body * 0.7f + samp * 0.4f;
         s = tpt1_lp(&d->color_lp, s, d->color_g);       /* COLOR output LP */
 
-        /* Post-kick FX (KICK-14): map fx_type 0..1 -> mode 0..4, bounded. */
-        int fx_mode = (int)(d->fx_type * 4.0f + 0.5f);
+        /* Post-kick FX (KICK-14): fx_type is integer 0..4 (Bug #1 fix). */
+        int fx_mode = (int)d->fx_type;
         s = fx_process(fx_mode, s, d->fx_amt, &d->fx);
 
         out_l[n] = out_r[n] = s;
