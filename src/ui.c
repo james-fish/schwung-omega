@@ -102,7 +102,7 @@ static void ui_emit_level(char *buf, int buf_len, int *off,
 
 /* ---- enum option lists (.rodata) ----------------------------------------- */
 static const char OPT_MODEL[] =
-    "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\",\"GEN\"]";
+    "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\"]";
 static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush\"]";
 static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
@@ -121,8 +121,8 @@ static const uiparam_t P_PERF[] = {
     { PK_MASTER_VOL, "MSTR VOL", "MVOL",  UP_FLOAT, "%", "0.01", NULL },
     { PK_DUCK,       "DUCK",     "DUCK",  UP_FLOAT, "%", "0.01", NULL },
     { PK_DUCK_REL,   "DUCK REL", "DKREL", UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK_SMT,   "DUCK SMT", "DKSMT", UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK_BS,    "DUCK BS",  "DKBS",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_SMT,   "DUCK SLEW","SLEW",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_BS,    "DUCK FREQ","FREQ",  UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_FILT,    "DJ FILT",  "DJFLT", UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_RESO,    "DJ RESO",  "DJRES", UP_FLOAT, "%", "0.01", NULL },
     { PK_CLIP,       "CLIP",     "CLIP",  UP_ENUM,  "",  "0",    OPT_ONOFF },
@@ -183,10 +183,9 @@ static const char KN_GROOVE1[] =
     "[\"" PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
     "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
 
-/* Groove Page 2 for the TAPS type (C1-02, GRVX-03): drive, filter, LFO, reverb. */
+/* Groove Page 2 for the TAPS type (C1-02, GRVX-03): drive, LFO, reverb. */
 static const uiparam_t P_GROOVE2_TAPS[] = {
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_FILTYPE, "FILTER",  "FILT",  UP_ENUM,  "",  "0",    OPT_GFILT },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVMIX,   "RV MIX",  "RVMIX", UP_FLOAT, "%", "0.01", NULL },
@@ -195,7 +194,7 @@ static const uiparam_t P_GROOVE2_TAPS[] = {
     { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
 };
 static const char KN_GROOVE2_TAPS[] =
-    "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_FILTYPE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
+    "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
     "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
 
 /* GEN groove type (C1-03, GRVX-04/05), decoupled from MODEL_GEN. Page 1 = the
@@ -217,7 +216,6 @@ static const char KN_GROOVE_GEN1[] =
 static const uiparam_t P_GROOVE_GEN2[] = {
     { PK_GRV_GRETRIG, "RETRIG",  "RETRIG",UP_ENUM,  "",  "0",    OPT_RETRIG },
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_FILTYPE, "FILTER",  "FILT",  UP_ENUM,  "",  "0",    OPT_GFILT },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVMIX,   "RV MIX",  "RVMIX", UP_FLOAT, "%", "0.01", NULL },
@@ -225,7 +223,7 @@ static const uiparam_t P_GROOVE_GEN2[] = {
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_GROOVE_GEN2[] =
-    "[\"" PK_GRV_GRETRIG "\",\"" PK_GRV_DRIVE "\",\"" PK_GRV_FILTYPE "\",\"" PK_GRV_LFOSPD
+    "[\"" PK_GRV_GRETRIG "\",\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD
     "\",\"" PK_GRV_LFOAMT "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\"]";
 
 static const uiparam_t P_GROOVE2[] = {

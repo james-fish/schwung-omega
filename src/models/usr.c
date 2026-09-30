@@ -340,7 +340,7 @@ static int usr_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     w = snprintf(buf + off, (size_t)(buf_len - off),
         "],\"default\":0},"
         "{\"key\":\"" PK_USR_WTMORPH  "\",\"name\":\"WT MORPH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_USR_LAYERVOL "\",\"name\":\"LAYER VOL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_USR_LAYERVOL "\",\"name\":\"BLEND\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"default\":0.5},"
         "{\"key\":\"" PK_USR_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}");
     if (w < 0 || w >= buf_len - off) return 0;
     off += w;

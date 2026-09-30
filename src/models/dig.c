@@ -145,11 +145,10 @@ void dig_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc = 400.0f + v * (18000.0f - 400.0f);
         d->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_DIG_WAVEIDX) == 0) {
-        /* WAVE IDX: pick among the digital-character factory waves. */
-        int span = DIG_WAVE_MAX - DIG_WAVE_MIN;
-        int idx  = DIG_WAVE_MIN + (int)(v * (float)span + 0.5f);
-        d->waveidx = idx < DIG_WAVE_MIN ? DIG_WAVE_MIN
-                   : (idx > DIG_WAVE_MAX ? DIG_WAVE_MAX : idx);
+        /* WAVE IDX: enum 0=Saw,1=Square,2=Digital → wave indices 2/3/4. */
+        int idx = (int)(parse_f(val) + 0.5f);
+        if (idx < 0) idx = 0; if (idx > 2) idx = 2;
+        d->waveidx = DIG_WAVE_MIN + idx;
     } else if (strcmp(key, PK_DIG_SAMPLE) == 0) {
         /* SAMPLE LAYER: the attack-thump mix. */
         d->samp_mix = v;
@@ -269,7 +268,7 @@ static void dig_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int dig_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_DIG_WAVEIDX  "\",\"name\":\"WAVE IDX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_DIG_WAVEIDX  "\",\"name\":\"WAVE IDX\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
         "{\"key\":\"" PK_DIG_SAMPLE   "\",\"name\":\"SAMPLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_DIG_BITDEPTH "\",\"name\":\"BIT DEPTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_DIG_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";

@@ -378,8 +378,10 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_LENGTH) == 0) {
         groove_set_length(g, v);
     } else if (strcmp(key, PK_GRV_COLOR) == 0) {
-        float fc = 200.0f + v * (18000.0f - 200.0f);
+        /* 30 Hz..20 kHz log sweep; always-LP (type selector removed in E2). */
+        float fc = 30.0f * powf(20000.0f / 30.0f, v);
         g->color_g = tpt_g_from_hz(fc);
+        g->filter_type = GRV_FILT_LP;
     } else if (strcmp(key, PK_GRV_TAP1) == 0) {
         g->tap_level[0] = v;
     } else if (strcmp(key, PK_GRV_TAP2) == 0) {
@@ -411,8 +413,9 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         /* Reserved: type scales comb tunings (Room/Hall/Plate). Stored via the
          * cache; current tunings are fixed — a musical default across types. */
     } else if (strcmp(key, PK_GRV_GSCALE) == 0) {
-        g->gen_scale = (int)(v * 3.99f);            /* 0..3 scale index */
-        if (g->gen_scale < 0) g->gen_scale = 0; if (g->gen_scale > 3) g->gen_scale = 3;
+        /* enum 0..3: bypass the 0..1 clamp at top of function */
+        int idx = (int)(parse_f(val) + 0.5f);
+        g->gen_scale = idx < 0 ? 0 : (idx > 3 ? 3 : idx);
     } else if (strcmp(key, PK_GRV_GSEED) == 0) {
         g->gen_seed_raw = (unsigned)(v * 65535.0f);
         groove_gen_rebuild(g);
@@ -429,8 +432,9 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_GSWING) == 0) {
         g->gen_swing = v;
     } else if (strcmp(key, PK_GRV_GWAVE) == 0) {
-        g->gen_wave = (int)(v * 5.99f);             /* 0..5 factory waves */
-        if (g->gen_wave < 0) g->gen_wave = 0; if (g->gen_wave > 5) g->gen_wave = 5;
+        /* enum 0..5: bypass the 0..1 clamp at top of function */
+        int idx = (int)(parse_f(val) + 0.5f);
+        g->gen_wave = idx < 0 ? 0 : (idx >= NUM_WAVES ? NUM_WAVES - 1 : idx);
     } else if (strcmp(key, PK_GRV_GFOLD) == 0) {
         g->gen_fold = v;
     } else if (strcmp(key, PK_GRV_GRETRIG) == 0) {

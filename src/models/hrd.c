@@ -158,13 +158,11 @@ void hrd_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc = 300.0f + v * (18000.0f - 300.0f);
         h->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_HRD_SAMPLE) == 0) {
-        /* SAMPLE LAYER: selects the factory wave feeding BOTH the body and the
-         * punchy sample layer (aggressive/bright end of the factory set). */
-        int span = HRD_WAVE_MAX - HRD_WAVE_MIN;
-        int idx  = HRD_WAVE_MIN + (int)(v * (float)span + 0.5f);
-        idx = idx < HRD_WAVE_MIN ? HRD_WAVE_MIN : (idx > HRD_WAVE_MAX ? HRD_WAVE_MAX : idx);
-        h->body_wave = idx;
-        h->samp_wave = idx;
+        /* SAMPLE LAYER: enum 0=Saw,1=Square,2=Digital → wave indices 2/3/4. */
+        int idx = (int)(parse_f(val) + 0.5f);
+        if (idx < 0) idx = 0; if (idx > 2) idx = 2;
+        h->body_wave = HRD_WAVE_MIN + idx;
+        h->samp_wave = h->body_wave;
     } else if (strcmp(key, PK_HRD_MIX) == 0) {
         /* MIX: sample-layer blend under the body (default ~0.3). */
         h->samp_mix = v;
@@ -294,7 +292,7 @@ static void hrd_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int hrd_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_HRD_SAMPLE "\",\"name\":\"SAMPLE LAYER\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_HRD_SAMPLE "\",\"name\":\"SAMPLE LAYER\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
         "{\"key\":\"" PK_HRD_MIX    "\",\"name\":\"MIX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_HRD_DRIVE  "\",\"name\":\"DRIVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_HRD_CRUSH  "\",\"name\":\"CRUSH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";

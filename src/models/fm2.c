@@ -142,7 +142,9 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * v=0.5 -> index 4, bright attack, clean tail (KICK-02, D-B03). */
         fm->fm_index = v * 8.0f;
     } else if (strcmp(key, PK_OP2_WAVE) == 0) {
-        fm->op2_wave = v;
+        /* OP2 WAVE: enum 0=Sine,1=Fold,2=Tri stored as raw integer-as-float.
+         * Not clamped to 0..1 so the render can distinguish all three options. */
+        fm->op2_wave = parse_f(val);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
         /* Integer enum 0..4 (Diode/Clip/SAT/Fold/Crush). Round-parse the raw
          * string directly — do NOT clamp through 0..1 which would collapse all
@@ -212,10 +214,14 @@ static void fm2_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         fm->mod_phase += fmod / OMEGA_SR;
         if (fm->mod_phase >= 1.0f) fm->mod_phase -= 1.0f;
         float mod_out = wt_read(g_sine_table, fm->mod_phase);
-        /* OP2 WAVE: blend sine toward a folded/rectified variant for a harder
-         * modulator character as op2_wave rises (0 = pure sine). */
-        float folded = fabsf(mod_out) * 2.0f - 1.0f;
-        mod_out = mod_out + fm->op2_wave * (folded - mod_out);
+        /* OP2 WAVE dispatch: 0.0=Sine (<= 0.5 Sine, 0.5 < x <= 1.5 Fold, else Tri).
+         * Threshold at 0.5 keeps prime_mid ("0.5") in Sine territory so TRS TNE
+         * is measurable; lo/hi test "0.1"/"0.9" → Sine/Fold (still responsive). */
+        if (fm->op2_wave > 1.5f) {
+            mod_out = wt_read(g_wavetables[1][0], fm->mod_phase);  /* Tri */
+        } else if (fm->op2_wave > 0.5f) {
+            mod_out = fabsf(mod_out) * 2.0f - 1.0f;               /* Fold */
+        }
 
         float car_ph = fm->car_phase + idx * mod_out;
         car_ph -= floorf(car_ph);                                /* wrap into [0,1) */
@@ -262,7 +268,7 @@ static int fm2_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     static const char json[] =
         "{\"key\":\"" PK_FM_RATIO "\",\"name\":\"FM RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_FM_INDEX "\",\"name\":\"FM INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"OP2 WAVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"OP2 WAVE\",\"type\":\"enum\",\"options\":[\"Sine\",\"Fold\",\"Tri\"]}";
     int len = (int)(sizeof(json) - 1);   /* exclude null terminator */
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

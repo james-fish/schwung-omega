@@ -182,8 +182,8 @@ void fm4_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc = 200.0f + v * (18000.0f - 200.0f);
         f->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_FM4_ALGO) == 0) {
-        /* ALGORITHM: quantize v -> [0,3] routing-table index. */
-        int a = (int)(v * (float)(FM4_NALGO - 1) + 0.5f);
+        /* ALGORITHM: enum index 0..3; parse raw string to avoid 0..1 clamp. */
+        int a = (int)(parse_f(val) + 0.5f);
         f->algo = a < 0 ? 0 : (a >= FM4_NALGO ? FM4_NALGO - 1 : a);
     } else if (strcmp(key, PK_FM4_OPRATIO) == 0) {
         f->op_ratio_spread = v;
@@ -354,7 +354,7 @@ static void fm4_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int fm4_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_FM4_ALGO     "\",\"name\":\"ALGORITHM\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_FM4_ALGO     "\",\"name\":\"ALGORITHM\",\"type\":\"enum\",\"options\":[\"Chain\",\"Stacks\",\"Bright\",\"Hollow\"]},"
         "{\"key\":\"" PK_FM4_OPRATIO  "\",\"name\":\"OP RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_FM4_OPINDEX  "\",\"name\":\"OP INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
         "{\"key\":\"" PK_FM4_OPAMP    "\",\"name\":\"OP AMP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
