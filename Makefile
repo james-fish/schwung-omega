@@ -103,8 +103,18 @@ SAMPLES_TEST_SRCS = tests/test_samples.c tests/mock_host.c tests/wav.c \
 PERF_TEST_SRCS = tests/test_perf.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
+# TAPS groove redesign acceptance harness (quick 260930-vhr): the 10 DSP-research
+# acceptance gates (clean-copies EQUAL-LEVEL vs RAW kick with the post-groove
+# chain neutralised, equal taps, 30 s drone/pre-reverb stability, constant
+# loudness, no int16-rail abuse, COLOR darkens, no hidden LP, NaN/peak,
+# BPM-click-free) + zero-alloc-in-render. Helpers are COPIED into the TU (the
+# test_groove/test_distinct statics are not header-exported), so test_groove.c
+# and test_distinct.c are NOT in this list.
+TAPS_TEST_SRCS = tests/test_taps_redesign.c tests/mock_host.c tests/wav.c \
+                   tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
+                   $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf fixtures wavetables clean deploy
+.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -143,7 +153,7 @@ dsp.so: | src/wavetables.h
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples test-perf | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -210,6 +220,13 @@ test-perf: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(PERF_TEST_SRCS) -o build/test_perf $(LDLIBS)
 	./build/test_perf
+
+# test-taps-redesign: TAPS groove redesign acceptance harness (quick 260930-vhr).
+# Drives the real plugin; verifies the 10 DSP-research gates + zero-alloc render.
+test-taps-redesign: | src/wavetables.h
+	@mkdir -p build tests/output
+	$(CC) $(TEST_FLAGS) $(TAPS_TEST_SRCS) -o build/test_taps_redesign $(LDLIBS)
+	./build/test_taps_redesign
 
 clean:
 	rm -rf build tests/output
