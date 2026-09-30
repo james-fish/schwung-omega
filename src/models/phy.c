@@ -149,10 +149,15 @@ void phy_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* Page-1 TRS DEC nudges the beater burst length (1..12 ms exp). */
         p->trs_dec_ms = 1.0f * powf(12.0f / 1.0f, v);
     } else if (strcmp(key, PK_TRS_TNE) == 0) {
-        /* Page-1 TRS TNE = beater brightness (LP cutoff on the noise burst),
-         * folded together with BEATER below. Store via a bright LP cutoff. */
-        float fc = 800.0f + v * (12000.0f - 800.0f);
-        p->burst_g = tpt_g_from_hz(fc);
+        /* Page-1 TRS TNE = spectral brightness lever for PHY. It shifts both the
+         * burst LP cutoff (beater click character) AND the output COLOR LP so the
+         * whole sound is darker (low) vs brighter (high). This ensures TRS TNE
+         * is measurably different across its full range via ZCR (not just a
+         * 3 ms burst nudge that would be buried in the long modal ring-down). */
+        float fc_burst = 800.0f + v * (12000.0f - 800.0f);
+        p->burst_g = tpt_g_from_hz(fc_burst);
+        float fc_color = 400.0f + v * (14000.0f - 400.0f);
+        p->color_g = tpt_g_from_hz(fc_color);
     } else if (strcmp(key, PK_COLOR) == 0) {
         /* COLOR opens the output LP (200 Hz .. 16 kHz) — timbre morph. */
         float fc = 200.0f + v * (16000.0f - 200.0f);
@@ -216,11 +221,16 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
     float len_ms = p->length_ms > 0.0f ? p->length_ms : 300.0f;
     env_trigger(&p->amp_env, velf, env_coeff_from_ms(len_ms));
 
-    /* Beater burst: short (BEATER + TRS DEC drive the length). Brighter/harder
-     * beater = SHORTER burst (~1-5 ms); softer = a touch longer. */
-    float trs_ms  = p->trs_dec_ms > 0.0f ? p->trs_dec_ms : 3.0f;
-    float burst_ms = clampf(trs_ms * (1.0f - 0.6f * p->beater), 0.5f, 12.0f);
-    env_trigger(&p->burst_env, velf * (0.4f + 0.6f * p->attack),
+    /* Beater burst: BEATER drives both amplitude and brightness (character).
+     * Hard beater = louder (0.1..0.8 amplitude) + shorter burst (~1-5 ms).
+     * Soft beater = quiet (barely audible click) + slightly longer.
+     * ATTACK is an independent amplitude scalar (0.1..1.0) for the whole burst
+     * level — this is the knob that spans a wide enough range to be measurably
+     * different at lo vs hi over the full RMS render (D-B02). */
+    float trs_ms    = p->trs_dec_ms > 0.0f ? p->trs_dec_ms : 3.0f;
+    float burst_ms  = clampf(trs_ms * (1.0f - 0.6f * p->beater), 0.5f, 12.0f);
+    float beater_amp = 0.1f + 0.7f * p->beater;    /* 0.1..0.8, driven by BEATER */
+    env_trigger(&p->burst_env, velf * beater_amp * p->attack,
                 env_coeff_from_ms(burst_ms));
 
     /* --- Map params -> mode frequencies (Hz) + shared decay --------------- */
@@ -256,11 +266,14 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
     float body2_decay = modal_decay_from_ms(base_ms * 0.3f);
 
     /* Excite the modes (modal_excite additionally clamps freq/decay — Pitfall 5
-     * defense in depth). Head excited at the swept-up start so it settles down;
-     * amplitudes: head dominant, body modes progressively quieter. */
-    modal_excite(&p->head,  head_start, head_decay,  velf * 0.9f);
-    modal_excite(&p->body1, body1_f,    body1_decay, velf * 0.5f);
-    modal_excite(&p->body2, body2_f,    body2_decay, velf * 0.25f);
+     * defense in depth). Head excited at the swept-up start so it settles down.
+     * Mode amplitudes scale with BEATER (0.3+0.7*beater): a harder beater excites
+     * the resonant body more strongly, making BEATER audible across the full decay
+     * (not just the short burst transient). Head dominant, body modes quieter. */
+    float mode_amp = 0.3f + 0.7f * p->beater;   /* 0.30..1.0 — beater excitation strength */
+    modal_excite(&p->head,  head_start, head_decay,  velf * 0.9f  * mode_amp);
+    modal_excite(&p->body1, body1_f,    body1_decay, velf * 0.5f  * mode_amp);
+    modal_excite(&p->body2, body2_f,    body2_decay, velf * 0.25f * mode_amp);
 
     /* Reseed the beater noise so it is never silent after a zeroing model switch
      * (memset zeroes exc.rng.s; xorshift of 0 stays 0 -> silence). A fixed seed

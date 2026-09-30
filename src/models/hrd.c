@@ -169,19 +169,22 @@ void hrd_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* MIX: sample-layer blend under the body (default ~0.3). */
         h->samp_mix = v;
     } else if (strcmp(key, PK_HRD_DRIVE) == 0) {
-        /* DRIVE: reuse the shared FX SAT/Fold at high amt. Low/mid DRIVE = SAT
-         * (warm grit); past ~0.6 push into Fold for a harder industrial edge.
+        /* DRIVE: reuse the shared FX SAT/Fold at high amt. Low DRIVE (<=0.3) = SAT
+         * (warm grit); past 30% push into Fold for a harder industrial edge so
+         * fold character is audible early in the knob sweep (not buried until 0.6).
          * Reconfigure the DRIVE fx_state at CONTROL rate (its Crush powf, if any,
          * runs here — Fold/SAT themselves are transcendental-free in render). */
         h->drive_amt  = v;
-        h->drive_mode = (v > 0.6f) ? FX_FOLD : FX_SAT;
+        h->drive_mode = (v > 0.3f) ? FX_FOLD : FX_SAT;
         fx_config(&h->drive_fx, h->drive_mode, h->drive_amt);
     } else if (strcmp(key, PK_HRD_CRUSH) == 0) {
         /* CRUSH: aggressive bit reduction (default low-to-off). Higher knob =
-         * FEWER bits = more crush. Map v -> bits in [16,4]: v=0 -> 16 bits
-         * (clean/off), v=1 -> 4 bits (heavily crushed). Precompute the level
-         * count so crush() per sample is a bounded round (no per-sample powf). */
-        float bits = 16.0f - v * (16.0f - 4.0f);
+         * FEWER bits = more crush. Map v -> bits in [16,2]: v=0 -> 16-bit (clean),
+         * v=1 -> 2-bit (extreme crush, 4 quantization levels). Extended from the
+         * old [16,4] range so mid-knob (v=0.5 -> 9-bit) is already audible and
+         * max crush is truly extreme. Precompute level count; crush() is a
+         * bounded round per sample (no per-sample powf). */
+        float bits = 16.0f - v * (16.0f - 2.0f);   /* v=0: 16-bit (clean), v=1: 2-bit (extreme) */
         h->crush_levels = bits_to_levels(bits);
     } else if (strcmp(key, PK_FX_TYPE) == 0) {
         h->fx_type = (float)(int)(parse_f(val) + 0.5f);
