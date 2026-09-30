@@ -150,6 +150,75 @@
 
 ---
 
+## Milestone: v1.2 On-Device Fixes
+
+**Goal:** Fix every audio defect and UI bug found in the first full on-device test of v1.1. All broken FX modes work, ducking is audible, TAPS sounds musical, discrete controls show correct UI, GEN groove has a full scale/root/range set, and all voicing defaults land in a musical sweet spot.
+**Authoritative brief:** `.planning/ONDEVICE_FEEDBACK_v1_1.md`
+**Granularity:** standard (4 phases)
+
+### Phases (v1.2)
+
+- [ ] **Phase E1: Critical Audio Fixes** - Fix everything that is broken or silent: FX chain (4 broken modes), ducking, TAPS bit-crush/gain, FM2 attack/transient, PHY curve inversion, DIG bit-depth range, soft clipper
+- [ ] **Phase E2: Discrete Controls & UI Cleanup** - Convert all disguised-continuous controls to proper list pickers/enum selectors: FM4 ALG, FM2 OP WAVE (+ draw waveform), HRD sample layer, DIG wave index; fix GEN wave audio (square/saw broken); convert TAPS+GEN filters to continuous LP sweep; remove GEN from kick model list; relabel opaque performer controls; rename USR blend
+- [ ] **Phase E3: GEN Groove Enhancements** - Add 8+ more scales (Dorian, Phrygian, Mixolydian, Hirajoshi, Hungarian, Whole Tone, Blues, Diminished); add root note selector (scale mode C-3→C3) + unquantized mode with root pitch; add seq range control; rework GEN groove page 1 layout (SCALE/ROOT/RANGE/RETRIG replacing taps controls); rename+align gen tone page to match TAPS effects layout
+- [ ] **Phase E4: Voicing Defaults & Curve Polish** - Default pitch 50 Hz all models, length 50%, FM4 op defaults ~0.1; fix CURVE to be more aggressive earlier; fix PHY HEAD TENS direction; fix TRS wavetable color second half; improve ANA wave morph audibility; add DUCK CURVE parameter
+
+### Phase Details (v1.2)
+
+### Phase E1: Critical Audio Fixes
+**Goal:** Every audio control that was broken or silent in v1.1 on-device testing now works: all 5 FX modes are audibly distinct, ducking triggers and attenuates the signal, TAPS sounds like a musical rumble at usable levels, FM2 ATTACK/TRS TNE shape the sound, PHY CURVE works in the right direction, DIG BIT DEPTH crushes across the full range, soft clipper is retested and either fixed or disabled by default.
+**Depends on:** Phase D (full chain exists)
+**Bugs addressed:** #1 (FX chain), #2 (FM2 attack/trs), #3 (TAPS), #4 (duck), #5 (PHY curve), #6 (DIG bit depth), #7 (HRD drive/crush), #17 (soft clip), #33 (duck+clip)
+**Success Criteria:**
+  1. Clip, SAT, Fold, and Crush all sound audibly different from each other and from Diode — FX type selector routes to correct DSP for all 5 modes
+  2. DUCK attenuates the groove signal on every kick MIDI note-on; DUCK REL and DUCK amount are audible
+  3. TAPS sounds like a resonant multi-tap rumble at default VOL (no extra drive needed to level-match the kick)
+  4. FM2 ATTACK shapes the attack transient; TRS TNE shapes transient tone — both audibly affect output
+  5. PHY CURVE modulates pitch in a musical direction (not blowing up to high pitch at >25%); HEAD TENS adjusts tuning without screaming
+  6. DIG BIT DEPTH crushes audibly across the 0–1 range (not just 0–0.1)
+  7. Soft clipper tested: either fixed to sound good or its default is OFF
+**Plans**: 3 plans (E1-01..E1-03)
+Plans:
+- [ ] E1-01-PLAN.md — Fix FX type dispatch in all 9 model files (Bug #1)
+- [ ] E1-02-PLAN.md — Fix PHY CURVE, DIG BIT DEPTH direction, HRD DRIVE/CRUSH (Bugs #5, #6, #7)
+- [ ] E1-03-PLAN.md — Fix TAPS tap gain and soft clip + HRD CRUSH defaults (Bugs #3, #17)
+
+### Phase E2: Discrete Controls & UI Cleanup
+**Goal:** Every control that selects from a fixed set of options renders as a list picker or enum selector — never a bare continuous knob. All wave selectors draw the waveform. GEN wave audio matches the displayed waveform. TAPS and GEN use a single continuous LP filter knob. The kick model list no longer includes GEN.
+**Depends on:** Phase B1 (enum/list-picker infrastructure), Phase E1 (audio working)
+**Bugs addressed:** #8 (FM4 ALG), #9 (FM2 OP WAVE), #10 (HRD sample), #11 (DIG wave index), #12 (GEN wave audio), #13 (GEN in kick list), #14 (TAPS+GEN filters), #15 (USR blend), #16 (performer labels)
+**Success Criteria:**
+  1. FM4 ALGORITHM is a discrete selector with named options (ALG1–ALGn); FM2 OP WAVE is a discrete selector that draws the selected waveform on the OLED
+  2. HRD sample layer and DIG wave index are list pickers matching the USR sample-select model
+  3. GEN sequencer wave audio matches the displayed shape: square is square, saw is saw (not both triangle)
+  4. TAPS and GEN each have a single continuous LP FILTER knob (log curve 30 Hz–20 kHz); filter type selector is gone
+  5. GEN is absent from the kick model list; TAPS + GEN filter renaming + USR blend label + performer duck labels are all updated
+
+### Phase E3: GEN Groove Enhancements
+**Goal:** GEN groove has a rich, musical scale system with 12+ options including unquantized, a root note/pitch selector, and a range control. The GEN groove page 1 shows sequence controls (not stale TAPS controls). Both groove effect pages are consistently laid out and identically named.
+**Depends on:** Phase C1 (GEN groove engine), Phase E2 (discrete selector infrastructure in place)
+**Features addressed:** #18–24
+**Success Criteria:**
+  1. Scale list includes at minimum: Unquantized, Chromatic, Major, Minor, Pentatonic, Dorian, Phrygian, Mixolydian, Hirajoshi, Hungarian, Whole Tone, Blues, Diminished (13 options)
+  2. When a scale is selected, ROOT NOTE selector covers C-3 to C3 (7 octaves × 12 = 84 choices or a continuous int control)
+  3. When scale = Unquantized, the ROOT NOTE control becomes ROOT PITCH (Hz); RANGE control sets the semitone span of the generated sequence
+  4. GEN groove page 1 shows: SCALE, ROOT (note or pitch), RANGE, RETRIG — TAPS controls (LENGTH/COLOR/TAP1–4) are hidden
+  5. Both groove effect pages (TAPS and GEN) are named "Groove Effects" and share the same control layout (positions match)
+
+### Phase E4: Voicing Defaults & Curve Polish
+**Goal:** Every model loads into a musical starting point at 50 Hz / 50% length. CURVE does expressive work across a wider range. FM4 ops default to gentle values. PHY and TRS upper ranges are usable. ANA wave morph is audible. A DUCK CURVE parameter is added to the performer page.
+**Depends on:** Phase E1 (audio working correctly before fine-tuning)
+**Issues addressed:** #25–32
+**Success Criteria:**
+  1. Default PITCH = 50 Hz and default LENGTH = 50% for all models (or as close as the DSP range allows)
+  2. FM4 OP RATIO, OP INDEX, OP AMP, FEEDBACK all default to ~0.1 normalized (7–8 o'clock on the dial)
+  3. CURVE response is more aggressive: meaningful pitch sweep is audible across 0–100%, not just 75–100%
+  4. PHY HEAD TENS direction is corrected; CURVE does not cause pitch explosion in the upper range
+  5. TRS WAVETABLE COLOR upper 50% has a usable tone character (not just aggressive buzz); ANA WAVE MORPH is audible across a wider parameter range
+  6. Performer page has a DUCK CURVE parameter that shapes the duck envelope (linear vs exponential)
+
+---
+
 ## Future Phases (not in v1.1)
 
 These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1.1.
@@ -191,7 +260,16 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 | C1. Groove Redesign | 3/3 | Complete (GRVX-01..05; native GREEN, on-device pending) | 2026-09-30 |
 | D. Performer Chain | 1/1 | Complete (PERF-01..05; native GREEN, on-device CPU pending) | 2026-09-30 |
 
-### Future (post-v1.1)
+### v1.2 On-Device Fixes
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| E1. Critical Audio Fixes | 0/3 | Planned | — |
+| E2. Discrete Controls & UI Cleanup | 0/? | Not started | — |
+| E3. GEN Groove Enhancements | 0/? | Not started | — |
+| E4. Voicing Defaults & Curve Polish | 0/? | Not started | — |
+
+### Future (post-v1.2)
 
 | Phase | Status |
 |-------|--------|
@@ -222,3 +300,4 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 ---
 *Roadmap created: 2026-09-28*
 *v1.1 Refinement section added: 2026-09-30*
+*v1.2 E1 plans added: 2026-09-30*
