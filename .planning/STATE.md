@@ -2,11 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refinement
-status: milestone_complete
-stopped_at: v1.1 Refinement COMPLETE — all 5 phases (B1/B2/B3/C1/D) coded + native tests GREEN (11 harnesses). Commit df781b6 (Phase D). Remaining = ON-DEVICE verification only (voicing audit docs/VOICING_AUDIT_v1_1.md, groove/perf audition, CPU measure, SD path confirm) + deferred polish (TRS transient-source redesign, FILTER ROUTE syn/trans split). Deploy: Docker `make dsp.so` -> scripts/glibc_gate.sh -> scripts/deploy.sh.
-last_updated: "2026-09-30T05:00:00.000Z"
+status: executing
+stopped_at: "Completed E1-01-PLAN.md (FX type dispatch fix; 10 models corrected; Bug #1 resolved; make test GREEN)"
+last_updated: "2026-09-30T09:51:13.552Z"
+last_activity: 2026-09-30
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -24,16 +25,16 @@ progress:
 
 **What it is:** A native C Schwung module for Ableton Move — a multi-engine kick synthesizer (10 models) + 4-tap groove rumble generator + live performer mixer, in a single `dsp.so` loadable in Schwung slots, DR32 pads, and Movy tracks.
 
-**Current focus:** Milestone v1.1 Refinement — UX/audio defect fixes + reworked design before Performer chain
+**Current focus:** Phase E1 — Critical Audio Fixes
 
 ---
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-**Status:** Defining requirements
-**Last activity:** 2026-09-29 — Milestone v1.1 Refinement started (see `.planning/REFINEMENT-FEEDBACK.md`)
+Phase: E1 (Critical Audio Fixes) — EXECUTING
+Plan: 2 of 3
+**Status:** Ready to execute
+**Last activity:** 2026-09-30
 
 ```
 v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
@@ -70,6 +71,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 | Phase C-groove-rumble-engine P01 | 4min | 2 tasks | 4 files |
 | Phase C-groove-rumble-engine P02 | 6min | 3 tasks | 5 files |
 | Phase C-groove-rumble-engine P03 | 7min | 3 tasks | 7 files |
+| Phase E1-critical-audio-fixes P01 | 4min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -81,7 +83,6 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 - **[B2] Kick voicing + page reorg (VOICE-01..06)** — Page reorg: model-unique params moved to Kick Page 1 (PITCH/LENGTH/CURVE + spliced `p2_slot_desc` interior, with dynamic knob keys extracted from the interior via `ui_emit_interior_keys`); Kick Page 2 is now a STATIC shared set (ATTACK/TRS DEC/TRS TNE/FILTER/FILT RTE/FX TYPE/FX AMT/FX TONE). SUSTAIN dropped from UI (merged into LENGTH). FM4 6→5 (ALGO2 merged away, still handled in set_param, defaulted via cache). New shared keys PK_FX_TONE + PK_FILTER_ROUTE added to cache (PKI_COUNT 53→55, OMEGA_PKI_COUNT bumped). PITCH is now a DIRECT Hz control [30,200] default 50 via shared `omega_pitch_hz(val)` (bypasses the models' 0..1 clamp); every model's PITCH branch + sweep refactored (perl) to `omega_pitch_hz` + `omega_sweep_hz(f0,curve)= f0*(1.5+curve*7) cap 1000` (stronger CURVE than old 2+curve*4 cap 480). PHY decoupled: PITCH sets head-mode base Hz (new `pitch_hz` field), HEAD TENS only detunes ±25% (fixes "PHY won't go low / HEAD TENS only goes up" — they used to both write head_tens). FX TONE = central post-kick one-pole tilt in dsp.c (neutral at 0.5, lows preserved). Per-model default tuning in g_kick_defaults (model-unique keys): FM2 ratio 0.22/index 0.30 (kill shrill), WTR wave 0.6/bodypitch 0.7 (more body), ANA sublvl 0.7 + sub weighted 0.95 in mix (audible 808 boom). USR WT MORPH fallback now crossfades adjacent waves (was discrete jumps). FILTER ROUTE exposed, default Both (= current whole-voice COLOR); syn/trans split + TRS transient-source redesign DEFERRED to on-device follow-up (docs/VOICING_AUDIT_v1_1.md). Test-domain fixes: all harnesses that set PITCH updated to Hz values; test_params battery sweeps PITCH 40/160. Full suite GREEN. Commits 979ed8b, e1c2df1, 5fbce42.
 - **[B1-02] Metadata-driven ui_hierarchy + drive auto-gain (UIX-02/03/05/06)** — Rewrote `src/ui.c` from static string fragments to a metadata-driven emitter: every param now carries `type`/`short_name`/`min`/`max`/`default`/`step`/`unit`, and discrete params (MODEL, FX TYPE, groove MONO, GEN LPF POLE) render as `type:"enum"` with an `options` array (matches reference module.json). Defaults are pulled from the params.c tables via `ui_default_for` (key→index→g_*_defaults) so schema defaults never drift from the value cache. Numbers formatted with `pk_format_value` (locale-independent, never libc %f); fixed parts via `snprintf` %s/%d (locale-safe). Kick Page 2 still splices the model's `p2_slot_desc` interior between prefix and the FX suffix; groove2 still GEN-only. Real-domain units (PITCH in Hz etc.) deferred to B2 where the model set_param domains change. UIX-06: added `fx_state_t.out_gain` — a control-rate makeup attenuation `1/(1+amt*comp[mode])` (Clip .6/Fold .8/Diode .4/SAT .2/Crush 0) computed in `fx_config`, applied to the drive modes in `fx_process` (guarded so out_gain==0 pre-config is transparent), so raising drive changes character not level; amt=0 stays transparent. test_readback extended to assert enum/options/default/short_name/unit/step present; full suite GREEN. Commit 0500b6a.
 - **[B1-01] Central raw-value param cache — get_param readback + per-model memory (UIX-01/04)** — Root cause of "every knob/model-box/vol shows 0, resets on model switch": `omega_get_param` answered only `ui_hierarchy` (−1 for all keys) while the host reads back per-key values (`ui_chain.js:37-40`); models store DERIVED values (Hz/ms/coeffs) not the raw normalized value, so there was nothing to echo, and model switch did `memset+reprime-to-0.5` losing state. Fix: new `src/params.{c,h}` — a per-model `kick_cache[MODEL_COUNT][PKI_COUNT=53]` + global `global_cache[GKI_COUNT=10]` on `bohm_instance` (single calloc, ~2.7 KB, size assert holds), key↔index tables, defaults tables, and a locale-independent `pk_format_value` (no libc `%f`). `omega_set_param` records the raw value into the right cache before dispatch; `omega_get_param` formats it back; a NEW `omega_prime_model` replays a model's cached row (seeded to defaults in create) into freshly-zeroed `model_state` on create AND on switch, restoring both sound and knob positions. `OMEGA_PKI_COUNT/GKI_COUNT` macros in omega.h size the arrays without pulling params.h into the header; `_Static_assert` binds them to the enum counts. Host ABI untouched. New `tests/test_readback.c` (set→get echo, create defaults=musical-not-0, per-model memory FM2=0.1/FM4=0.9 across switches, global round-trip, unknown-key −1, formatter) wired into `make test`; full suite GREEN (8 harnesses). Commit c75c546.
-
 
 - **[C-03] GEN wired to the transport clock + Groove Page 2 GREEN (GRV-04)** — gen.c sources its self-clock step interval from `inst->groove.samples_per_16th` (C-02's tempo clock); `GEN_STEP_FRAMES` is demoted to a `< 1` guarded last-resort fallback (the GEN analogue of the DC-02 hardcoded-BPM bug — grep confirms it is never a live reload, only the `#define` + two fallback guards). Runtime `g->seq_len` (SEQ LEN, 1..16) replaces the fixed `GEN_SEQ_LEN`; the step wrap (`% seq_len`), Euclidean gate, and DENSITY->npulses all use it (npulses stays proportional across SEQ LEN changes). Sub-bass LPF cascade (DC-06): `tpt1_lp` stage 1 always + stage 2 iff `lpf_pole` (2 vs 4-pole), `tanf` cutoff at control rate, both states reset on trigger, so `gen_render` stays transcendental-free. `gen_p2_slot_desc` now returns 0 (empty Kick Page 2 interior) so ALL six controls (SEED/SCALE/SEQ LEN/LPF FREQ/LPF POLE/DENSITY) live on the conditional Groove Page 2 — resolving C-RESEARCH Open Q2 toward the REQUIREMENTS GRV-04 layout (GEN's Kick Page 2 is FX-only). dsp.c runs `groove_update_tempo` UNCONDITIONALLY (feeds GEN its `samples_per_16th`) but gates the kick-fed multitap sum on `inst->model != MODEL_GEN` (GEN's own output IS the rumble, DC-05). ui.c adds `UI_GROOVE1` (always) + `UI_GROOVE2` (iff `inst->model == MODEL_GEN`) as `.rodata` levels with a LEADING-comma/NO-trailing-comma discipline so the levels map closes brace-balanced with no dangling comma before `UI_CLOSE` whether or not groove2 is present. Three `PK_GEN_*` macros (SEQLEN/LPFFREQ/LPFPOLE) added; LOCKED host ABI structs/asserts untouched; `gen_state` still fits `model_state`. **DEVIATION (Rule 1):** transport-clock determinism asserted with FRESH instances + a 40-block settle phase before trigger — the groove tempo EMA (`bpm_smooth`/`prev_beat`) is per-instance state that only re-locks `samples_per_16th` when BPM drifts >0.5, so the plan's reuse-one-instance render would diverge legitimately; per-voice-from-reset determinism matches C-02's fresh-instance BPM sweep. `make test` fully GREEN: test_switch groove2 gating (present iff GEN, groove1 always, six GRV-04 keys, hierarchy balanced) + GEN 0-interior guard, test_gen byte-identical @128 BPM + SEQ LEN 1-vs-16 differ, test_groove GEN 120-vs-174 differ (min-energy guarded so it can't pass trivially silent) + LPF POLE 2-pole 0.4708 vs 4-pole 0.4686 (4-pole never louder); no regressions. GRV-04 delivered → Phase C 5/5 requirements complete. Commits 5df02a9, 7fcb2ba, 2e68f21.
 - **[C-02] Groove rumble voice GREEN (GRV-01/02/03/05)** — `groove_state_t` (two 131072-float delay rings + tempo clock + Page-1 params + COLOR LP) placed BY VALUE on `bohm_instance` inside the single calloc (DC-01/DC-08); instance-size `_Static_assert` raised 800000->1300000 (true `sizeof` 1,237,376 B). `groove_update_tempo` derives BPM ONLY from the guarded transport chain (beat-delta from `get_beat_position` -> `get_bpm` sanity-clamped -> last-resort 120), EMA-smooths jitter, and re-locks `samples_per_16th=(60/bpm)*SR/4` at control rate ONLY when BPM moves >0.5 — the reference hardcoded-120 tap-interval bug is provably absent (`! grep '* 0.125f'`). `groove_tick` writes the kick into the ring and reads 4 taps at `(t+1)*spq` behind the write head with branch-free `& GRV_DELAY_MASK` (never `%`), applies `tpt1_lp` COLOR (never a biquad, DC-06), `0.5*(gl+gr)` MONO force-sum (GRV-05), and VOL — transcendental-free per sample (powf/tanf are control-rate in `groove_set_param`). Include cycle (`groove.h`->`dsp_primitives.h`->`omega.h`) resolved by defining `groove_state_t` fully in `groove.h` with the TPT COLOR state as bare floats (`color_lp_l_s/r_s`) so `groove.h` needs only `<stdbool.h>`; `groove.c` wraps them in `tpt1_t` views. `dsp.c` sums kick+groove (`l[n]+=gl; r[n]+=gr`) behind a labeled `PHASE D INSERTION POINT` with NO premature clamp (bounded only at `omega_to_i16`), `groove_init` seeds the clock in create, and `is_groove_key` routes the 8 `grv_*` keys to `groove_set_param` before the model vtable. **DEVIATION (Rule 1):** groove VOL defaults to 0 (not the planned 0.7) — the sum into every model at 0.7 diluted FM2 `trs_tne` below `test_params`' responsiveness threshold; VOL is now a silent opt-in voice with tap/COLOR seeded to middles. Host ABI +120/+56 untouched. `make test` fully GREEN (test_groove spq 5513/5168/3802 distinct + fallback + tap-energy + 7/7 responsive + MONO L==R; no regressions). Commits 5942f7b, 44b6ce4, 1b40e36, 54e0b4b.
@@ -156,7 +157,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 
 **Next action:** Phase C is code-complete (3/3 plans; GRV-01/02/03/04/05 all GREEN offline) — run `/gsd:verify-work` for Phase C, then proceed to Phase D (performer mixer: sidechain duck + DJ filter + soft clip at the labeled `PHASE D INSERTION POINT` in dsp.c). (B-09 on-device voicing audit + A-04 runbooks remain outstanding hardware UAT debt, tracked in Blockers — not a code blocker.)
 
-**Stopped at:** Completed C-03-PLAN.md (GEN transport clock + Groove Page 2; GRV-04 delivered; Phase C 3/3 plans coded)
+**Stopped at:** Completed E1-01-PLAN.md (FX type dispatch fix; 10 models corrected; Bug #1 resolved; make test GREEN)
 
 **Recent activity:**
 

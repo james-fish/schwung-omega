@@ -179,7 +179,7 @@
   7. Soft clipper tested: either fixed to sound good or its default is OFF
 **Plans**: 3 plans (E1-01..E1-03)
 Plans:
-- [ ] E1-01-PLAN.md — Fix FX type dispatch in all 9 model files (Bug #1)
+- [x] E1-01-PLAN.md — Fix FX type dispatch in all 9 model files (Bug #1)
 - [ ] E1-02-PLAN.md — Fix PHY CURVE, DIG BIT DEPTH direction, HRD DRIVE/CRUSH (Bugs #5, #6, #7)
 - [ ] E1-03-PLAN.md — Fix TAPS tap gain and soft clip + HRD CRUSH defaults (Bugs #3, #17)
 
@@ -264,7 +264,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| E1. Critical Audio Fixes | 0/3 | Planned | — |
+| E1. Critical Audio Fixes | 1/3 | In Progress|  |
 | E2. Discrete Controls & UI Cleanup | 0/? | Not started | — |
 | E3. GEN Groove Enhancements | 0/? | Not started | — |
 | E4. Voicing Defaults & Curve Polish | 0/? | Not started | — |
