@@ -297,6 +297,16 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 
 **v1.0 requirements** remain mapped as originally: FNDTN/KICK/GRV → Phases A/B/C (complete); UI/PRST → Phases E/F/G (FUTURE).
 
+### Phase 1: Rumble/FX Routing Redesign + GEN Filter & Pitch Fixes
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 0
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 1 to break down)
+
 ---
 *Roadmap created: 2026-09-28*
 *v1.1 Refinement section added: 2026-09-30*

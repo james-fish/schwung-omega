@@ -77,6 +77,10 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 1 added (2026-10-01): Rumble/FX Routing Redesign + GEN Filter & Pitch Fixes — redesign TAPS "smeared" rumble from first principles (remove C1's bit-crushed resonant feedback loop; delay-tap ghost-kick + 16th shaper envelopes, LENGTH=decay), add selectable groove FX routing order, fix suspected feedback-driven CPU crackle; add GEN LP sweep filter + fix GEN unquantized root-pitch-in-Hz. Driven by on-device listening feedback after v1.1 completion.
+
 ### Key Decisions
 
 - **[D] Performer chain (PERF-01..05)** — Full `kick → groove → duck → DJ filter → soft clip → int16` signal path in dsp.c render, all coefficients precomputed at control rate in `perf_config` (the only expf/tanf/powf; render chain is transcendental-free). SIDECHAIN DUCK (PERF-01/02): kick note-on sets `duck_env=1` (in on_midi, event-triggered not amplitude), recovers over DUCK REL (10..500 ms exp coef); the smoothed gain (DUCK SMT one-pole slew) attenuates the groove LOWS below the DUCK BS crossover (one-pole split — kick punches, rumble pumps). DJ FILTER (PERF-03): TPT state-variable filter (Zavalishin), one knob bidirectional LP(<0.48)/neutral(bypass)/HP(>0.52) with exp cutoff sweep + resonance k=2-1.7*reso, coeffs `dj_g/dj_k/dj_a0`; per-sample loop is ~8 mults. SOFT CLIP (PERF-04): `y=x/(1+|x|)` toggled by CLIP, applied post master-vol before the FNDTN-07 int16 clamp. Performer keys are global cache (GKI 28→35); `is_perf_key` routes them to `perf_config`. New `perf1` UI level (MSTR VOL/DUCK/DUCK REL/DUCK SMT/DUCK BS/DJ FILT/DJ RESO/CLIP enum) always present. test_perf.c: DJ LP/HP/neutral distinct+bounded, DUCK responsive, clip bounds+toggles, page+readback. On-device CPU measurement is the only PERF-05 item left. Full suite GREEN (11 harnesses). Commit df781b6.
