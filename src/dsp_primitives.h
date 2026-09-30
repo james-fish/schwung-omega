@@ -26,7 +26,9 @@
 #define BANDS       1
 #define WT_LEN      2048            /* single-cycle length */
 #define WT_GUARD    (WT_LEN + 1)    /* 2049: guard sample t[2048]==t[0] */
-#define NUM_SCALES  4   /* chromatic, major, minor, minor-pentatonic */
+#define NUM_SCALES  12  /* chromatic, major, minor, penta, dorian, phrygian,
+                         * mixolydian, hirajoshi, hungarian, whole-tone, blues,
+                         * diminished */
 
 /* Shared single-cycle sine table (2048 + 1 guard). Defined in dsp_primitives.c
  * via the generated sine_table.h; every model reads this same table (D-04). */

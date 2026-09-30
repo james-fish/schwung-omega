@@ -40,6 +40,14 @@ static const int8_t g_scales[NUM_SCALES][12] = {
     /* major (Ionian)     */ { 0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19 },
     /* natural minor      */ { 0, 2, 3, 5, 7, 8, 10, 12, 14, 15, 17, 19 },
     /* minor pentatonic   */ { 0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24, 27 },
+    /* dorian             */ { 0, 2, 3, 5, 7, 9, 10, 12, 14, 15, 17, 19 },
+    /* phrygian           */ { 0, 1, 3, 5, 7, 8, 10, 12, 13, 15, 17, 19 },
+    /* mixolydian         */ { 0, 2, 4, 5, 7, 9, 10, 12, 14, 16, 17, 19 },
+    /* hirajoshi (5-note) */ { 0, 2, 3, 7, 8, 12, 14, 15, 19, 20, 24, 26 },
+    /* hungarian minor    */ { 0, 2, 3, 6, 7, 8, 11, 12, 14, 15, 18, 19 },
+    /* whole tone (6-note)*/ { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22 },
+    /* blues (6-note)     */ { 0, 3, 5, 6, 7, 10, 12, 15, 17, 18, 19, 22 },
+    /* diminished (8-note)*/ { 0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17 },
 };
 
 /* Map (scale, degree) -> semitone offset. degree wraps mod 12 with octave

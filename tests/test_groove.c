@@ -573,6 +573,70 @@ static void test_gen_groove_type(void) {
     printf("test_groove: GRVX-04/05 GEN groove type decoupled + stop-on-stop OK (e=%.0f)\n", e);
 }
 
+/* ---- E3: GEN groove scale expansion + ROOT/RANGE (SC1-5) -------------------- */
+static void test_e3_gen_groove_enhancements(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api);
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+
+    api->set_param(inst, PK_GRV_TYPE, "1");   /* GEN groove */
+    api->set_param(inst, PK_GRV_VOL,  "0.9");
+
+    /* SC1: OPT_SCALE must include >=13 options; spot-check exotic names. */
+    char ui[8192];
+    int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+    assert(n > 0);
+    assert(strstr(ui, "Hirajoshi")   != NULL);
+    assert(strstr(ui, "Diminished")  != NULL);
+    assert(strstr(ui, "Unquantized") != NULL);
+    assert(strstr(ui, "WholeTone")   != NULL);
+
+    /* SC4: GEN groove1 must show ROOT and RANGE, not TAP controls. */
+    assert(strstr(ui, PK_GRV_GROOT)  != NULL);
+    assert(strstr(ui, PK_GRV_GRANGE) != NULL);
+    assert(strstr(ui, "Gen Groove")  != NULL);
+    /* TAP controls must NOT appear in the GEN layout. */
+    assert(strstr(ui, "\"" PK_GRV_TAP1 "\"") == NULL);
+    assert(strstr(ui, "\"" PK_GRV_TAP2 "\"") == NULL);
+
+    /* SC5: Both effect pages named "Groove Effects". */
+    assert(strstr(ui, "Groove Effects") != NULL);
+
+    /* SC2/SC3: GROOT moves the root pitch — render enough blocks for steps to fire. */
+    api->set_param(inst, PK_GRV_GSCALE, "1");   /* Chromatic (UI idx 1) */
+    double dbeat = dbeat_for_bpm(128.0);
+    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* low root */
+    static int16_t low[NSAMP], high[NSAMP];
+    render_driven(api, inst, dbeat, low);
+    api->set_param(inst, PK_GRV_GROOT, "0.9");  /* high root */
+    render_driven(api, inst, dbeat, high);
+    /* Different root → different pitch → different output (not byte-identical). */
+    assert(memcmp(low, high, sizeof low) != 0);
+
+    /* SC3: Unquantized mode (UI SCALE idx 0) → ROOT HZ appears in UI. */
+    api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized */
+    n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+    assert(n > 0);
+    assert(strstr(ui, "ROOT HZ") != NULL);
+
+    /* SC1 expanded: RANGE changes the sequence pitch span. */
+    api->set_param(inst, PK_GRV_GSCALE, "2");   /* Major */
+    api->set_param(inst, PK_GRV_GSEED,  "0.3");
+    api->set_param(inst, PK_GRV_GRANGE, "0.0"); /* narrow: 1 degree */
+    static int16_t narrow_buf[NSAMP], wide_buf[NSAMP];
+    render_driven(api, inst, dbeat, narrow_buf);
+    api->set_param(inst, PK_GRV_GRANGE, "1.0"); /* wide: 24 degrees */
+    render_driven(api, inst, dbeat, wide_buf);
+    /* Different range → different pitch assignments → different output. */
+    assert(memcmp(narrow_buf, wide_buf, sizeof narrow_buf) != 0);
+
+    api->destroy_instance(inst);
+    printf("test_groove: E3 GEN groove enhancements OK (scales+root+range+unquantized+page layout)\n");
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -601,6 +665,7 @@ int main(void) {
     assert(g_models[MODEL_GEN]->render != NULL);
     test_gen_clocks_to_bpm();
     test_gen_lpf_pole();
+    test_e3_gen_groove_enhancements();  /* E3: scales + ROOT/RANGE + page layout */
 
     printf("test_groove: ALL TESTS PASSED\n");
     return 0;

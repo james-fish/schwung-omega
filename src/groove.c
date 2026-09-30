@@ -72,9 +72,10 @@ static inline unsigned long long grv_xorshift(unsigned long long *s) {
 void groove_gen_rebuild(groove_state_t *g) {
     g->gen_rng = 0x2545F4914F6CDD1Dull ^ ((unsigned long long)g->gen_seed_raw * 0x9E3779B1u + 1u);
     int len = g->gen_seqlen; if (len < 1) len = 1; if (len > 32) len = 32;
-    /* Random scale degrees in a ~2-octave span. */
+    /* Random scale degrees bounded by RANGE (1..24 degrees). */
+    int rng = g->gen_range < 1 ? 1 : (g->gen_range > 24 ? 24 : g->gen_range);
     for (int i = 0; i < 32; i++)
-        g->gen_seq[i] = (signed char)(grv_xorshift(&g->gen_rng) % 15u);   /* 0..14 degrees */
+        g->gen_seq[i] = (signed char)(grv_xorshift(&g->gen_rng) % (unsigned)rng);
     /* Euclidean gate: DENSITY -> npulses of len, spread evenly (Bresenham). */
     int npulse = (int)(g->gen_density * (float)len + 0.5f);
     if (npulse < 1) npulse = 1; if (npulse > len) npulse = len;
@@ -142,8 +143,11 @@ void groove_init(groove_state_t *g) {
     g->rv_damp     = 0.3f;
     g->rv_mix      = 0.0f;
 
-    /* GEN groove voice defaults (C1-03). */
-    g->gen_scale   = 1;            /* a musical scale by default */
+    /* GEN groove voice defaults (C1-03 / E3). */
+    g->gen_unquantized = false;
+    g->gen_scale   = 1;            /* major by default (UI idx 2 = Chromatic→0, Major→1) */
+    g->gen_root_param = 0.542f;    /* A1 (MIDI 45) = 55 Hz */
+    g->gen_range   = 12;           /* 12 degrees ≈ one octave of sequence variation */
     g->gen_seqlen  = 16;
     g->gen_wave    = 0;            /* sine */
     g->gen_retrig  = GRV_RETRIG_NONE;   /* free-run by default (GRVX-05) */
@@ -151,7 +155,7 @@ void groove_init(groove_state_t *g) {
     g->gen_rotate  = 0.0f;
     g->gen_swing   = 0.0f;
     g->gen_fold    = 0.0f;
-    g->gen_base_hz = 55.0f;        /* low rumble register */
+    g->gen_base_hz = 55.0f;        /* A1 — set from gen_root_param at init */
     g->gen_seed_raw = 12345u;
     g->gen_env_coef = 0.9995f;
     g->gen_running = false;
@@ -231,7 +235,9 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                 int len = g->gen_seqlen < 1 ? 1 : (g->gen_seqlen > 32 ? 32 : g->gen_seqlen);
                 int step = g->gen_step % len;
                 if (g->gen_gate[step]) {
-                    int semi = scale_quantize(g->gen_scale, g->gen_seq[step]);
+                    int semi = g->gen_unquantized
+                        ? (int)g->gen_seq[step]   /* raw chromatic offset when unquantized */
+                        : scale_quantize(g->gen_scale, g->gen_seq[step]);
                     g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);  /* per-step only */
                     g->gen_env = 1.0f;
                     g->gen_osc_phase = 0.0f;
@@ -413,9 +419,35 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         /* Reserved: type scales comb tunings (Room/Hall/Plate). Stored via the
          * cache; current tunings are fixed — a musical default across types. */
     } else if (strcmp(key, PK_GRV_GSCALE) == 0) {
-        /* enum 0..3: bypass the 0..1 clamp at top of function */
+        /* UI enum 0..12: 0=Unquantized, 1=Chromatic..12=Diminished → g_scales[0..11] */
         int idx = (int)(parse_f(val) + 0.5f);
-        g->gen_scale = idx < 0 ? 0 : (idx > 3 ? 3 : idx);
+        if (idx < 0) idx = 0; if (idx > 12) idx = 12;
+        if (idx == 0) {
+            g->gen_unquantized = true;
+        } else {
+            g->gen_unquantized = false;
+            g->gen_scale = idx - 1;  /* maps UI 1..12 → g_scales[0..11] */
+        }
+        /* Recompute root Hz since mode may have changed. */
+        if (g->gen_unquantized)
+            g->gen_base_hz = 30.0f + g->gen_root_param * 170.0f;
+        else {
+            int semi = (int)(g->gen_root_param * 83.0f + 0.5f);
+            g->gen_base_hz = 8.175f * powf(2.0f, (float)semi / 12.0f);
+        }
+    } else if (strcmp(key, PK_GRV_GROOT) == 0) {
+        g->gen_root_param = v;
+        if (g->gen_unquantized)
+            g->gen_base_hz = 30.0f + v * 170.0f;
+        else {
+            int semi = (int)(v * 83.0f + 0.5f);
+            g->gen_base_hz = 8.175f * powf(2.0f, (float)semi / 12.0f);
+        }
+    } else if (strcmp(key, PK_GRV_GRANGE) == 0) {
+        g->gen_range = 1 + (int)(v * 23.0f + 0.5f);   /* 1..24 degrees */
+        if (g->gen_range < 1) g->gen_range = 1;
+        if (g->gen_range > 24) g->gen_range = 24;
+        groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSEED) == 0) {
         g->gen_seed_raw = (unsigned)(v * 65535.0f);
         groove_gen_rebuild(g);

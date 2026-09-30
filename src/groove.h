@@ -75,7 +75,10 @@ typedef struct groove_state {
      * A transport-clocked, scale-quantized step sequencer driving a wavetable
      * oscillator + wavefolder, feeding the shared groove FX tail. Runs when
      * type==GEN regardless of which kick model is selected. */
-    int   gen_scale;              /* SCALE index (0 = off/chromatic..) */
+    bool  gen_unquantized;        /* true when SCALE = Unquantized (UI idx 0) */
+    int   gen_scale;              /* SCALE index into g_scales (0..NUM_SCALES-1) */
+    float gen_root_param;         /* raw 0..1: note 0..83 (quantized) or 30..200 Hz (unquantized) */
+    int   gen_range;              /* sequence degree span 1..24 */
     int   gen_seqlen;             /* SEQ LEN 1..32 (16th steps) */
     int   gen_wave;               /* WAVE type index into g_wavetables */
     int   gen_retrig;             /* RETRIG: 0 none,1/2/4/8 bars,5 on-note */
