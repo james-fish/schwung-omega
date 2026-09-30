@@ -264,7 +264,7 @@ These carry the v1.0 letter identifiers and remain FUTURE — scheduled after v1
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| E1. Critical Audio Fixes | 3/3 | Complete   | 2026-09-30 |
+| E1. Critical Audio Fixes | 3/3 | Complete    | 2026-09-30 |
 | E2. Discrete Controls & UI Cleanup | 0/? | Not started | — |
 | E3. GEN Groove Enhancements | 0/? | Not started | — |
 | E4. Voicing Defaults & Curve Polish | 0/? | Not started | — |
