@@ -125,7 +125,7 @@ static const uiparam_t P_PERF[] = {
     { PK_DUCK_BS,    "DUCK BS",  "DKBS",  UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_FILT,    "DJ FILT",  "DJFLT", UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_RESO,    "DJ RESO",  "DJRES", UP_FLOAT, "%", "0.01", NULL },
-    { PK_CLIP,       "CLIP",     "CLIP",  UP_ENUM,  "",  "1",    OPT_ONOFF },
+    { PK_CLIP,       "CLIP",     "CLIP",  UP_ENUM,  "",  "0",    OPT_ONOFF },
 };
 static const char KN_PERF[] =
     "[\"" PK_MASTER_VOL "\",\"" PK_DUCK "\",\"" PK_DUCK_REL "\",\"" PK_DUCK_SMT

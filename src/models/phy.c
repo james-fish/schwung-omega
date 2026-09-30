@@ -86,9 +86,12 @@ typedef struct phy_state {
     /* Output COLOR lowpass */
     tpt1_t color_lp; float color_g;
 
-    /* Page-1 ATTACK: beater burst amplitude; Page-1 TRS DEC: burst length nudge. */
+    /* Page-1 ATTACK: beater burst amplitude; Page-1 TRS DEC: burst length nudge.
+     * TRS TNE: body tone brightness — scales body2 shell-mode amplitude so the
+     * upper shell resonance rises/falls persistently across the whole note decay. */
     float attack;
     float trs_dec_ms;
+    float body2_tne;             /* body2 amplitude scale from TRS TNE (0..2.0) */
 
     /* Post-kick FX chain (KICK-14). */
     float      fx_type;
@@ -149,15 +152,16 @@ void phy_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         /* Page-1 TRS DEC nudges the beater burst length (1..12 ms exp). */
         p->trs_dec_ms = 1.0f * powf(12.0f / 1.0f, v);
     } else if (strcmp(key, PK_TRS_TNE) == 0) {
-        /* Page-1 TRS TNE = spectral brightness lever for PHY. It shifts both the
-         * burst LP cutoff (beater click character) AND the output COLOR LP so the
-         * whole sound is darker (low) vs brighter (high). This ensures TRS TNE
-         * is measurably different across its full range via ZCR (not just a
-         * 3 ms burst nudge that would be buried in the long modal ring-down). */
+        /* Page-1 TRS TNE = body tone brightness lever for PHY.
+         * (1) body2_tne: scales the body2 (upper shell) mode amplitude in render
+         *     from quiet (0.2x at v=0.1) to prominent (1.8x at v=0.9). Body2 sits
+         *     at 180-320 Hz — higher than body1/head — so its amplitude change
+         *     shifts the spectral centroid persistently across the whole note decay.
+         *     This gives TRS TNE a measurable RMS AND ZCR delta over the full buffer.
+         * (2) burst_g: also brightens the beater click (orthogonal timbre effect). */
+        p->body2_tne = 0.2f + 1.6f * v;   /* 0.20..1.80 — body2 amplitude scale */
         float fc_burst = 800.0f + v * (12000.0f - 800.0f);
         p->burst_g = tpt_g_from_hz(fc_burst);
-        float fc_color = 400.0f + v * (14000.0f - 400.0f);
-        p->color_g = tpt_g_from_hz(fc_color);
     } else if (strcmp(key, PK_COLOR) == 0) {
         /* COLOR opens the output LP (200 Hz .. 16 kHz) — timbre morph. */
         float fc = 200.0f + v * (16000.0f - 200.0f);
@@ -303,10 +307,13 @@ static void phy_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float burst = noise_tick(&p->exc) * env_tick(&p->burst_env);
         burst = tpt1_lp(&p->burst_lp, burst, p->burst_g);
 
-        /* Sum the damped modes (complex-rotation; transcendental-free tick). */
+        /* Sum the damped modes (complex-rotation; transcendental-free tick).
+         * body2_tne scales the upper shell mode amplitude — set by TRS TNE —
+         * so TRS TNE persistently shifts the spectral brightness across the decay. */
+        float b2_scale = p->body2_tne > 0.0f ? p->body2_tne : 1.0f;
         float modes = 0.9f  * modal_tick(&p->head)
                     + 0.5f  * modal_tick(&p->body1)
-                    + 0.25f * modal_tick(&p->body2);
+                    + 0.25f * b2_scale * modal_tick(&p->body2);
 
         float amp = env_tick(&p->amp_env) * (0.5f + 0.5f * p->sustain);
 

@@ -34,8 +34,8 @@ const float g_kick_defaults[PKI_COUNT] = {
     [PKI_PHY_BEATER]=0.5f, [PKI_PHY_SHELL]=0.5f, [PKI_PHY_HEADTENS]=0.5f,
     [PKI_PHY_DAMPING]=0.5f,
     /* HRD */
-    [PKI_HRD_SAMPLE]=0.5f, [PKI_HRD_MIX]=0.5f, [PKI_HRD_DRIVE]=0.5f,
-    [PKI_HRD_CRUSH]=0.5f,
+    [PKI_HRD_SAMPLE]=0.5f, [PKI_HRD_MIX]=0.5f, [PKI_HRD_DRIVE]=0.2f,
+    [PKI_HRD_CRUSH]=0.0f,
     /* DIG */
     [PKI_DIG_WAVEIDX]=0.5f, [PKI_DIG_SAMPLE]=0.5f, [PKI_DIG_BITDEPTH]=0.5f,
     [PKI_DIG_PITCHENV]=0.5f,
@@ -57,7 +57,7 @@ const float g_kick_defaults[PKI_COUNT] = {
  * middles (grv_vol silent opt-in, taps 0.6, color ~8 kHz -> ~0.44). */
 const float g_global_defaults[GKI_COUNT] = {
     [GKI_MASTER_VOL]=1.0f, [GKI_MODEL]=0.0f, [GKI_GRV_TYPE]=0.0f,  /* TAPS */
-    [GKI_GRV_VOL]=0.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
+    [GKI_GRV_VOL]=1.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
     [GKI_GRV_TAP1]=0.6f, [GKI_GRV_TAP2]=0.6f, [GKI_GRV_TAP3]=0.6f,
     [GKI_GRV_TAP4]=0.6f, [GKI_GRV_MONO]=0.0f,
     /* Groove FX defaults (C1-02): off/neutral so the rumble is unchanged until
@@ -69,8 +69,8 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,
     [GKI_GRV_GRETRIG]=0.0f,
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
-    [GKI_DUCK]=0.0f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
-    [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=1.0f,
+    [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
+    [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
