@@ -151,13 +151,14 @@ dsp.so: | src/wavetables.h
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
 
 # dist: package the Schwung-library release asset `omega-module.tar.gz` (the
-# module folder — module.json + dsp.so) that release.json's download_url points
+# module folder — module.json + help.json + dsp.so) that release.json's download_url points
 # at. Run after `make dsp.so` (needs the aarch64 build). The tarball lays the
 # files under an `omega/` dir so it extracts into sound_generators/omega/.
 dist: dsp.so
 	@mkdir -p build/dist/omega
 	cp build/dsp.so build/dist/omega/dsp.so
 	cp module.json  build/dist/omega/module.json
+	cp help.json    build/dist/omega/help.json
 	tar -czf build/omega-module.tar.gz -C build/dist omega
 	@echo "dist: build/omega-module.tar.gz"
 

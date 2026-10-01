@@ -328,7 +328,7 @@ static int usr_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     int off = 0;
     /* SAMPLE SEL enum head + options. */
     int w = snprintf(buf + off, (size_t)(buf_len - off),
-        "{\"key\":\"" PK_USR_SAMPLE "\",\"name\":\"SAMPLE SEL\",\"type\":\"enum\",\"options\":[\"None\"");
+        "{\"key\":\"" PK_USR_SAMPLE "\",\"name\":\"Sample\",\"short_name\":\"SAMPLE\",\"type\":\"enum\",\"options\":[\"None\"");
     if (w < 0 || w >= buf_len - off) return 0;
     off += w;
     int n = inst ? inst->sample_count : 0;
@@ -339,9 +339,9 @@ static int usr_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     }
     w = snprintf(buf + off, (size_t)(buf_len - off),
         "],\"default\":0},"
-        "{\"key\":\"" PK_USR_WTMORPH  "\",\"name\":\"WT MORPH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_USR_LAYERVOL "\",\"name\":\"BLEND\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"default\":0.5},"
-        "{\"key\":\"" PK_USR_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}");
+        "{\"key\":\"" PK_USR_WTMORPH  "\",\"name\":\"Wavetable Morph\",\"short_name\":\"WTMRPH\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_USR_LAYERVOL "\",\"name\":\"Layer Blend\",\"short_name\":\"BLEND\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%%\",\"min\":0.0,\"max\":1.0,\"default\":0.5},"
+        "{\"key\":\"" PK_USR_PITCHENV "\",\"name\":\"Pitch Envelope\",\"short_name\":\"P ENV\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%%\",\"min\":0.0,\"max\":1.0}");
     if (w < 0 || w >= buf_len - off) return 0;
     off += w;
     return off;

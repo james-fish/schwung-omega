@@ -36,7 +36,7 @@ static void ui_puts(char *buf, int buf_len, int *off, const char *s) {
 }
 
 /* ---- param metadata ------------------------------------------------------ */
-typedef enum { UP_FLOAT, UP_ENUM } up_type_t;
+typedef enum { UP_FLOAT, UP_ENUM, UP_INT } up_type_t;
 typedef struct {
     const char *key;
     const char *name;
@@ -46,6 +46,8 @@ typedef struct {
     const char *step;        /* JSON number literal, e.g. "0.01" */
     const char *options;     /* enum: pre-serialized JSON array; else NULL */
     const char *mn, *mx;     /* float min/max JSON literals (NULL => 0.0/1.0) */
+    const char *shortopts;   /* enum: optional JSON array drawn in the 3-4 char
+                              * square; `options` is what the screen reader says */
 } uiparam_t;
 
 /* Default lookup: reuse the value-cache key->index so schema defaults never
@@ -62,13 +64,22 @@ static float ui_default_for(const char *key) {
  * unit; enum params carry options. Default comes from the params tables. */
 static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) {
     char defbuf[24];
-    char obj[320];
+    char obj[768];
     if (p->type == UP_ENUM) {
         pk_format_value(ui_default_for(p->key), 0, defbuf, (int)sizeof defbuf);
         snprintf(obj, sizeof obj,
             "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
-            "\"type\":\"enum\",\"options\":%s,\"default\":%s}",
-            p->key, p->name, p->shortn, p->options, defbuf);
+            "\"type\":\"enum\",\"options\":%s%s%s,\"default\":%s}",
+            p->key, p->name, p->shortn, p->options,
+            p->shortopts ? ",\"short_options\":" : "", p->shortopts ? p->shortopts : "",
+            defbuf);
+    } else if (p->type == UP_INT) {
+        pk_format_value(ui_default_for(p->key), 0, defbuf, (int)sizeof defbuf);
+        snprintf(obj, sizeof obj,
+            "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
+            "\"type\":\"int\",\"min\":%s,\"max\":%s,\"default\":%s,"
+            "\"step\":1,\"unit\":\"%s\"}",
+            p->key, p->name, p->shortn, p->mn, p->mx, defbuf, p->unit);
     } else {
         pk_format_value(ui_default_for(p->key), 4, defbuf, (int)sizeof defbuf);
         const char *mn = p->mn ? p->mn : "0.0";
@@ -101,35 +112,47 @@ static void ui_emit_level(char *buf, int buf_len, int *off,
 }
 
 /* ---- enum option lists (.rodata) ----------------------------------------- */
+/* `options` are WORDS because they are what the screen reader speaks and what
+ * the list view and enum peek print; the grid's square draws `short_options`. */
 static const char OPT_MODEL[] =
+    "[\"FM 2-Op\",\"FM 4-Op\",\"Wavetable\",\"Physical\",\"Hard\",\"Digital\","
+    "\"Transistor\",\"Analog\",\"User\"]";
+static const char SOPT_MODEL[] =
     "[\"FM2\",\"FM4\",\"WTR\",\"PHY\",\"HRD\",\"DIG\",\"TRS\",\"ANA\",\"USR\"]";
-static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush\"]";
+static const char OPT_FX[]    = "[\"Diode\",\"Clip\",\"Saturate\",\"Fold\",\"Crush\"]";
+static const char SOPT_FX[]   = "[\"Diode\",\"Clip\",\"Sat\",\"Fold\",\"Crush\"]";
 static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
 static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
-static const char OPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
+static const char SOPT_ROUTE[] = "[\"Syn\",\"Trn\",\"Both\"]";
+static const char OPT_GRVTYPE[] = "[\"Taps\",\"Generative\"]";
+static const char SOPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
 static const char OPT_GFILT[]   = "[\"LP\",\"HP\",\"Off\"]";
 static const char OPT_RVTYPE[]  = "[\"Room\",\"Hall\",\"Plate\"]";
 static const char OPT_SCALE[]   = "[\"Unquantized\",\"Chromatic\",\"Major\",\"Minor\","
-    "\"Penta\",\"Dorian\",\"Phrygian\",\"Mixolydian\","
-    "\"Hirajoshi\",\"Hungarian\",\"WholeTone\",\"Blues\",\"Diminished\"]";
+    "\"Pentatonic\",\"Dorian\",\"Phrygian\",\"Mixolydian\","
+    "\"Hirajoshi\",\"Hungarian\",\"Whole Tone\",\"Blues\",\"Diminished\"]";
+static const char SOPT_SCALE[]  = "[\"Unq\",\"Chr\",\"Maj\",\"Min\",\"Pent\",\"Dor\",\"Phr\","
+    "\"Mix\",\"Hira\",\"Hung\",\"Whl\",\"Blue\",\"Dim\"]";
 static const char OPT_GWAVE[]   = "[\"Sine\",\"Tri\",\"Saw\",\"Square\",\"Digital\",\"Analog\"]";
 static const char OPT_RETRIG[]  = "[\"None\",\"1 Bar\",\"2 Bar\",\"4 Bar\",\"8 Bar\",\"On Note\"]";
 static const char OPT_ONOFF[]   = "[\"Off\",\"On\"]";
 /* Phase 1 FX-ROUTE: groove FX order (RUMBLE/DRIVE/REVERB). */
-static const char OPT_FXROUTE[] = "[\"Rmbl>Drv>Rev\",\"Rmbl>Rev>Drv\",\"Rev>Rmbl>Drv\",\"Drv>Rmbl>Rev\"]";
+static const char OPT_FXROUTE[] = "[\"Rumble-Drive-Reverb\",\"Rumble-Reverb-Drive\","
+    "\"Reverb-Rumble-Drive\",\"Drive-Rumble-Reverb\"]";
+static const char SOPT_FXROUTE[] = "[\"RDV\",\"RVD\",\"VRD\",\"DRV\"]";
 
 /* Performer chain page (Phase D, PERF-05): duck -> DJ filter -> clip. DJ FILT is
  * a bidirectional centered sweep (0.5 = neutral). */
 static const uiparam_t P_PERF[] = {
-    { PK_MASTER_VOL, "MSTR VOL", "MVOL",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK,       "DUCK",     "DUCK",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK_REL,   "DUCK REL", "DKREL", UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK_SMT,   "DUCK SLEW","SLEW",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_DUCK_BS,    "DUCK FREQ","FREQ",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_DJ_FILT,    "DJ FILT",  "DJFLT", UP_FLOAT, "%", "0.01", NULL },
-    { PK_DJ_RESO,    "DJ RESO",  "DJRES", UP_FLOAT, "%", "0.01", NULL },
-    { PK_CLIP,       "CMPDR",    "CMPDR", UP_FLOAT, "%", "0.01", NULL },
+    { PK_MASTER_VOL, "Volume", "VOL",   UP_FLOAT, "%", "0.01", NULL },  /* identical to root: one key, one description */
+    { PK_DUCK,       "Duck",     "DUCK",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_REL,   "Duck Release", "DKREL", UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_SMT,   "Duck Slew","SLEW",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DUCK_BS,    "Duck Frequency","FREQ",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_DJ_FILT,    "DJ Filter","DJFLT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_DJ_RESO,    "DJ Resonance","DJRES", UP_FLOAT, "%", "0.01", NULL },
+    { PK_CLIP,       "Compressor Drive","CMPDR", UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_PERF[] =
     "[\"" PK_MASTER_VOL "\",\"" PK_DUCK "\",\"" PK_DUCK_REL "\",\"" PK_DUCK_SMT
@@ -137,7 +160,7 @@ static const char KN_PERF[] =
 
 /* ---- level tables -------------------------------------------------------- */
 static const uiparam_t P_ROOT[] = {
-    { PK_MODEL,      "Model",  "MODEL", UP_ENUM,  "",  "0", OPT_MODEL },
+    { PK_MODEL,      "Model",  "MODEL", UP_ENUM,  "",  "0", OPT_MODEL, NULL, NULL, SOPT_MODEL },
     { PK_MASTER_VOL, "Volume", "VOL",   UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_ROOT[] = "[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]";
@@ -146,9 +169,9 @@ static const char KN_ROOT[] = "[\"" PK_MODEL "\",\"" PK_MASTER_VOL "\"]";
  * (LENGTH now folds in SUSTAIN, VOICE-03) followed by the ACTIVE model's unique
  * params (spliced from its p2_slot_desc). PITCH exposed in Hz (VOICE-01). */
 static const uiparam_t P_KICK1[] = {
-    { PK_PITCH,   "PITCH",   "PITCH", UP_FLOAT, "Hz", "1",    NULL, "30", "200" },
-    { PK_LENGTH,  "LENGTH",  "LEN",   UP_FLOAT, "%",  "0.01", NULL },
-    { PK_CURVE,   "CURVE",   "CURVE", UP_FLOAT, "%",  "0.01", NULL },
+    { PK_PITCH,   "Pitch",   "PITCH", UP_FLOAT, "Hz", "1",    NULL, "30", "200" },
+    { PK_LENGTH,  "Length",  "LEN",   UP_FLOAT, "%",  "0.01", NULL },
+    { PK_CURVE,   "Curve",   "CURVE", UP_FLOAT, "%",  "0.01", NULL },
 };
 
 /* Kick Page 2 (B2 reorg, VOICE-04): static shared set — the 3 transients, the
@@ -157,14 +180,14 @@ static const uiparam_t P_KICK1[] = {
  * 05). PITCH is in Hz but PK_PITCH still parses 0..1 internally in Phase B2-01;
  * the Hz domain conversion lands with the per-model voicing pass (B2-02). */
 static const uiparam_t P_KICK2[] = {
-    { PK_ATTACK,       "ATTACK",   "ATK",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_TRS_DEC,      "TRS DEC",  "TRSDEC",UP_FLOAT, "%", "0.01", NULL },
-    { PK_TRS_TNE,      "TRS TNE",  "TRSTNE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_COLOR,        "FILTER",   "FILT",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_FILTER_ROUTE, "FILT RTE", "RTE",   UP_ENUM,  "",  "0",    OPT_ROUTE },
-    { PK_FX_TYPE,      "FX TYPE",  "FXTYPE",UP_ENUM,  "",  "0",    OPT_FX },
-    { PK_FX_AMT,       "FX AMT",   "FXAMT", UP_FLOAT, "%", "0.01", NULL },
-    { PK_FX_TONE,      "FX TONE",  "FXTONE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_ATTACK,       "Attack",   "ATK",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_DEC,      "Transient Decay","TRSDEC",UP_FLOAT, "%", "0.01", NULL },
+    { PK_TRS_TNE,      "Transient Tone","TRSTNE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_COLOR,        "Filter",   "FILT",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_FILTER_ROUTE, "Filter Route","RTE", UP_ENUM,  "",  "0",    OPT_ROUTE, NULL, NULL, SOPT_ROUTE },
+    { PK_FX_TYPE,      "FX Type",  "FXTYPE",UP_ENUM,  "",  "0",    OPT_FX, NULL, NULL, SOPT_FX },
+    { PK_FX_AMT,       "FX Amount","FXAMT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_FX_TONE,      "FX Tone",  "FXTONE",UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_KICK2[] =
     "[\"" PK_ATTACK "\",\"" PK_TRS_DEC "\",\"" PK_TRS_TNE "\",\"" PK_COLOR
@@ -176,14 +199,14 @@ static const char KN_KICK2[] =
  * LEFT = a smeared/diffused resonant feedback drone (no longer per-tap decay).
  * MONO moved to Groove Page 2 to keep Page 1 at 8 encoders. */
 static const uiparam_t P_GROOVE1[] = {
-    { PK_GRV_TYPE,   "TYPE",   "TYPE", UP_ENUM,  "",  "0",    OPT_GRVTYPE },
-    { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_COLOR,  "LPF",    "LPF",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_TAP1,   "TAP1",   "TAP1", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_TAP2,   "TAP2",   "TAP2", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_TAP3,   "TAP3",   "TAP3", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_TAP4,   "TAP4",   "TAP4", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TYPE,   "Groove Type","TYPE", UP_ENUM, "", "0",   OPT_GRVTYPE, NULL, NULL, SOPT_GRVTYPE },
+    { PK_GRV_VOL,    "Groove Volume","VOL", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LENGTH, "Rumble Length","LEN",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_COLOR,  "Rumble Lowpass","LPF",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP1,   "Tap 1",  "TAP1", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP2,   "Tap 2",  "TAP2", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP3,   "Tap 3",  "TAP3", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_TAP4,   "Tap 4",  "TAP4", UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_GROOVE1[] =
     "[\"" PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
@@ -200,14 +223,14 @@ static const char KN_GROOVE1[] =
  * Room/Hall/Plate flavor (same cost). GEN's LP filter lives on its Gen Seq page
  * (next to WAVE/FOLD), TAPS's on its Page-1 LPF — so neither needs a FILTER here. */
 static const uiparam_t P_GROOVE_FX[] = {
-    { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
-    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
+    { PK_GRV_DRIVE,   "Drive",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOSPD,  "LFO Speed","LFOSPD",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOAMT,  "LFO Amount","LFOAMT",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVMIX,   "Reverb",  "REV",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVDECAY, "Reverb Decay","RVDEC", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVTONE,  "Reverb Tone","RVTONE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_ROUTE,   "FX Order","ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE, NULL, NULL, SOPT_FXROUTE },
+    { PK_GRV_RVTYPE,  "Reverb Type","RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
 };
 static const char KN_GROOVE_FX[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
@@ -220,14 +243,14 @@ static const char KN_GROOVE_FX[] =
  * length); WAVE is a continuous scan (sine→…→analog + fold), not a discrete enum;
  * and the GEN LP FILTER lives here next to WAVE/FOLD (moved off the FX page). */
 static const uiparam_t P_GROOVE_GEN_SEQ[] = {
-    { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.0079", NULL, "0",   "127" },
-    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.0159", NULL, "1",   "64"  },
-    { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.0156", NULL, "-32", "32"  },
-    { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_COLOR,    "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GSEED,    "Seed",    "SEED",  UP_INT,   "",  "1",      NULL, "0",   "127" },
+    { PK_GRV_GSEQLEN,  "Sequence Length","SEQLEN",UP_INT, "steps", "1", NULL, "1", "64" },
+    { PK_GRV_GDENSITY, "Density", "DENS",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GROTATE,  "Rotate",  "ROT",   UP_INT,   "steps", "1", NULL, "-32", "32" },
+    { PK_GRV_GSWING,   "Note Decay","DECAY", UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GWAVE,    "Wave",    "WAVE",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GFOLD,    "Fold",    "FOLD",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_COLOR,    "Lowpass", "FILT",  UP_FLOAT, "%", "0.01",   NULL },
 };
 static const char KN_GROOVE_GEN_SEQ[] =
     "[\"" PK_GRV_GSEED "\",\"" PK_GRV_GSEQLEN "\",\"" PK_GRV_GDENSITY
@@ -248,7 +271,7 @@ static const char KN_GROOVE2[] =
 
 /* ---- wrapper fragments --------------------------------------------------- */
 static const char UI_OPEN[] =
-    "{\"pad_layout\":\"drums\",\"child_index_param\":\"current_pad\",\"levels\":{";
+    "{\"pad_layout\":\"drums\",\"levels\":{";
 /* root has two nav links to the kick sub-pages appended before its knobs; keep
  * them as fixed fragments spliced into the root level. */
 static const char UI_ROOT_LINKS[] =
@@ -293,18 +316,20 @@ static void ui_emit_root(char *buf, int buf_len, int *off) {
 static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
                                 const bohm_instance_t *inst) {
     static const uiparam_t p_head[] = {
-        { PK_GRV_TYPE,   "TYPE",  "TYPE",  UP_ENUM,  "", "0",    OPT_GRVTYPE, NULL, NULL },
-        { PK_GRV_VOL,    "VOL",   "VOL",   UP_FLOAT, "%","0.01", NULL,        NULL, NULL },
-        { PK_GRV_GSCALE, "SCALE", "SCALE", UP_ENUM,  "", "0",    OPT_SCALE,   NULL, NULL },
+        { PK_GRV_TYPE,   "Groove Type","TYPE", UP_ENUM, "", "0",    OPT_GRVTYPE, NULL, NULL, SOPT_GRVTYPE },
+        { PK_GRV_VOL,    "Groove Volume","VOL", UP_FLOAT, "%","0.01", NULL,     NULL, NULL },
+        { PK_GRV_GSCALE, "Scale", "SCALE", UP_ENUM,  "", "0",    OPT_SCALE,   NULL, NULL, SOPT_SCALE },
     };
     static const uiparam_t p_tail[] = {
-        { PK_GRV_GRANGE,  "RANGE",  "RANGE",  UP_FLOAT, "", "0.04", NULL, NULL, NULL },
-        { PK_GRV_GRETRIG, "RETRIG", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
+        { PK_GRV_GRANGE,  "Range",  "RANGE",  UP_INT,   "degrees", "1", NULL, "1", "24" },
+        { PK_GRV_GRETRIG, "Retrigger", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
     };
-    bool unq = inst && inst->groove.gen_unquantized;
-    uiparam_t p_root = unq
-        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "20", "2000" }
-        : (uiparam_t){ PK_GRV_GROOT, "ROOT",    "ROOT", UP_FLOAT, "",   "0.012", NULL, NULL, NULL };
+    /* ROOT is Hz in BOTH modes: groove.c maps it to the same 20..2000 Hz whatever
+     * the scale (the scale only quantises the intervals above it). The quantized
+     * branch used to declare 0..1, which the host then wrote verbatim. */
+    (void)inst;
+    const uiparam_t p_root =
+        { PK_GRV_GROOT, "Root", "ROOT", UP_FLOAT, "Hz", "1", NULL, "20", "2000" };
     ui_puts(buf, buf_len, off,
         "\"groove1\":{\"name\":\"Gen Groove\",\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {

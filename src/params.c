@@ -74,12 +74,13 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
     [GKI_GRV_ROUTE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
-    [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
-    [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.5f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,  /* GSWING slot = DECAY (medium) */
+    [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=38.0f, [GKI_GRV_GSEQLEN]=64.0f, [GKI_GRV_GDENSITY]=0.6f,
+    [GKI_GRV_GROTATE]=0.0f, [GKI_GRV_GSWING]=0.5f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,  /* GSWING slot = DECAY (medium) */
     [GKI_GRV_GRETRIG]=0.0f,
-    /* E3/P1: root — quantized A1 (≈0.542) baseline; unquantized maps log 20..200 Hz,
-     * default 0.352 → ~45 Hz sub-bass (Phase 1 GEN-PITCH). Range 12 degrees (0.5). */
-    [GKI_GRV_GROOT]=0.18f, [GKI_GRV_GRANGE]=0.5f,   /* unified log root ≈ 45 Hz default */
+    /* Seed, Seq Len, Rotate, Root and Range are in the units ui_hierarchy declares
+     * (steps, Hz, degrees) because that is what the host writes; every other
+     * groove param is 0..1. Root 46 Hz = the old 0.18 log position (sub-bass). */
+    [GKI_GRV_GROOT]=46.0f, [GKI_GRV_GRANGE]=13.0f,
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
     [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
     [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,

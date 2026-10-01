@@ -255,10 +255,10 @@ static void wtr_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int wtr_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_WTR_WAVE      "\",\"name\":\"WAVE SEL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_WTR_BODYPITCH "\",\"name\":\"BODY PITCH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_WTR_TRANSDEC  "\",\"name\":\"TRANS DEC\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_WTR_TRANSCOL  "\",\"name\":\"TRANS COL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_WTR_WAVE      "\",\"name\":\"Wave\",\"short_name\":\"WAVE\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_WTR_BODYPITCH "\",\"name\":\"Body Pitch\",\"short_name\":\"BODY\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_WTR_TRANSDEC  "\",\"name\":\"Click Decay\",\"short_name\":\"CLKDEC\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_WTR_TRANSCOL  "\",\"name\":\"Click Color\",\"short_name\":\"CLKCOL\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

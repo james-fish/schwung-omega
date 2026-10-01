@@ -115,8 +115,9 @@ int main(void) {
         int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
         assert(n > 0 && ui[n] == '\0');
         assert(strstr(ui, "\"type\":\"enum\"") != NULL);       /* discrete selectors */
-        assert(strstr(ui, "\"options\":[\"FM2\"") != NULL);    /* MODEL enum options */
-        assert(strstr(ui, "\"Diode\",\"Clip\",\"SAT\"") != NULL); /* FX TYPE enum */
+        assert(strstr(ui, "\"options\":[\"FM 2-Op\"") != NULL);  /* MODEL enum options (spoken) */
+        assert(strstr(ui, "\"short_options\":[\"FM2\"") != NULL); /* ...and the grid square */
+        assert(strstr(ui, "\"Diode\",\"Clip\",\"Saturate\"") != NULL); /* FX TYPE enum */
         assert(strstr(ui, "\"default\":") != NULL);            /* knob start position */
         assert(strstr(ui, "\"short_name\":") != NULL);         /* OLED label */
         assert(strstr(ui, "\"unit\":") != NULL);               /* real-world unit */

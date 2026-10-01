@@ -97,7 +97,7 @@ typedef struct groove_state {
      * type==GEN regardless of which kick model is selected. */
     bool  gen_unquantized;        /* true when SCALE = Unquantized (UI idx 0) */
     int   gen_scale;              /* SCALE index into g_scales (0..NUM_SCALES-1) */
-    float gen_root_param;         /* raw 0..1: note 0..83 (quantized) or 30..200 Hz (unquantized) */
+    float gen_root_param;         /* log position 0..1 of the 20..2000 Hz root (set from Hz) */
     int   gen_range;              /* sequence degree span 1..24 */
     int   gen_seqlen;             /* SEQ LEN 1..64 (16th steps) */
     int   gen_wave;               /* legacy discrete WAVE index (kept for compat) */

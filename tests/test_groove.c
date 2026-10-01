@@ -683,9 +683,9 @@ static void test_gen_root_pitch(void) {
         api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
         api->set_param(inst, PK_GRV_GWAVE,  "0");     /* sine -> clean pitch */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
-        api->set_param(inst, PK_GRV_GRANGE, "0.0");   /* narrow span -> stable pitch */
+        api->set_param(inst, PK_GRV_GRANGE, "1");     /* narrow span (1 degree) -> stable pitch */
         api->set_param(inst, PK_GRV_COLOR, "1.0");
-        api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "0.0" : "1.0");  /* low vs high root */
+        api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "20" : "2000");  /* low vs high root, Hz */
         mock_host_set_beat(0.0);
         /* No kick note-on: measure the PURE GEN groove pitch (the kick's ~50 Hz
          * fundamental would corrupt the autocorrelation estimate). */
@@ -752,14 +752,14 @@ static void test_gen_groove_type(void) {
     select_model(api, inst, MODEL_FM2);
     api->set_param(inst, PK_GRV_TYPE, "1");     /* GEN groove */
     api->set_param(inst, PK_GRV_VOL,  "0.9");
-    api->set_param(inst, PK_GRV_GSEED, "0.2");
+    api->set_param(inst, PK_GRV_GSEED, "25");
     api->on_midi(inst, noteon, 3, 0);
     double e = render_driven(api, inst, dbeat, a);
     for (int i = 0; i < NSAMP; i++) assert(a[i] >= -32768 && a[i] <= 32767);
     assert(e > 1e3);   /* generative rumble audible with a non-GEN kick model */
 
     /* SEED changes the sequence -> different output. */
-    api->set_param(inst, PK_GRV_GSEED, "0.85");
+    api->set_param(inst, PK_GRV_GSEED, "108");
     api->on_midi(inst, noteon, 3, 0);
     render_driven(api, inst, dbeat, b);
     assert(memcmp(a, b, sizeof a) != 0);
@@ -807,7 +807,7 @@ static void test_e3_gen_groove_enhancements(void) {
     assert(strstr(ui, "Hirajoshi")   != NULL);
     assert(strstr(ui, "Diminished")  != NULL);
     assert(strstr(ui, "Unquantized") != NULL);
-    assert(strstr(ui, "WholeTone")   != NULL);
+    assert(strstr(ui, "Whole Tone")  != NULL);
 
     /* SC4: GEN groove1 must show ROOT and RANGE, not TAP controls. */
     assert(strstr(ui, PK_GRV_GROOT)  != NULL);
@@ -823,33 +823,64 @@ static void test_e3_gen_groove_enhancements(void) {
     /* SC2/SC3: GROOT moves the root pitch — render enough blocks for steps to fire. */
     api->set_param(inst, PK_GRV_GSCALE, "1");   /* Chromatic (UI idx 1) */
     double dbeat = dbeat_for_bpm(128.0);
-    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* low root */
+    api->set_param(inst, PK_GRV_GROOT, "32");    /* low root, Hz */
     static int16_t low[NSAMP], high[NSAMP];
     render_driven(api, inst, dbeat, low);
-    api->set_param(inst, PK_GRV_GROOT, "0.9");  /* high root */
+    api->set_param(inst, PK_GRV_GROOT, "1262");  /* high root, Hz */
     render_driven(api, inst, dbeat, high);
     /* Different root → different pitch → different output (not byte-identical). */
     assert(memcmp(low, high, sizeof low) != 0);
 
-    /* SC3: Unquantized mode (UI SCALE idx 0) → ROOT HZ appears in UI. */
-    api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized */
-    n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
-    assert(n > 0);
-    assert(strstr(ui, "ROOT HZ") != NULL);
+    /* SC3: ROOT is declared in Hz (20..2000) in BOTH modes, because groove.c
+     * maps it to the same Hz whatever the scale and the host writes the value
+     * in the declared range. Quantized used to declare 0..1. */
+    static const char root_hz[] =
+        "\"key\":\"" PK_GRV_GROOT "\",\"name\":\"Root\",\"short_name\":\"ROOT\","
+        "\"type\":\"float\",\"min\":20,\"max\":2000";
+    for (int scale = 0; scale <= 1; scale++) {          /* 0 = Unquantized, 1 = Chromatic */
+        api->set_param(inst, PK_GRV_GSCALE, scale ? "1" : "0");
+        n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
+        assert(n > 0);
+        assert(strstr(ui, root_hz) != NULL);
+    }
+    api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized, as before */
 
     /* SC1 expanded: RANGE changes the sequence pitch span. */
     api->set_param(inst, PK_GRV_GSCALE, "2");   /* Major */
-    api->set_param(inst, PK_GRV_GSEED,  "0.3");
-    api->set_param(inst, PK_GRV_GRANGE, "0.0"); /* narrow: 1 degree */
+    api->set_param(inst, PK_GRV_GSEED,  "38");
+    api->set_param(inst, PK_GRV_GRANGE, "1");   /* narrow: 1 degree */
     static int16_t narrow_buf[NSAMP], wide_buf[NSAMP];
     render_driven(api, inst, dbeat, narrow_buf);
-    api->set_param(inst, PK_GRV_GRANGE, "1.0"); /* wide: 24 degrees */
+    api->set_param(inst, PK_GRV_GRANGE, "24");  /* wide: 24 degrees */
     render_driven(api, inst, dbeat, wide_buf);
     /* Different range → different pitch assignments → different output. */
     assert(memcmp(narrow_buf, wide_buf, sizeof narrow_buf) != 0);
 
     api->destroy_instance(inst);
     printf("test_groove: E3 GEN groove enhancements OK (scales+root+range+unquantized+page layout)\n");
+}
+
+/* The host writes a value in the range ui_hierarchy DECLARES, never 0..1. These
+ * five keys declare steps / Hz / degrees, and used to go through the 0..1 clamp,
+ * so every value the knob grid could send above 1 pinned at the maximum (Seq
+ * Len 32 played 64, Root 440 Hz played 2 kHz, Rotate 0 played full left). */
+static void test_gen_declared_units(void) {
+    static groove_state_t g;
+    groove_init(&g);
+    groove_set_param(&g, PK_GRV_GSEQLEN, "32");  assert(g.gen_seqlen == 32);
+    groove_set_param(&g, PK_GRV_GSEQLEN, "1");   assert(g.gen_seqlen == 1);
+    groove_set_param(&g, PK_GRV_GSEQLEN, "99");  assert(g.gen_seqlen == 64);
+    groove_set_param(&g, PK_GRV_GSEED, "64");    assert(g.gen_seed_raw == 64);
+    groove_set_param(&g, PK_GRV_GSEED, "127");   assert(g.gen_seed_raw == 127);
+    groove_set_param(&g, PK_GRV_GRANGE, "12");   assert(g.gen_range == 12);
+    groove_set_param(&g, PK_GRV_GROTATE, "0");   assert(g.gen_rotate == 0.0f);
+    groove_set_param(&g, PK_GRV_GROTATE, "-32"); assert(g.gen_rotate == -1.0f);
+    groove_set_param(&g, PK_GRV_GROTATE, "16");  assert(g.gen_rotate == 0.5f);
+    groove_set_param(&g, PK_GRV_GROOT, "440");   assert(fabsf(g.gen_base_hz - 440.0f) < 0.01f);
+    /* A scale change recomputes the base from gen_root_param: must keep 440. */
+    groove_set_param(&g, PK_GRV_GSCALE, "3");    assert(fabsf(g.gen_base_hz - 440.0f) < 0.5f);
+    groove_set_param(&g, PK_GRV_GROOT, "5");     assert(g.gen_base_hz == 20.0f);
+    printf("test_groove: gen params take declared units OK\n");
 }
 
 int main(void) {
@@ -888,6 +919,7 @@ int main(void) {
     test_gen_clocks_to_bpm();
     test_gen_lpf_pole();
     test_e3_gen_groove_enhancements();  /* E3: scales + ROOT/RANGE + page layout */
+    test_gen_declared_units();
 
     printf("test_groove: ALL TESTS PASSED\n");
     return 0;

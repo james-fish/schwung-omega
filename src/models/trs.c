@@ -269,10 +269,10 @@ static void trs_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
 static int trs_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_TRS_TONE  "\",\"name\":\"CLICK/SNAP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_TRS_TDEC  "\",\"name\":\"TRANS DEC\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_TRS_WTCOL "\",\"name\":\"WT COLOR\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_TRS_CURVE "\",\"name\":\"CURVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_TRS_TONE  "\",\"name\":\"Click to Snap\",\"short_name\":\"SNAP\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_TRS_TDEC  "\",\"name\":\"Click Decay\",\"short_name\":\"CLKDEC\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_TRS_WTCOL "\",\"name\":\"Body Color\",\"short_name\":\"BODY\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_TRS_CURVE "\",\"name\":\"Sweep Curve\",\"short_name\":\"SWEEP\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;
     memcpy(buf, json, (size_t)len);
