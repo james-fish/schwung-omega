@@ -121,10 +121,16 @@ static void groove_set_length(groove_state_t *g, float v) {
  * groove_tick (after the route loop) so the tremolo rate is order-independent. */
 static inline void groove_drive_block(groove_state_t *g, float *l, float *r) {
     if (g->drive > 0.0f) {
-        /* DIODE drive: asymmetric soft-clip (positive half saturates harder than
-         * the negative) → even-harmonic "diode" grit, with makeup. */
-        float k  = 1.0f + g->drive * 4.0f;
-        float mk = 1.0f / (1.0f + g->drive * 0.7f);
+        /* DIODE drive (Finding 7 — matched to the kick FX diode character):
+         * asymmetric soft-clip (positive half saturates harder than the negative)
+         * → even-harmonic "diode" grit. The pre-gain curve is strengthened from
+         * 1+drive*4 to 1+drive*9 so full-right is noticeably aggressive (comparable
+         * to the kick's FX drive). Output-gain makeup mirrors the kick's
+         * out_gain = 1/(1+amt*comp) form (stronger comp to track the hotter drive),
+         * so raising DRIVE changes CHARACTER not just level. The x/(1±x) transfer
+         * self-limits → bounded output, no new transcendental (RT-safe). */
+        float k  = 1.0f + g->drive * 9.0f;
+        float mk = 1.0f / (1.0f + g->drive * 1.3f);
         float gl = *l, gr = *r;
         float xl = gl * k, xr = gr * k;
         float wl = (xl >= 0.0f ? xl / (1.0f + xl) : xl / (1.0f - 0.5f * xl)) * mk;
@@ -263,6 +269,8 @@ void groove_init(groove_state_t *g) {
     g->gen_decay   = 0.5f;         /* medium gen-note length */
     g->gen_fold    = 0.0f;
     g->gen_base_hz = 45.0f;        /* set from gen_root_param (unified log map) */
+    g->gen_osc_phase = 0.0f;
+    g->gen_sub_phase = 0.0f;       /* Finding 3: built-in sub-octave oscillator */
     g->gen_seed_raw = 12345u;
     g->gen_env_coef = 0.9995f;     /* recomputed from gen_decay in set_param */
     g->gen_running = false;
@@ -360,6 +368,7 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                     g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);  /* per-step only */
                     g->gen_env = 1.0f;
                     g->gen_osc_phase = 0.0f;
+                    g->gen_sub_phase = 0.0f;   /* Finding 3: re-zero the sub-octave phase on trigger */
                 }
                 int dur = g->samples_per_16th;   /* even 16th grid (SWING removed; DECAY shapes notes) */
                 g->gen_step_ctr = dur > 1 ? dur : 1;
@@ -387,6 +396,14 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         float wf = wp - (float)wa;
         float osc = wt_read_bl(wa, 0, g->gen_osc_phase)
                   + wf * (wt_read_bl(wa + 1, 0, g->gen_osc_phase) - wt_read_bl(wa, 0, g->gen_osc_phase));
+        /* Finding 3: built-in SUB-OCTAVE (no new UI param). Read the SAME morphed
+         * wavetable position one octave below the fundamental (half phase
+         * increment) and sum at a fixed blend. Added BEFORE the wavefolder/env so
+         * the existing fold headroom + gen_env bound the summed signal; the sub is
+         * an octave LOWER so it cannot alias at the top of the ROOT range. */
+        float sub = wt_read_bl(wa, 0, g->gen_sub_phase)
+                  + wf * (wt_read_bl(wa + 1, 0, g->gen_sub_phase) - wt_read_bl(wa, 0, g->gen_sub_phase));
+        osc = osc + 0.45f * sub;
         /* Auto-fold ramps in over the top of the scan (0 below 0.6, up to ~0.5 at
          * the top) for beefy wavefolded character, additive to the FOLD knob. */
         float autofold = g->gen_wave_pos > 0.6f ? (g->gen_wave_pos - 0.6f) * 1.25f : 0.0f;
@@ -400,8 +417,12 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         }
         float s = osc * g->gen_env;
         g->gen_env *= g->gen_env_coef;
-        g->gen_osc_phase += g->gen_freq / OMEGA_SR;
+        /* One divide for both oscillators: fundamental at inc, sub at 0.5*inc. */
+        float inc = g->gen_freq / OMEGA_SR;
+        g->gen_osc_phase += inc;
         if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
+        g->gen_sub_phase += 0.5f * inc;
+        if (g->gen_sub_phase >= 1.0f) g->gen_sub_phase -= 1.0f;
         gl = gr = s;
         /* Keep the ring write-head advancing so a later TAPS switch is coherent. */
         g->buf_l[g->write_pos] = 0.0f; g->buf_r[g->write_pos] = 0.0f;

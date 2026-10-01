@@ -115,6 +115,7 @@ typedef struct groove_state {
     int   gen_step;               /* current step index */
     int   gen_step_ctr;           /* samples remaining in the current step */
     float gen_osc_phase;          /* oscillator phase [0,1) */
+    float gen_sub_phase;          /* sub-octave phase [0,1) — Finding 3 built-in sub */
     float gen_env;                /* per-note amplitude env (decaying) */
     float gen_env_coef;           /* env decay coefficient */
     float gen_freq;               /* current note frequency (Hz) */
