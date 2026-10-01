@@ -34,7 +34,7 @@ progress:
 Phase: E1
 Plan: Not started
 **Status:** Milestone complete
-**Last activity:** 2026-09-30 - Completed quick task 260930-vhr: TAPS rumble redesign (on-device listening pending)
+**Last activity:** 2026-10-01 - Completed quick task 261001-72b: Omega iteration 2 (GEN/TAPS/performer/defaults/presets + library prep)
 
 ```
 v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
@@ -165,6 +165,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260930-vhr | TAPS rumble redesign: bidirectional LENGTH, equal-power taps, fractional/slewed reads, COLOR 2-pole LP, pre/post REVERB | 2026-09-30 | 3b67629 | Needs Review (on-device listening pending) | [260930-vhr-pick-up-taps-rumble-redesign-with-full-d](./quick/260930-vhr-pick-up-taps-rumble-redesign-with-full-d/) |
+| 261001-72b | Omega iteration 2: GEN root unify + seq overhaul, TAPS LPF/LFO/RV-TYPE, CMPDR, kick defaults + FM4 taming + WTR scan, presets (state JSON), library prep (release.json/README) | 2026-10-01 | 18eed2a | Needs Review (on-device listening pending; catalog PR + release publish pending) | [261001-72b-omega-iteration-2-on-device-feedback-bat](./quick/261001-72b-omega-iteration-2-on-device-feedback-bat/) |
 
 ---
 

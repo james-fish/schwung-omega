@@ -114,7 +114,7 @@ TAPS_TEST_SRCS = tests/test_taps_redesign.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign fixtures wavetables clean deploy
+.PHONY: dsp.so dist test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -149,6 +149,17 @@ wavetables: tools/gen_wavetables.c
 dsp.so: | src/wavetables.h
 	@mkdir -p build
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
+
+# dist: package the Schwung-library release asset `omega-module.tar.gz` (the
+# module folder — module.json + dsp.so) that release.json's download_url points
+# at. Run after `make dsp.so` (needs the aarch64 build). The tarball lays the
+# files under an `omega/` dir so it extracts into sound_generators/omega/.
+dist: dsp.so
+	@mkdir -p build/dist/omega
+	cp build/dsp.so build/dist/omega/dsp.so
+	cp module.json  build/dist/omega/module.json
+	tar -czf build/omega-module.tar.gz -C build/dist omega
+	@echo "dist: build/omega-module.tar.gz"
 
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
