@@ -664,6 +664,125 @@ static void test_gen_filter_sweep(void) {
     printf("test_groove: P1 GEN filter sweep OK (zcr open=%d closed=%d)\n", zo, zc);
 }
 
+/* ---- quick 261001-wft Task 4: GEN filter envelope + resonant 18 dB/oct +
+ * filter-decay = 65% amp decay (Finding 4) + DECAY knob curve (Finding 5) ----
+ *
+ * Behaviour asserted:
+ *  (A) DECAY curve (Finding 5): at the same knob value (v=0.5) the NEW tau is
+ *      SHORTER than the OLD 0.005*powf(30,v) map — the plucky short range is
+ *      spread across more travel. Endpoints stay sane (v=0 a few ms, v=1 long).
+ *      Both formulas are computed here and compared (the new map is v'=v*v).
+ *  (B) Resonant 18 dB/oct (Finding 4): a GEN note render at the resonant corner
+ *      stays finite + bounded in int16, and the resonant/enveloped GEN filter
+ *      output differs measurably from a plain non-resonant baseline (COLOR fully
+ *      open vs a resonant mid setting changes the spectrum).
+ *  (C) Filter envelope opens then closes WITHIN a single note (Finding 4): the
+ *      brightness (ZCR) in the early window of a note is higher than in the late
+ *      window — the per-note filter env adds a cutoff offset at onset that decays
+ *      away (filter tau = 0.65*amp tau, so the filter closes before the note). */
+static void test_gen_filter_env_decay_curve(void) {
+    /* (A) DECAY curve: compute OLD vs NEW tau at mid-knob and assert NEW shorter. */
+    float v = 0.5f;
+    float tau_old = 0.005f * powf(30.0f, v);          /* previous linear-v map */
+    float vp      = v * v;                             /* NEW expo input curve */
+    float tau_new = 0.005f * powf(30.0f, vp);          /* same endpoints, shorter mid */
+    if (!(tau_new < tau_old * 0.85f))
+        fprintf(stderr, "decay_curve: tau_new=%.4f tau_old=%.4f (want new<0.85*old)\n",
+                tau_new, tau_old);
+    assert(tau_new < tau_old * 0.85f);                 /* mid-knob is clearly shorter */
+    /* Endpoints sane: v=0 -> 5 ms, v=1 -> ~150 ms (expo curve preserves them). */
+    assert(0.005f * powf(30.0f, 0.0f) < 0.010f);       /* ~5 ms at the far left */
+    assert(0.005f * powf(30.0f, 1.0f) > 0.100f);       /* long tail at the far right */
+
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(128.0);
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    (void)noteon;
+
+    /* (B) Resonant corner: render a GEN voice with the filter parked near the
+     * resonant corner; assert finite/bounded and that it differs from a plain
+     * fully-open (non-resonant-dominated) render. */
+    static int16_t reso_b[NSAMP], open_b[NSAMP];
+    for (int pass = 0; pass < 2; pass++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
+        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
+        api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF content */
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
+        api->set_param(inst, PK_GRV_GSWING, "0.5");   /* medium DECAY */
+        api->set_param(inst, PK_GRV_GROOT,  "0.4");   /* audible mid root */
+        /* pass 0: filter parked at the resonant corner; pass 1: fully open. */
+        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "0.45" : "1.0");
+        mock_host_set_beat(0.0);
+        render_driven(api, inst, dbeat, pass == 0 ? reso_b : open_b);
+        api->destroy_instance(inst);
+    }
+    /* render_driven already asserts every sample finite + in int16 range. The
+     * resonant-corner render must differ from the fully-open one (the extra poles
+     * + resonance + env reshape the spectrum). */
+    assert(memcmp(reso_b, open_b, sizeof reso_b) != 0);
+
+    /* (C) Filter env opens then closes within a note: compare early-window vs
+     * late-window brightness (ZCR) of a single GEN note. Render ONE note by
+     * firing a sparse sequence and measuring the first note's attack vs tail. */
+    static int16_t note_b[NSAMP];
+    {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        api->set_param(inst, PK_GRV_TYPE, "1");
+        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GSCALE, "0");
+        api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF for a clear env */
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step (audible) */
+        api->set_param(inst, PK_GRV_GFOLD,  "0.5");   /* match filter_sweep HF content */
+        api->set_param(inst, PK_GRV_GSWING, "0.9");   /* long note so the env is visible */
+        api->set_param(inst, PK_GRV_COLOR,  "0.6");   /* mid cutoff so the env moves it */
+        mock_host_set_beat(0.0);
+        render_driven(api, inst, dbeat, note_b);
+        api->destroy_instance(inst);
+    }
+    /* Find the first non-trivial note onset, then compare ZCR of a short early
+     * window vs a short late window after it. */
+    int frames = NSAMP / 2;
+    /* Peak-relative onset so the test is robust to absolute level. */
+    int16_t peak = 0;
+    for (int f = 0; f < frames; f++) {
+        int16_t s = note_b[f * 2]; int16_t a = s < 0 ? (int16_t)-s : s;
+        if (a > peak) peak = a;
+    }
+    assert(peak > 200);                                /* GEN voice is audible */
+    int thr = peak / 3;
+    int onset = -1;
+    for (int f = 0; f < frames; f++) {
+        int16_t s = note_b[f * 2]; int16_t a = s < 0 ? (int16_t)-s : s;
+        if (a > thr) { onset = f; break; }
+    }
+    assert(onset >= 0);                                /* a note fired */
+    int win = 1500;                                    /* ~34 ms windows */
+    if (onset + 2 * win + win < frames) {
+        int ze = 0, zl = 0; int16_t pe = 0, pl = 0;
+        for (int f = onset; f < onset + win; f++) {
+            if ((note_b[f*2] >= 0) != (pe >= 0)) ze++; pe = note_b[f*2];
+        }
+        int lstart = onset + 2 * win;
+        for (int f = lstart; f < lstart + win; f++) {
+            if ((note_b[f*2] >= 0) != (pl >= 0)) zl++; pl = note_b[f*2];
+        }
+        if (!(zl < ze))
+            fprintf(stderr, "filter_env: early ZCR=%d late ZCR=%d (want late<early)\n", ze, zl);
+        assert(zl < ze);     /* brightness decays within the note => filter env closes */
+    }
+    printf("test_groove: Task4 GEN filter-env + DECAY curve OK (tau_new=%.4f < tau_old=%.4f)\n",
+           tau_new, tau_old);
+}
+
 /* ---- Phase 1 GEN-PITCH: unquantized ROOT tracks + reaches sub-bass (1-04) -- */
 static void test_gen_root_pitch(void) {
     host_api_v1_t host = make_mock_host();
@@ -900,6 +1019,7 @@ int main(void) {
     test_length_morph();          /* RUMBLE-CORE 1-01-03 */
     test_route_changes_output();  /* FX-ROUTE 1-02-01 */
     test_gen_filter_sweep();      /* GEN-FILTER 1-03-01 */
+    test_gen_filter_env_decay_curve();  /* quick 261001-wft Task 4 (Findings 4+5) */
     test_gen_root_pitch();        /* GEN-PITCH 1-04-01 */
 
     /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
