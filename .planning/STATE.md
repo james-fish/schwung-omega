@@ -165,7 +165,8 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260930-vhr | TAPS rumble redesign: bidirectional LENGTH, equal-power taps, fractional/slewed reads, COLOR 2-pole LP, pre/post REVERB | 2026-09-30 | 3b67629 | Needs Review (on-device listening pending) | [260930-vhr-pick-up-taps-rumble-redesign-with-full-d](./quick/260930-vhr-pick-up-taps-rumble-redesign-with-full-d/) |
-| 261001-72b | Omega iteration 2: GEN root unify + seq overhaul, TAPS LPF/LFO/RV-TYPE, CMPDR, kick defaults + FM4 taming + WTR scan, presets (state JSON), library prep (release.json/README) | 2026-10-01 | 18eed2a | Needs Review (on-device listening pending; catalog PR + release publish pending) | [261001-72b-omega-iteration-2-on-device-feedback-bat](./quick/261001-72b-omega-iteration-2-on-device-feedback-bat/) |
+| 261001-72b | Omega iteration 2: GEN root unify + seq overhaul, TAPS LPF/LFO/RV-TYPE, CMPDR, kick defaults + FM4 taming + WTR scan, presets (state JSON), library prep (release.json/README) | 2026-10-01 | 18eed2a | Deployed on-device; v0.2.0 released; catalog PR charlesvestal/schwung#585 open | [261001-72b-omega-iteration-2-on-device-feedback-bat](./quick/261001-72b-omega-iteration-2-on-device-feedback-bat/) |
+| 261001-iter3 | Iteration 3 (on-device): raise DUCK crossover 60→2500 Hz (audible pump); FLIP TAPS LENGTH so more=longer decay/smear + widen multi-tap range (fixes collapse-to-tap1 past 60%); GEN DECAY fine exp curve 5→150 ms (fills ~a 16th, no multi-step smear). v0.2.1. | 2026-10-01 | (code) | Deployed on-device pending; v0.2.1 release pending | — |
 
 ---
 

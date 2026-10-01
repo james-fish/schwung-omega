@@ -104,13 +104,14 @@ static void groove_update_tap_weights(groove_state_t *g) {
     g->tap_norm = g->rumble_makeup / norm;
 }
 
-/* ---- LENGTH -> decay time constant (control-rate, Phase 1 §Rumble Core) ---- */
-/* v=1 (right, "distinct"): tau ~40 ms — later taps near-silent → clean separated
- * ghost-kick plucks. v=0 (left, "smeared"): tau ~1200 ms — all taps stay loud →
- * overlapping continuous rumble. Exponential map, powf at control rate only. NO
- * feedback: LENGTH shapes the FIR tap envelope, not a recirculation gain. */
+/* ---- LENGTH -> decay time constant (control-rate) -------------------------- */
+/* iter-3: MORE length = LONGER decay = more overlapping taps (intuitive). v=0
+ * (left) tau ~30 ms → only tap1, distinct plucks; v=1 (right) tau ~1200 ms → all
+ * taps sustain into a smeared continuous rumble. Exponential (30·40^v) so the
+ * multi-tap region spans ~v>0.4 upward instead of collapsing to tap1 past 60%.
+ * powf at control rate only; NO feedback — LENGTH shapes the FIR tap envelope. */
 static void groove_set_length(groove_state_t *g, float v) {
-    g->tap_tau_s = (40.0f * powf(30.0f, 1.0f - v)) * 0.001f;  /* powf: CONTROL rate */
+    g->tap_tau_s = (30.0f * powf(40.0f, v)) * 0.001f;        /* powf: CONTROL rate */
     groove_update_tap_weights(g);
 }
 
@@ -643,10 +644,12 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->gen_rotate = v * 2.0f - 1.0f;            /* bidirectional -1..1 → ±len steps */
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSWING) == 0) {
-        /* Repurposed as DECAY (SWING removed): gen note length. v=0 short pluck
-         * (~15 ms), v=1 long sustain (~1.2 s). Env coef at control rate. */
+        /* DECAY = gen note length (SWING removed). iter-3: short attack + short
+         * decay. Fine EXPONENTIAL curve so the musically useful short range has
+         * lots of resolution on the left: v=0 ~5 ms pluck → v=1 ~150 ms (fills
+         * roughly a 16th at techno tempos), no multi-step sustain smear. */
         g->gen_decay = v;
-        float tau_s = 0.015f + v * v * 1.185f;      /* 15 ms .. 1.2 s */
+        float tau_s = 0.005f * powf(30.0f, v);      /* 5 ms .. ~150 ms, fine on the left */
         g->gen_env_coef = expf(-1.0f / (tau_s * OMEGA_SR));
     } else if (strcmp(key, PK_GRV_GWAVE) == 0) {
         /* Continuous WAVE SCAN 0..1 (not discrete): morphs sine→…→analog + fold. */

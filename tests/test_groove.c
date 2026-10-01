@@ -487,7 +487,7 @@ static void test_no_runaway(void) {
         select_model(api, inst, MODEL_FM2);
         prime_groove(api, inst);
         api->set_param(inst, KGRV_VOL,    "1.0");
-        api->set_param(inst, KGRV_LENGTH, "0.0");   /* max smear */
+        api->set_param(inst, KGRV_LENGTH, "1.0");   /* max smear (iter-3: len=1 = longest decay) */
         api->set_param(inst, PK_GRV_DRIVE, "1.0");
         api->set_param(inst, PK_GRV_RVMIX, "1.0");
         api->set_param(inst, PK_GRV_RVDECAY, "1.0");
@@ -579,7 +579,7 @@ static void test_length_morph(void) {
         api->set_param(inst, PK_LENGTH, "0.2");       /* short kick -> isolated taps */
         api->set_param(inst, KGRV_VOL, "1.0");
         api->set_param(inst, KGRV_COLOR, "1.0");      /* wide open */
-        api->set_param(inst, KGRV_LENGTH, pass == 0 ? "1.0" : "0.0"); /* distinct vs smear */
+        api->set_param(inst, KGRV_LENGTH, pass == 0 ? "0.0" : "1.0"); /* distinct(0) vs smear(1) */
         api->on_midi(inst, noteon, 3, 0);
         render_driven(api, inst, dbeat, pass == 0 ? dist : smear);
     }

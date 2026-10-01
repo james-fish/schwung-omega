@@ -2,7 +2,7 @@
   "id": "omega",
   "name": "Omega",
   "abbrev": "OMGA",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "James Fish",
   "description": "Multi-engine techno kick synth + feedback-free groove rumble + generative bass/bleep sequencer + performer glue",
   "api_version": 2,

@@ -99,7 +99,7 @@ static void gate_smear_stability(plugin_api_v2_t *api) {
     prime_kick(api, inst);
     neutralise_chain(api, inst);
     prime_taps(api, inst);
-    api->set_param(inst, KGRV_LENGTH, "0.0");   /* max smear */
+    api->set_param(inst, KGRV_LENGTH, "1.0");   /* max smear (iter-3: len=1 = longest decay) */
 
     double dbeat = dbeat_for_bpm(BPM);
     mock_host_set_beat(0.0);
@@ -150,7 +150,7 @@ static void gate_reverb_bounded(plugin_api_v2_t *api) {
     prime_kick(api, inst);
     neutralise_chain(api, inst);
     prime_taps(api, inst);
-    api->set_param(inst, KGRV_LENGTH,   "0.0");
+    api->set_param(inst, KGRV_LENGTH,   "1.0");
     api->set_param(inst, PK_GRV_RVMIX,  "1");
     api->set_param(inst, PK_GRV_RVDECAY,"1");
     double dbeat = dbeat_for_bpm(BPM);
@@ -313,7 +313,7 @@ static void gate_length_morph(plugin_api_v2_t *api) {
         neutralise_chain(api, inst);
         prime_taps(api, inst);
         api->set_param(inst, KGRV_COLOR, "1.0");  /* wide open so tail HF isn't removed */
-        api->set_param(inst, KGRV_LENGTH, pass == 0 ? "1.0" : "0.0"); /* distinct vs smear */
+        api->set_param(inst, KGRV_LENGTH, pass == 0 ? "0.0" : "1.0"); /* distinct(0) vs smear(1) */
         mock_host_set_beat(0.0);
         mock_host_set_bpm((float)BPM);
         int16_t warm[BLOCK * 2];
