@@ -270,8 +270,10 @@ static void fm4_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
     for (int i = 0; i < FM4_NUM_OPS; i++) ncar += (float)carrier[i];
     float carnorm = ncar > 0.0f ? (1.0f / ncar) : 1.0f;
 
-    /* Global FM depth scalar (OP INDEX): 0..~6. */
-    float gidx = f->op_index * 6.0f;
+    /* Global FM depth scalar (OP INDEX). iter-2: QUADRATIC taper (0..~4) so low
+     * and mid settings are gentle/musical instead of harsh noise/transients, with
+     * headroom only at the very top. */
+    float gidx = f->op_index * f->op_index * 4.0f;
 
     for (int n = 0; n < frames; n++) {
         float p_fast = env_tick(&f->pitch_env_fast);

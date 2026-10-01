@@ -83,6 +83,7 @@ int pk_global_index(const char *key);
 
 /* index -> canonical key string (for replaying the cache on model switch). */
 const char *pk_kick_key(int idx);
+const char *pk_global_key(int idx);
 
 /* Locale-independent decimal formatter: writes `v` with `decimals` fractional
  * digits into buf (bounded by buf_len), null-terminated. Returns bytes written

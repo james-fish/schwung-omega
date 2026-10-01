@@ -14,7 +14,9 @@ _Static_assert(GKI_COUNT == OMEGA_GKI_COUNT, "GKI_COUNT vs OMEGA_GKI_COUNT drift
  * voicing defaults — this only establishes the readback baseline (UIX-01). */
 const float g_kick_defaults[PKI_COUNT] = {
     /* shared. PITCH is a Hz value now (VOICE-01): ~50 Hz techno pocket default. */
-    [PKI_PITCH]=50.0f, [PKI_LENGTH]=0.5f, [PKI_SUSTAIN]=0.5f, [PKI_CURVE]=0.5f,
+    /* CURVE defaults HIGH (0.8) for every model — punchy 808↔909 pitch sweep out
+     * of the box (iter-2 feedback: "all models' curve should default ~.75–.8"). */
+    [PKI_PITCH]=50.0f, [PKI_LENGTH]=0.5f, [PKI_SUSTAIN]=0.5f, [PKI_CURVE]=0.8f,
     [PKI_ATTACK]=0.5f, [PKI_TRS_DEC]=0.5f, [PKI_TRS_TNE]=0.5f, [PKI_COLOR]=0.5f,
     [PKI_FX_TYPE]=0.0f, [PKI_FX_AMT]=0.0f,
     [PKI_FX_TONE]=0.5f, [PKI_FILTER_ROUTE]=2.0f,   /* tone centered; route=Both
@@ -22,13 +24,16 @@ const float g_kick_defaults[PKI_COUNT] = {
      * model follow-up, see docs/VOICING_AUDIT_v1_1.md). */
     /* FM2 — lower default ratio/index: v=0.5 was piercing/shrill (VOICE-06).
      * 0.22 -> ratio ~2.15, 0.30 -> index ~2.4: warmer, punchy, clean tail. */
-    [PKI_FM_RATIO]=0.22f, [PKI_FM_INDEX]=0.30f, [PKI_OP2_WAVE]=0.35f,
-    /* FM4 */
-    [PKI_FM4_ALGO]=0.0f, [PKI_FM4_OPRATIO]=0.5f, [PKI_FM4_OPINDEX]=0.5f,
-    [PKI_FM4_OPAMP]=0.5f, [PKI_FM4_FEEDBACK]=0.5f, [PKI_FM4_ALGO2]=0.5f,
+    /* FM2 (first model loaded): a clean punchy kick at defaults — low FM index +
+     * ratio (iter-2: findex .05, fmratio .1). */
+    [PKI_FM_RATIO]=0.10f, [PKI_FM_INDEX]=0.05f, [PKI_OP2_WAVE]=0.35f,
+    /* FM4: op params default LOW (iter-2: opratio/opindex .05, amp/fb gentle) —
+     * the mapping is also tamed in fm4.c so mid settings aren't harsh noise. */
+    [PKI_FM4_ALGO]=0.0f, [PKI_FM4_OPRATIO]=0.05f, [PKI_FM4_OPINDEX]=0.05f,
+    [PKI_FM4_OPAMP]=0.1f, [PKI_FM4_FEEDBACK]=0.1f, [PKI_FM4_ALGO2]=0.5f,
     /* WTR — raise WAVE + BODY PITCH defaults: v=0.5 sounded like just the
      * transient (VOICE-06). More body wave + body pitch presence at default. */
-    [PKI_WTR_WAVE]=0.6f, [PKI_WTR_BODYPITCH]=0.7f, [PKI_WTR_TRANSDEC]=0.5f,
+    [PKI_WTR_WAVE]=0.6f, [PKI_WTR_BODYPITCH]=0.25f, [PKI_WTR_TRANSDEC]=0.5f,
     [PKI_WTR_TRANSCOL]=0.5f,
     /* PHY */
     [PKI_PHY_BEATER]=0.5f, [PKI_PHY_SHELL]=0.5f, [PKI_PHY_HEADTENS]=0.5f,
@@ -70,11 +75,11 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_ROUTE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
     [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
-    [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,
+    [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.5f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,  /* GSWING slot = DECAY (medium) */
     [GKI_GRV_GRETRIG]=0.0f,
     /* E3/P1: root — quantized A1 (≈0.542) baseline; unquantized maps log 20..200 Hz,
      * default 0.352 → ~45 Hz sub-bass (Phase 1 GEN-PITCH). Range 12 degrees (0.5). */
-    [GKI_GRV_GROOT]=0.352f, [GKI_GRV_GRANGE]=0.5f,
+    [GKI_GRV_GROOT]=0.18f, [GKI_GRV_GRANGE]=0.5f,   /* unified log root ≈ 45 Hz default */
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
     [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
     [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,
@@ -152,6 +157,11 @@ int pk_global_index(const char *key) {
 const char *pk_kick_key(int idx) {
     if (idx < 0 || idx >= PKI_COUNT) return NULL;
     return k_kick_keys[idx];
+}
+
+const char *pk_global_key(int idx) {
+    if (idx < 0 || idx >= GKI_COUNT) return NULL;
+    return k_global_keys[idx];
 }
 
 /* ---- Locale-independent decimal formatter -------------------------------- */

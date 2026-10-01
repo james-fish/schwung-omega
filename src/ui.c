@@ -129,7 +129,7 @@ static const uiparam_t P_PERF[] = {
     { PK_DUCK_BS,    "DUCK FREQ","FREQ",  UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_FILT,    "DJ FILT",  "DJFLT", UP_FLOAT, "%", "0.01", NULL },
     { PK_DJ_RESO,    "DJ RESO",  "DJRES", UP_FLOAT, "%", "0.01", NULL },
-    { PK_CLIP,       "CLIP",     "CLIP",  UP_ENUM,  "",  "0",    OPT_ONOFF },
+    { PK_CLIP,       "CMPDR",    "CMPDR", UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_PERF[] =
     "[\"" PK_MASTER_VOL "\",\"" PK_DUCK "\",\"" PK_DUCK_REL "\",\"" PK_DUCK_SMT
@@ -179,7 +179,7 @@ static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_TYPE,   "TYPE",   "TYPE", UP_ENUM,  "",  "0",    OPT_GRVTYPE },
     { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_COLOR,  "COLOR",  "COLOR",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_COLOR,  "LPF",    "LPF",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP1,   "TAP1",   "TAP1", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP2,   "TAP2",   "TAP2", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP3,   "TAP3",   "TAP3", UP_FLOAT, "%", "0.01", NULL },
@@ -194,9 +194,11 @@ static const char KN_GROOVE1[] =
  * REVERB (vhr §B.2): the RV MIX knob is now BIDIRECTIONAL — CENTER = off,
  * LEFT = pre-smear (reverb into the tap ring input), RIGHT = post reverb. Same
  * key (PK_GRV_RVMIX), one Schroeder instance; the label communicates the range. */
-/* TAPS variant (7 knobs): the no-op RV TYPE was dropped to make room for ROUTE
- * (Phase 1 FX-ROUTE). REVERB is now a plain dry/wet MIX. TAPS gets its FILTER
- * from the Page-1 COLOR knob, so it has no FILTER here. */
+/* Shared "Groove Effects" page (8 knobs) — identical for TAPS and GEN. DRIVE is
+ * a diode drive; the LFO now sweeps tap LPF + RV TONE together; REVERB is a plain
+ * dry/wet MIX; ROUTE picks the {rumble,drive,reverb} order; RV TYPE is a real
+ * Room/Hall/Plate flavor (same cost). GEN's LP filter lives on its Gen Seq page
+ * (next to WAVE/FOLD), TAPS's on its Page-1 LPF — so neither needs a FILTER here. */
 static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
@@ -205,41 +207,32 @@ static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
+    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
 };
 static const char KN_GROOVE_FX[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
-    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_ROUTE "\"]";
-
-/* GEN variant (8 knobs): same as TAPS + a FILTER knob (ONDEVICE #14 — GEN has no
- * Page-1 COLOR, so its 30 Hz–20 kHz log LP sweep lives here on PK_GRV_COLOR). */
-static const uiparam_t P_GROOVE_FX_GEN[] = {
-    { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
-    { PK_GRV_COLOR,   "FILTER",  "FILT",  UP_FLOAT, "%", "0.01", NULL },
-};
-static const char KN_GROOVE_FX_GEN[] =
-    "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
     "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE
-    "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_COLOR "\"]";
+    "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_RVTYPE "\"]";
 
 /* GEN groove page 2: sequence controls (SCALE/ROOT/RANGE/RETRIG moved to groove1). */
+/* Gen Seq (8 knobs). iter-2: SEQ LEN shows 1–64; ROTATE is bidirectional −32..+32;
+ * SEED is stepped (discrete patterns); SWING is replaced by DECAY (gen note
+ * length); WAVE is a continuous scan (sine→…→analog + fold), not a discrete enum;
+ * and the GEN LP FILTER lives here next to WAVE/FOLD (moved off the FX page). */
 static const uiparam_t P_GROOVE_GEN_SEQ[] = {
-    { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.01", NULL },
-    { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.01", NULL },
-    { PK_GRV_GSWING,   "SWING",   "SWING", UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_ENUM,  "",  "0",    OPT_GWAVE },
-    { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.0079", NULL, "0",   "127" },
+    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.0159", NULL, "1",   "64"  },
+    { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.0156", NULL, "-32", "32"  },
+    { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_COLOR,    "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },
 };
 static const char KN_GROOVE_GEN_SEQ[] =
     "[\"" PK_GRV_GSEED "\",\"" PK_GRV_GSEQLEN "\",\"" PK_GRV_GDENSITY
-    "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE "\",\"" PK_GRV_GFOLD "\"]";
+    "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE
+    "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_COLOR "\"]";
 
 static const uiparam_t P_GROOVE2[] = {
     { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },
@@ -310,7 +303,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
     };
     bool unq = inst && inst->groove.gen_unquantized;
     uiparam_t p_root = unq
-        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "20", "200" }
+        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "20", "2000" }
         : (uiparam_t){ PK_GRV_GROOT, "ROOT",    "ROOT", UP_FLOAT, "",   "0.012", NULL, NULL, NULL };
     ui_puts(buf, buf_len, off,
         "\"groove1\":{\"name\":\"Gen Groove\",\"params\":[");
@@ -382,7 +375,7 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
                       P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ);
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove3", "Groove Effects",
-                      P_GROOVE_FX_GEN, NELEM(P_GROOVE_FX_GEN), KN_GROOVE_FX_GEN);
+                      P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX);
     } else {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",

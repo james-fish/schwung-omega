@@ -257,7 +257,7 @@ static void perf_config(bohm_instance_t *inst) {
     float bs   = inst->global_cache[GKI_DUCK_BS];
     float filt = inst->global_cache[GKI_DJ_FILT];
     float reso = inst->global_cache[GKI_DJ_RESO];
-    float clip = inst->global_cache[GKI_CLIP];
+    float cmpdr = inst->global_cache[GKI_CLIP];   /* GKI_CLIP slot repurposed as CMPDR */
 
     inst->duck_depth = duck < 0 ? 0 : (duck > 1 ? 1 : duck);
     float rel_ms = 10.0f + rel * 490.0f;                       /* 10..500 ms (PERF-01) */
@@ -284,7 +284,16 @@ static void perf_config(bohm_instance_t *inst) {
     } else {
         inst->dj_mode = 2;                                    /* neutral bypass */
     }
-    inst->clip_on = (clip >= 0.5f);
+    /* CMPDR (iter-2, PERF-04 replacement): one-knob comp + drive master glue.
+     * As amount rises the compressor threshold drops, makeup + drive increase.
+     * amount 0 = full bypass. Attack/release fixed (fast glue). */
+    float a = cmpdr < 0 ? 0 : (cmpdr > 1 ? 1 : cmpdr);
+    inst->cmpdr_amt  = a;
+    inst->cmp_thr    = 1.0f - a * 0.75f;                 /* 1.0 (no comp) .. 0.25 */
+    inst->cmp_makeup = 1.0f + a * 1.5f;                  /* up to +3.5 dB-ish */
+    inst->cmp_atk    = expf(-1.0f / (0.002f * OMEGA_SR));/* ~2 ms attack */
+    inst->cmp_rel    = expf(-1.0f / (0.080f * OMEGA_SR));/* ~80 ms release */
+    inst->clip_on    = false;
 }
 
 static bool is_perf_key(const char *key) {
@@ -294,8 +303,9 @@ static bool is_perf_key(const char *key) {
            strcmp(key, PK_CLIP)==0;
 }
 
+static void omega_apply_state(bohm_instance_t *inst, const char *json);  /* fwd (preset restore) */
+
 static void *omega_create(const char *module_dir, const char *json_defaults) {
-    (void)json_defaults;
     /* Single allocation for the whole instance (CLAUDE.md single-alloc). calloc
      * zero-inits every field, giving a deterministic denormal/NaN-free start. */
     bohm_instance_t *inst = calloc(1, sizeof(bohm_instance_t));
@@ -350,7 +360,16 @@ static void *omega_create(const char *module_dir, const char *json_defaults) {
      * compute coefficients from the seeded cache. */
     inst->duck_gain_s = 1.0f;
     inst->duck_env    = 0.0f;
+    inst->cmp_env     = 0.0f;
     perf_config(inst);
+
+    /* PRESET RESTORE on load: if the host passes a saved state blob as
+     * json_defaults (what get_param("state") emitted), apply it over the seeded
+     * defaults. A bare "{}" or NULL leaves the musical defaults in place. */
+    if (json_defaults && json_defaults[0] == '{' && json_defaults[1] != '}') {
+        omega_apply_state(inst, json_defaults);
+        perf_config(inst);
+    }
     return inst;
 }
 
@@ -386,8 +405,14 @@ static bool is_groove_key(const char *key) {
     return strncmp(key, "grv_", 4) == 0;
 }
 
+static void omega_apply_state(bohm_instance_t *inst, const char *json);
+
 static void omega_set_param(void *instance, const char *key, const char *val) {
     bohm_instance_t *inst = instance;
+
+    /* PRESET RESTORE: a "state" blob (from get_param("state")) is applied as a
+     * batch of key/value pairs (see omega_apply_state). */
+    if (key && strcmp(key, PK_STATE) == 0) { omega_apply_state(inst, val); return; }
 
     /* Record the raw value into the cache (B1, UIX-01/04) BEFORE dispatch so
      * get_param can echo it and a model switch can replay it. Kick keys are
@@ -437,6 +462,31 @@ static void omega_set_param(void *instance, const char *key, const char *val) {
     }
 }
 
+/* Parse a "state" JSON object {"key":"val",...} and apply each pair. Two passes:
+ * PK_MODEL first (so kick params land on the right model), then everything else.
+ * Tolerant scanner — expects simple quoted keys/values, no nested objects or
+ * escapes (matches what omega_get_param("state") emits). */
+static void omega_apply_state_pass(bohm_instance_t *inst, const char *s, int model_only) {
+    if (!s) return;
+    const char *p = s;
+    char key[48], val[48];
+    while (*p) {
+        while (*p && *p != '"') p++; if (!*p) break; p++;
+        int ki = 0; while (*p && *p != '"' && ki < 47) key[ki++] = *p++; key[ki] = '\0';
+        if (*p != '"') break; p++;
+        while (*p && *p != ':') p++; if (!*p) break; p++;
+        while (*p && *p != '"') p++; if (!*p) break; p++;
+        int vi = 0; while (*p && *p != '"' && vi < 47) val[vi++] = *p++; val[vi] = '\0';
+        if (*p != '"') break; p++;
+        int is_model = (strcmp(key, PK_MODEL) == 0);
+        if (model_only == is_model) omega_set_param(inst, key, val);
+    }
+}
+static void omega_apply_state(bohm_instance_t *inst, const char *json) {
+    omega_apply_state_pass(inst, json, 1);   /* model first */
+    omega_apply_state_pass(inst, json, 0);   /* then the rest */
+}
+
 static int omega_get_param(void *instance, const char *key, char *buf, int buf_len) {
     bohm_instance_t *inst = instance;
     if (strcmp(key, PK_UI_HIER) == 0) {
@@ -445,6 +495,39 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
          * (host->log included) — it is a write() syscall that causes device-
          * wide audio dropouts. Capture buf_len off-thread in a later phase. */
         return omega_build_ui(inst, buf, buf_len);
+    }
+    if (strcmp(key, PK_STATE) == 0) {
+        /* PRESET SAVE: serialize the full param snapshot as a JSON object the host
+         * stores and later feeds back via set_param("state", ...) or create's
+         * json_defaults. Covers every global (incl. model select + groove +
+         * performer) and the ACTIVE model's kick params. Locale-independent, no
+         * alloc. "model" is emitted FIRST so restore selects the model before its
+         * kick params land. Returns bytes written, or -1 if buf is too small. */
+        if (!buf || buf_len < 4) return -1;
+        int off = 0;
+        char vb[24];
+        buf[off++] = '{';
+        for (int i = 0; i < GKI_COUNT; i++) {
+            const char *k = pk_global_key(i);
+            if (!k) continue;
+            int vl = pk_format_value(inst->global_cache[i], 4, vb, (int)sizeof vb);
+            int need = (int)strlen(k) + vl + 6;               /* "k":"v", */
+            if (off + need >= buf_len) return -1;
+            off += snprintf(buf + off, (size_t)(buf_len - off), "\"%s\":\"%s\",", k, vb);
+        }
+        for (int i = 0; i < PKI_COUNT; i++) {
+            const char *k = pk_kick_key(i);
+            if (!k) continue;
+            int vl = pk_format_value(inst->kick_cache[inst->model][i], 4, vb, (int)sizeof vb);
+            int need = (int)strlen(k) + vl + 6;
+            if (off + need >= buf_len) return -1;
+            off += snprintf(buf + off, (size_t)(buf_len - off), "\"%s\":\"%s\",", k, vb);
+        }
+        if (off > 1 && buf[off - 1] == ',') off--;            /* drop trailing comma */
+        if (off + 2 >= buf_len) return -1;
+        buf[off++] = '}';
+        buf[off] = '\0';
+        return off;
     }
     /* Per-key value readback (B1, UIX-01): the host reads each param's current
      * value to position its knobs/selectors. Format the cached raw value back
@@ -554,15 +637,30 @@ static void omega_render_block(void *instance, int16_t *out_lr, int frames) {
         }
     }
 
-    /* Master volume + end-of-chain SOFT CLIP (Phase D, PERF-04): y = x/(1+|x|),
-     * bounded, no positive-side divergence; toggled by CLIP. Then the FNDTN-07
-     * clamped int16 boundary. */
+    /* Master volume + CMPDR (iter-2, one-knob comp+drive) + FNDTN-07 int16 clamp.
+     * Peak-env soft compressor (bus glue) then a bounded diode-ish drive + makeup.
+     * amount 0 = transparent (cmp_thr=1, no gain reduction, drive bypassed). */
     for (int n = 0; n < frames; n++) {
         float sl = l[n] * inst->main_volume;
         float sr = r[n] * inst->main_volume;
-        if (inst->clip_on) {
-            sl = sl / (1.0f + (sl < 0.0f ? -sl : sl));
-            sr = sr / (1.0f + (sr < 0.0f ? -sr : sr));
+        if (inst->cmpdr_amt > 0.0f) {
+            float peak = fabsf(sl) > fabsf(sr) ? fabsf(sl) : fabsf(sr);
+            float coef = peak > inst->cmp_env ? inst->cmp_atk : inst->cmp_rel;
+            inst->cmp_env = peak + coef * (inst->cmp_env - peak);
+            float gain = 1.0f;
+            if (inst->cmp_env > inst->cmp_thr) {
+                /* soft 3:1-ish knee above threshold */
+                gain = (inst->cmp_thr + 0.33f * (inst->cmp_env - inst->cmp_thr)) / inst->cmp_env;
+            }
+            float mk = gain * inst->cmp_makeup;
+            sl *= mk; sr *= mk;
+            /* bounded diode drive scaled by amount (even-harmonic grit). */
+            float k = 1.0f + inst->cmpdr_amt * 2.0f;
+            float xl = sl * k, xr = sr * k;
+            float dl = (xl >= 0.0f ? xl / (1.0f + xl) : xl / (1.0f - 0.5f * xl));
+            float dr = (xr >= 0.0f ? xr / (1.0f + xr) : xr / (1.0f - 0.5f * xr));
+            sl += inst->cmpdr_amt * (dl - sl);
+            sr += inst->cmpdr_amt * (dr - sr);
         }
         out_lr[n * 2]     = omega_to_i16(sl);
         out_lr[n * 2 + 1] = omega_to_i16(sr);

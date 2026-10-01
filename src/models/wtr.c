@@ -38,6 +38,7 @@ typedef struct wtr_state {
     float curve;              /* 0 = 808 (slow), 1 = 909 (fast) */
     float body_phase;         /* body wavetable phase [0,1) */
     int   wave;               /* WAVE SELECT: index into g_wavetables [0,NUM_WAVES) */
+    float wave_pos;           /* WAVE SELECT continuous scan 0..1 (crossfade, no dead zones) */
     float body_detune;        /* BODY PITCH fine-tune multiplier around 1.0 */
 
     /* Amplitude envelope + tail contour */
@@ -127,6 +128,7 @@ void wtr_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * v in [0,1] -> integer wave index (sine..analog). */
         int idx = (int)(v * (float)(NUM_WAVES - 1) + 0.5f);
         w->wave = idx < 0 ? 0 : (idx >= NUM_WAVES ? NUM_WAVES - 1 : idx);
+        w->wave_pos = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);  /* iter-2: continuous scan */
     } else if (strcmp(key, PK_WTR_BODYPITCH) == 0) {
         /* BODY PITCH: fine-tune the body fundamental +/- ~1 octave around f0.
          * v=0.5 -> 1.0 (no shift); exp so the sweep is musically even. */
@@ -200,7 +202,14 @@ static void wtr_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         float fbody  = (w->f0 + pitch * w->sweep_hz) * w->body_detune;
 
         /* Body: band-limited wavetable read (branch-free guard-sample wrap). */
-        float body = wt_read_bl(w->wave, 0, w->body_phase);
+        /* Continuous WAVE SCAN (iter-2): crossfade adjacent factory tables so the
+         * body is present across the WHOLE knob (no discrete dead zones where only
+         * the transient was audible). */
+        float wp = w->wave_pos * (float)(NUM_WAVES - 1);
+        int   wa = (int)wp; if (wa < 0) wa = 0; if (wa > NUM_WAVES - 2) wa = NUM_WAVES - 2;
+        float wfr = wp - (float)wa;
+        float b0 = wt_read_bl(wa, 0, w->body_phase);
+        float body = b0 + wfr * (wt_read_bl(wa + 1, 0, w->body_phase) - b0);
         w->body_phase += fbody / OMEGA_SR;
         if (w->body_phase >= 1.0f) w->body_phase -= 1.0f;
 

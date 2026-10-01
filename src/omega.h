@@ -205,7 +205,13 @@ struct bohm_instance {
     float dj_g, dj_a0, dj_k;      /* DJ SVF coefficients (control rate) */
     int   dj_mode;                /* 0 LP, 1 HP, 2 bypass */
     float svf1_l, svf2_l, svf1_r, svf2_r;  /* SVF integrator states */
-    bool  clip_on;                /* end-of-chain soft clip toggle */
+    bool  clip_on;                /* legacy (unused after CMPDR) */
+    /* CMPDR (iter-2): one-knob comp+drive master glue (replaces CLIP). */
+    float cmpdr_amt;              /* 0 = bypass .. 1 = max glue+grit */
+    float cmp_thr;                /* compressor threshold (from amount) */
+    float cmp_makeup;             /* makeup gain (from amount) */
+    float cmp_env;                /* peak-env detector state */
+    float cmp_atk, cmp_rel;       /* env attack/release coefficients */
 
     /* --- Sample bank (B3, SMPL-01..03) — loaded off-thread in create -------
      * Enumerated one-shots (mono, bounded). sample_count is how many loaded;
@@ -246,6 +252,7 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_MODEL      "model"
 #define PK_MASTER_VOL "master_vol"
 #define PK_UI_HIER    "ui_hierarchy"
+#define PK_STATE      "state"        /* preset save/restore: full param snapshot (JSON) */
 
 /* --- Performer chain keys (Phase D, PERF-01..05) ----------------------- */
 #define PK_DUCK      "duck"        /* sidechain duck depth */
@@ -254,7 +261,7 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_DUCK_BS   "duck_bs"     /* duck bass focus (crossover) */
 #define PK_DJ_FILT   "dj_filt"     /* bidirectional LP<->neutral<->HP */
 #define PK_DJ_RESO   "dj_reso"     /* DJ filter resonance */
-#define PK_CLIP      "clip"        /* end-of-chain soft clip on/off */
+#define PK_CLIP      "cmpdr"       /* iter-2: one-knob comp+drive master glue (was soft clip) */
 
 /* --- Groove Page-1 param keys (Phase C, GRV-03/05) --------------------- */
 /* Model-independent groove-voice keys; dsp.c routes these to groove_set_param

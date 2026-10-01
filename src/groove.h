@@ -83,6 +83,9 @@ typedef struct groove_state {
     float rv_c1_lp, rv_c2_lp;     /* comb damping LP state */
     float rv_fb;                  /* comb feedback (from DECAY) */
     float rv_damp;                /* comb damping coeff (from TONE) */
+    float rv_damp_eff;            /* per-sample LFO-modulated damping (reverb reads this) */
+    int   rv_type;                /* 0 Room / 1 Hall / 2 Plate — scales comb lengths */
+    int   rv_c1_len, rv_c2_len, rv_ap_len; /* effective comb/allpass lengths (per type) */
     float rv_mix;                 /* plain dry/wet reverb MIX 0..1 (Phase 1; replaces PRE/POST) */
     /* FX routing order (Phase 1 FX-ROUTE): permutation of {RUMBLE,DRIVE,REVERB}
      * applied per-sample; set at control rate from PK_GRV_ROUTE. */
@@ -96,18 +99,19 @@ typedef struct groove_state {
     int   gen_scale;              /* SCALE index into g_scales (0..NUM_SCALES-1) */
     float gen_root_param;         /* raw 0..1: note 0..83 (quantized) or 30..200 Hz (unquantized) */
     int   gen_range;              /* sequence degree span 1..24 */
-    int   gen_seqlen;             /* SEQ LEN 1..32 (16th steps) */
-    int   gen_wave;               /* WAVE type index into g_wavetables */
+    int   gen_seqlen;             /* SEQ LEN 1..64 (16th steps) */
+    int   gen_wave;               /* legacy discrete WAVE index (kept for compat) */
+    float gen_wave_pos;           /* WAVE scan 0..1 (continuous morph across tables + fold) */
     int   gen_retrig;             /* RETRIG: 0 none,1/2/4/8 bars,5 on-note */
     float gen_density;            /* DENSITY 0..1 (Euclidean gate) */
-    float gen_rotate;             /* ROTATE -1..1 (bidirectional step rotate) */
-    float gen_swing;              /* SWING 0..1 */
+    float gen_rotate;             /* ROTATE -1..1 (bidirectional step rotate, ±len) */
+    float gen_decay;              /* DECAY 0..1 — gen note length (replaces SWING) */
     float gen_fold;               /* WAVEFOLDER 0..1 */
     float gen_base_hz;            /* base pitch (Hz) for degree 0 */
     unsigned long long gen_rng;   /* xorshift64 PRNG (seeded from SEED) */
     unsigned gen_seed_raw;        /* raw SEED (for reseed-on-change) */
-    signed char gen_seq[32];      /* per-step scale degree */
-    unsigned char gen_gate[32];   /* per-step on/off (Euclidean) */
+    signed char gen_seq[64];      /* per-step scale degree (SEQ LEN up to 64) */
+    unsigned char gen_gate[64];   /* per-step on/off (Euclidean) */
     int   gen_step;               /* current step index */
     int   gen_step_ctr;           /* samples remaining in the current step */
     float gen_osc_phase;          /* oscillator phase [0,1) */
