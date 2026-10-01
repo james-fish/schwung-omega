@@ -621,27 +621,35 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
          * root; the root itself is a free continuous Hz. */
         g->gen_base_hz = 20.0f * powf(100.0f, g->gen_root_param);   /* 20 Hz..2 kHz log */
     } else if (strcmp(key, PK_GRV_GROOT) == 0) {
-        g->gen_root_param = v;
-        g->gen_base_hz = 20.0f * powf(100.0f, v);                    /* identical in both modes */
+        /* ROOT arrives in Hz (20..2000), the unit ui_hierarchy declares: the host
+         * writes values in the declared range, never normalised. It used to go
+         * through the 0..1 clamp above, so any root >= 1 Hz played 2 kHz.
+         * gen_root_param stays the normalised log position the scale branch reads. */
+        float hz = clampf(parse_f(val), 20.0f, 2000.0f);
+        g->gen_root_param = logf(hz / 20.0f) / logf(100.0f);
+        g->gen_base_hz = hz;                                          /* identical in both modes */
     } else if (strcmp(key, PK_GRV_GRANGE) == 0) {
-        g->gen_range = 1 + (int)(v * 23.0f + 0.5f);   /* 1..24 degrees */
+        g->gen_range = (int)(clampf(parse_f(val), 1.0f, 24.0f) + 0.5f);   /* 1..24 degrees, declared units */
         if (g->gen_range < 1) g->gen_range = 1;
         if (g->gen_range > 24) g->gen_range = 24;
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSEED) == 0) {
         /* 7-bit stepped SEED (128 discrete patterns): each detent = a distinct
          * sequence, not a smooth 16-bit sweep. */
-        g->gen_seed_raw = (unsigned)(v * 127.0f + 0.5f);
+        g->gen_seed_raw = (unsigned)(clampf(parse_f(val), 0.0f, 127.0f) + 0.5f);  /* 0..127, declared units */
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
-        g->gen_seqlen = 1 + (int)(v * 63.0f + 0.5f);   /* 1..64 */
+        g->gen_seqlen = (int)(clampf(parse_f(val), 1.0f, 64.0f) + 0.5f);   /* 1..64, declared units */
         if (g->gen_seqlen < 1) g->gen_seqlen = 1; if (g->gen_seqlen > 64) g->gen_seqlen = 64;
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GDENSITY) == 0) {
         g->gen_density = v;
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GROTATE) == 0) {
-        g->gen_rotate = v * 2.0f - 1.0f;            /* bidirectional -1..1 → ±len steps */
+        /* -32..32 steps (declared units) → internal -1..1 (±len steps). */
+        float r = parse_f(val);
+        r = clampf(r < 0.0f ? r - 0.5f : r + 0.5f, -32.0f, 32.0f);
+        g->gen_rotate = (float)(int)r / 32.0f;
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSWING) == 0) {
         /* DECAY = gen note length (SWING removed). iter-3: short attack + short

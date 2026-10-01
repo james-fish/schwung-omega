@@ -264,10 +264,10 @@ static void ana_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int ana_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_ANA_MORPH  "\",\"name\":\"WAVE MORPH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_ANA_SUBLVL "\",\"name\":\"SUB LEVEL\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_ANA_SUBDEC "\",\"name\":\"SUB DECAY\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_ANA_SAMPLE "\",\"name\":\"SAMPLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_ANA_MORPH  "\",\"name\":\"Wave Morph\",\"short_name\":\"MORPH\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_ANA_SUBLVL "\",\"name\":\"Sub Level\",\"short_name\":\"SUBLVL\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_ANA_SUBDEC "\",\"name\":\"Sub Decay\",\"short_name\":\"SUBDEC\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_ANA_SAMPLE "\",\"name\":\"Thump Mix\",\"short_name\":\"THUMP\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

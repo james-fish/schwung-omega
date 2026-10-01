@@ -1,0 +1,172 @@
+{
+  "title": "Omega",
+  "children": [
+    {
+      "title": "Overview",
+      "lines": [
+        "Techno kick synth:",
+        "a kick engine, a",
+        "groove (rumble or",
+        "generative bass),",
+        "and a master glue",
+        "stage, in one slot.",
+        "",
+        "Any note fires the",
+        "kick. Its pitch is",
+        "set by Pitch, not",
+        "by the note played.",
+        "Velocity sets level."
+      ]
+    },
+    {
+      "title": "Pages",
+      "lines": [
+        "Jog moves through:",
+        " Main - engine, vol",
+        " Kick 1 - pitch,",
+        "  length, curve and",
+        "  the engine's own",
+        "  controls",
+        " Kick 2 - transient,",
+        "  filter, kick FX",
+        " Groove pages",
+        " Performer - duck,",
+        "  DJ filter, glue",
+        "",
+        "Knobs 1-8 edit the",
+        "page on screen."
+      ]
+    },
+    {
+      "title": "Engines",
+      "lines": [
+        "Model picks one:",
+        " FM 2-Op - clean,",
+        "  punchy default",
+        " FM 4-Op - choose",
+        "  an Algorithm",
+        " Wavetable - body",
+        "  wave plus click",
+        " Physical - beater,",
+        "  shell, head",
+        " Hard - sample",
+        "  layer under body",
+        " Digital - bit",
+        "  reduced waves",
+        " Transistor - 909",
+        "  click to snap",
+        " Analog - 808 sub",
+        " User - your WAVs",
+        "",
+        "Kick 1's last knobs",
+        "change with Model."
+      ]
+    },
+    {
+      "title": "Groove",
+      "children": [
+        {
+          "title": "Taps (rumble)",
+          "lines": [
+            "Groove Type: Taps.",
+            "Ghost copies of the",
+            "kick on the 16th",
+            "grid, synced to",
+            "tempo. No feedback,",
+            "so it cannot run",
+            "away.",
+            "",
+            "Length: short =",
+            " distinct ghosts,",
+            " long = smeared",
+            " sub rumble.",
+            "Tap 1-4: level of",
+            " each 16th copy.",
+            "Lowpass darkens it."
+          ]
+        },
+        {
+          "title": "Generative",
+          "lines": [
+            "Groove Type:",
+            "Generative. A bass",
+            "and bleep sequence",
+            "that plays while",
+            "the transport runs.",
+            "",
+            "Scale: 12 scales or",
+            " Unquantized.",
+            "Root: 20-2000 Hz.",
+            "Range: span, in",
+            " scale degrees.",
+            "Seed 0-127: each",
+            " value is a new",
+            " pattern.",
+            "Sequence Length:",
+            " 1-64 steps.",
+            "Density: Euclidean",
+            " fill. Rotate:",
+            " shift +/-32 steps.",
+            "Retrigger: restart",
+            " every 1-8 bars or",
+            " on each note."
+          ]
+        },
+        {
+          "title": "Groove Effects",
+          "lines": [
+            "Drive, an LFO on",
+            "the filter and",
+            "reverb tone, and a",
+            "reverb with Room,",
+            "Hall or Plate.",
+            "",
+            "FX Order sets the",
+            "chain: rumble,",
+            "drive and reverb",
+            "in any of four",
+            "orders."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Performer",
+      "lines": [
+        "Master stage.",
+        "",
+        "Duck: dips the",
+        " groove's lows on",
+        " each kick. Release,",
+        " Slew and Frequency",
+        " shape the dip.",
+        "DJ Filter: centre",
+        " is off; left is",
+        " lowpass, right is",
+        " highpass.",
+        "Compressor Drive:",
+        " one knob of bus",
+        " glue."
+      ]
+    },
+    {
+      "title": "Own Samples",
+      "lines": [
+        "The User engine",
+        "plays 16-bit WAVs",
+        "from the module's",
+        "samples folder,",
+        "up to 8, picked",
+        "with Sample.",
+        "",
+        "Put them in:",
+        "modules/",
+        " sound_generators/",
+        " omega/samples/",
+        "",
+        "Reload the slot to",
+        "see new files."
+      ]
+    }
+  ]
+}

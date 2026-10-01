@@ -346,10 +346,10 @@ static void phy_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int phy_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_PHY_BEATER   "\",\"name\":\"BEATER\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_PHY_SHELL    "\",\"name\":\"SHELL SIZE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_PHY_HEADTENS "\",\"name\":\"HEAD TENS\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_PHY_DAMPING  "\",\"name\":\"DAMPING\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_PHY_BEATER   "\",\"name\":\"Beater\",\"short_name\":\"BEATER\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_PHY_SHELL    "\",\"name\":\"Shell Size\",\"short_name\":\"SHELL\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_PHY_HEADTENS "\",\"name\":\"Head Tension\",\"short_name\":\"TENS\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0},"
+        "{\"key\":\"" PK_PHY_DAMPING  "\",\"name\":\"Damping\",\"short_name\":\"DAMP\",\"type\":\"float\",\"step\":0.01,\"unit\":\"%\",\"min\":0.0,\"max\":1.0}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

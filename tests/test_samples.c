@@ -72,7 +72,7 @@ int main(void) {
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0 && ui[n] == '\0');
     /* SMPL-02: SAMPLE SEL is an enum with None + both names, sorted. */
-    assert(strstr(ui, "SAMPLE SEL") != NULL);
+    assert(strstr(ui, "\"usr_sample\",\"name\":\"Sample\"") != NULL);
     assert(strstr(ui, "\"None\"") != NULL);
     assert(strstr(ui, "\"aaa_low\"") != NULL);
     assert(strstr(ui, "\"zzz_high\"") != NULL);
