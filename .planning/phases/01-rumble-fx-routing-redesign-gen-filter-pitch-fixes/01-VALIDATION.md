@@ -1,9 +1,9 @@
 ---
 phase: 1
 slug: rumble-fx-routing-redesign-gen-filter-pitch-fixes
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-10-01
 ---
 
@@ -84,4 +84,4 @@ Existing pattern: `tests/test_groove.c` + `tests/test_taps_redesign.c` drive the
 - [ ] Feedback latency < 15s
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-10-01
