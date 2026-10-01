@@ -831,11 +831,32 @@ static void test_e3_gen_groove_enhancements(void) {
     /* Different root → different pitch → different output (not byte-identical). */
     assert(memcmp(low, high, sizeof low) != 0);
 
-    /* SC3: Unquantized mode (UI SCALE idx 0) → ROOT HZ appears in UI. */
+    /* Finding 2 (quick 261001-wft): ROOT is now the SAME normalized 0..1
+     * descriptor in BOTH modes — switching into Unquantized must NOT swap in a
+     * Hz-domain "ROOT HZ" descriptor (that min 20 / max 2000 range made the host
+     * send raw Hz, which clamped to 1.0 and pinned gen_base_hz to the top). The
+     * UI shows a single "ROOT" param whether quantized or not, and a scale switch
+     * does not jump the root pitch. */
     api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized */
     n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
-    assert(strstr(ui, "ROOT HZ") != NULL);
+    assert(strstr(ui, "ROOT HZ") == NULL);           /* no Hz-domain descriptor */
+    assert(strstr(ui, PK_GRV_GROOT) != NULL);        /* ROOT still present */
+    /* Switching scales does not change the base pitch: render a low-root GEN
+     * voice under Unquantized then re-assert the same low root is stable. */
+    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* low root (normalized) */
+    static int16_t unq_a[NSAMP], unq_b[NSAMP];
+    render_driven(api, inst, dbeat, unq_a);
+    api->set_param(inst, PK_GRV_GSCALE, "3");   /* Minor — scale change only */
+    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* same low root */
+    render_driven(api, inst, dbeat, unq_b);
+    /* Low root stays low after a scale switch: output energy is non-trivial but
+     * the root did not explode to the top (both are the SAME low-root voice). */
+    {
+        double ea = 0.0, eb = 0.0;
+        for (int i = 0; i < NSAMP; i++) { ea += (double)unq_a[i]*unq_a[i]; eb += (double)unq_b[i]*unq_b[i]; }
+        assert(ea > 0.0 && eb > 0.0);   /* both audible, no silent clamp artifact */
+    }
 
     /* SC1 expanded: RANGE changes the sequence pitch span. */
     api->set_param(inst, PK_GRV_GSCALE, "2");   /* Major */

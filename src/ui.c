@@ -36,7 +36,7 @@ static void ui_puts(char *buf, int buf_len, int *off, const char *s) {
 }
 
 /* ---- param metadata ------------------------------------------------------ */
-typedef enum { UP_FLOAT, UP_ENUM } up_type_t;
+typedef enum { UP_FLOAT, UP_ENUM, UP_INT } up_type_t;
 typedef struct {
     const char *key;
     const char *name;
@@ -58,6 +58,17 @@ static float ui_default_for(const char *key) {
     return 0.0f;
 }
 
+/* Locale-independent parse of a small signed integer JSON literal (e.g. "1",
+ * "64", "-32"). Used by UP_INT to map the normalized cache default across the
+ * descriptor's integer [min,max] range. No libc atof/strtol (locale-dependent). */
+static int ui_parse_int_literal(const char *s) {
+    if (!s) return 0;
+    int sign = 1, v = 0;
+    if (*s == '-') { sign = -1; s++; } else if (*s == '+') { s++; }
+    while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); s++; }
+    return sign * v;
+}
+
 /* Emit one param object into buf (bounded). Float params carry min/max/step/
  * unit; enum params carry options. Default comes from the params tables. */
 static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) {
@@ -69,6 +80,25 @@ static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) 
             "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
             "\"type\":\"enum\",\"options\":%s,\"default\":%s}",
             p->key, p->name, p->shortn, p->options, defbuf);
+    } else if (p->type == UP_INT) {
+        /* Finding 6: integer param — host shows whole numbers (no decimals).
+         * min/max/step are integer JSON literals. The value cache stores the raw
+         * NORMALIZED 0..1 knob position, so map the default across [min,max] and
+         * round to a whole number (mirrors groove.c's 1+(v*63+0.5) seqlen map). */
+        const char *mn = p->mn ? p->mn : "0";
+        const char *mx = p->mx ? p->mx : "1";
+        const char *st = p->step ? p->step : "1";
+        /* Locale-independent integer literal parse (no atof/strtol). */
+        float mnv = (float)ui_parse_int_literal(mn);
+        float mxv = (float)ui_parse_int_literal(mx);
+        float norm = ui_default_for(p->key);
+        float di   = mnv + norm * (mxv - mnv);
+        pk_format_value(di, 0, defbuf, (int)sizeof defbuf);
+        snprintf(obj, sizeof obj,
+            "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
+            "\"type\":\"int\",\"min\":%s,\"max\":%s,\"default\":%s,"
+            "\"step\":%s,\"unit\":\"%s\"}",
+            p->key, p->name, p->shortn, mn, mx, defbuf, st, p->unit);
     } else {
         pk_format_value(ui_default_for(p->key), 4, defbuf, (int)sizeof defbuf);
         const char *mn = p->mn ? p->mn : "0.0";
@@ -221,7 +251,7 @@ static const char KN_GROOVE_FX[] =
  * and the GEN LP FILTER lives here next to WAVE/FOLD (moved off the FX page). */
 static const uiparam_t P_GROOVE_GEN_SEQ[] = {
     { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.0079", NULL, "0",   "127" },
-    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.0159", NULL, "1",   "64"  },
+    { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_INT,   "",  "1",      NULL, "1",   "64"  },
     { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01",   NULL },
     { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.0156", NULL, "-32", "32"  },
     { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01",   NULL },
@@ -301,10 +331,14 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         { PK_GRV_GRANGE,  "RANGE",  "RANGE",  UP_FLOAT, "", "0.04", NULL, NULL, NULL },
         { PK_GRV_GRETRIG, "RETRIG", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
     };
-    bool unq = inst && inst->groove.gen_unquantized;
-    uiparam_t p_root = unq
-        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "20", "2000" }
-        : (uiparam_t){ PK_GRV_GROOT, "ROOT",    "ROOT", UP_FLOAT, "",   "0.012", NULL, NULL, NULL };
+    /* Finding 2: ROOT is ALWAYS the normalized 0..1 descriptor in BOTH modes.
+     * The old unquantized Hz-domain swap (min 20 / max 2000) made the host send
+     * raw Hz, which groove_set_param clamps to 1.0 → gen_base_hz pinned to the
+     * top (2 kHz) and scale switches re-applied the explosion. A normalized knob
+     * keeps v in 0..1 so the gen_base_hz = 20*100^v log map stays pitch-stable. */
+    (void)inst;
+    uiparam_t p_root =
+        (uiparam_t){ PK_GRV_GROOT, "ROOT", "ROOT", UP_FLOAT, "", "0.012", NULL, NULL, NULL };
     ui_puts(buf, buf_len, off,
         "\"groove1\":{\"name\":\"Gen Groove\",\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {

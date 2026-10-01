@@ -535,6 +535,26 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
      * value to position its knobs/selectors. Format the cached raw value back
      * out (locale-independent). Global keys first, then the active model's kick
      * keys, so switching models reports THAT model's stored values (UIX-04). */
+    /* Key-specific display formatting (Findings 2 + 6) — BEFORE the generic
+     * 4-decimal fallthrough. get_param runs at UI/control rate (never render),
+     * so powf here is fine. */
+    if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
+        /* Finding 6: show a whole integer 1..64 (mirrors groove.c's
+         * gen_seqlen = 1 + (int)(v*63+0.5) map), not a 4-decimal fraction. */
+        int gsi = pk_global_index(key);
+        float v = (gsi >= 0) ? inst->global_cache[gsi] : 0.0f;
+        int seqlen = 1 + (int)(v * 63.0f + 0.5f);
+        if (seqlen < 1) seqlen = 1; if (seqlen > 64) seqlen = 64;
+        return pk_format_value((float)seqlen, 0, buf, buf_len);
+    }
+    if (strcmp(key, PK_GRV_GROOT) == 0) {
+        /* Finding 2: derived Hz readout of the normalized root (20 Hz..2 kHz log,
+         * matching groove.c's gen_base_hz = 20*100^v). Display-only. */
+        int gri = pk_global_index(key);
+        float v = (gri >= 0) ? inst->global_cache[gri] : 0.0f;
+        float hz = 20.0f * powf(100.0f, v);
+        return pk_format_value(hz, 0, buf, buf_len);
+    }
     int gi = pk_global_index(key);
     if (gi >= 0) return pk_format_value(inst->global_cache[gi], 4, buf, buf_len);
     int ki = pk_kick_index(key);
