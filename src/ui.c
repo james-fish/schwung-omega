@@ -114,12 +114,26 @@ static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) 
 
 /* Emit a full level object: "<id>":{"name":"<name>","params":[...],"knobs":[...]}.
  * `knobs` is a pre-serialized JSON array literal. Params are comma-separated. */
+/* `vis` is an optional pre-serialized visible_if JSON object (e.g.
+ * {"param":"grv_type","equals":1}) or NULL. It is BOTH a replan trigger and a
+ * gate: the new Schwung host only re-reads the dynamic ui_hierarchy when a key
+ * named by SOME visible_if condition changes (page_controller replanIfCondition
+ * / gateLevelsOf). Omega swaps which levels it emits on `model` / `grv_type`, so
+ * without a visible_if naming those keys the host never re-reads and a picker
+ * change leaves the old page's params on screen. We still emit ONE level set per
+ * mode (level ids can't collide), and set equals to the CURRENT value so the
+ * freshly-emitted level is always visible — the condition's real job is to make
+ * the discriminator a gate key so the host replans and re-reads us. */
 static void ui_emit_level(char *buf, int buf_len, int *off,
                           const char *id, const char *name,
                           const uiparam_t *params, int nparams,
-                          const char *knobs) {
-    char head[96];
-    snprintf(head, sizeof head, "\"%s\":{\"name\":\"%s\",\"params\":[", id, name);
+                          const char *knobs, const char *vis) {
+    char head[160];
+    if (vis)
+        snprintf(head, sizeof head,
+                 "\"%s\":{\"name\":\"%s\",\"visible_if\":%s,\"params\":[", id, name, vis);
+    else
+        snprintf(head, sizeof head, "\"%s\":{\"name\":\"%s\",\"params\":[", id, name);
     ui_puts(buf, buf_len, off, head);
     for (int i = 0; i < nparams; i++) {
         if (i) ui_puts(buf, buf_len, off, ",");
@@ -339,8 +353,12 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
     (void)inst;
     uiparam_t p_root =
         (uiparam_t){ PK_GRV_GROOT, "ROOT", "ROOT", UP_FLOAT, "", "0.012", NULL, NULL, NULL };
+    /* visible_if gate so a grv_type change replans + re-reads this hierarchy
+     * (see ui_emit_level). equals:1 = GROOVE_TYPE_GEN; always true here since we
+     * only emit this level in GEN mode. */
     ui_puts(buf, buf_len, off,
-        "\"groove1\":{\"name\":\"Gen Groove\",\"params\":[");
+        "\"groove1\":{\"name\":\"Gen Groove\",\"visible_if\":{\"param\":\"" PK_GRV_TYPE
+        "\",\"equals\":1},\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {
         if (i) ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_head[i]);
@@ -371,6 +389,18 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
         }
     }
 
+    /* visible_if gate fragments (see ui_emit_level): `model` gates kick1 (which
+     * splices the active model's params) and `grv_type` gates the groove levels.
+     * equals is the CURRENT index, so the emitted level is always visible; the
+     * gate exists so the host registers these keys and REPLANS (re-reads this
+     * dynamic hierarchy) when a picker changes — otherwise the old page's params
+     * stay on screen. */
+    char vis_model[48];
+    snprintf(vis_model, sizeof vis_model,
+             "{\"param\":\"" PK_MODEL "\",\"equals\":%d}", inst ? (int)inst->model : 0);
+    static const char VIS_GEN[]  = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}";
+    static const char VIS_TAPS[] = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}";
+
     int off = 0;
     ui_puts(buf, buf_len, &off, UI_OPEN);
 
@@ -378,8 +408,11 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
 
     /* kick1 (B2 reorg): PITCH/LENGTH/CURVE + the active model's unique params
      * (spliced from p2_slot_desc). knobs = those fixed keys + the model keys
-     * extracted from the interior, so all 8 encoders map correctly. */
-    ui_puts(buf, buf_len, &off, ",\"kick1\":{\"name\":\"Kick 1\",\"params\":[");
+     * extracted from the interior, so all 8 encoders map correctly. The
+     * visible_if on `model` makes a model switch replan + re-splice this page. */
+    ui_puts(buf, buf_len, &off, ",\"kick1\":{\"name\":\"Kick 1\",\"visible_if\":");
+    ui_puts(buf, buf_len, &off, vis_model);
+    ui_puts(buf, buf_len, &off, ",\"params\":[");
     for (int i = 0; i < NELEM(P_KICK1); i++) {
         if (i) ui_puts(buf, buf_len, &off, ",");
         ui_emit_param(buf, buf_len, &off, &P_KICK1[i]);
@@ -392,9 +425,10 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     if (slot_len > 0) ui_emit_interior_keys(buf, buf_len, &off, scratch);
     ui_puts(buf, buf_len, &off, "]}");
 
-    /* kick2 (B2 reorg): static shared transient/FILTER/FX page. */
+    /* kick2 (B2 reorg): static shared transient/FILTER/FX page — model-agnostic,
+     * no gate (a model change still replans via kick1's gate, re-reading this). */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2);
+    ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2, NULL);
 
     /* Groove pages (E3 layout):
      *   - GEN groove type: groove1=Gen Groove (SCALE/ROOT/RANGE/RETRIG), groove2=Gen Seq,
@@ -406,28 +440,28 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
         ui_emit_gen_groove1(buf, buf_len, &off, inst);
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove2", "Gen Seq",
-                      P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ);
+                      P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, VIS_GEN);
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove3", "Groove Effects",
-                      P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX);
+                      P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, VIS_GEN);
     } else {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",
-                      P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1);
+                      P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, VIS_TAPS);
         if (inst && inst->model == MODEL_GEN) {
             ui_puts(buf, buf_len, &off, ",");
             ui_emit_level(buf, buf_len, &off, "groove2", "Groove 2",
-                          P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2);
+                          P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2, VIS_TAPS);
         } else if (inst && inst->groove.type == GROOVE_TYPE_TAPS) {
             ui_puts(buf, buf_len, &off, ",");
             ui_emit_level(buf, buf_len, &off, "groove2", "Groove Effects",
-                          P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX);
+                          P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, VIS_TAPS);
         }
     }
 
-    /* Performer chain page (Phase D) — always present. */
+    /* Performer chain page (Phase D) — always present, no gate. */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "perf1", "Performer", P_PERF, NELEM(P_PERF), KN_PERF);
+    ui_emit_level(buf, buf_len, &off, "perf1", "Performer", P_PERF, NELEM(P_PERF), KN_PERF, NULL);
 
     ui_puts(buf, buf_len, &off, UI_CLOSE);
     buf[off] = '\0';
