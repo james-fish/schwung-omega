@@ -118,6 +118,14 @@ typedef struct groove_state {
     float gen_sub_phase;          /* sub-octave phase [0,1) — Finding 3 built-in sub */
     float gen_env;                /* per-note amplitude env (decaying) */
     float gen_env_coef;           /* env decay coefficient */
+    /* GEN filter envelope + 3rd-pole resonant cascade state (Finding 4).
+     * The first two poles reuse color_lp_*_s + color_lp2_*_s; this adds the 3rd
+     * pole (→ 18 dB/oct) plus a per-note filter env that opens the cutoff ~20% at
+     * onset and decays at 0.65× the amplitude tau (closes before the note ends). */
+    float gen_filt_env;           /* per-note filter env 0..1 */
+    float gen_filt_env_coef;      /* filter env decay coef (= 0.65*amp tau) */
+    float gen_filt_lp3_l_s;       /* 3rd TPT 1-pole stage state, L */
+    float gen_filt_lp3_r_s;       /* 3rd TPT 1-pole stage state, R */
     float gen_freq;               /* current note frequency (Hz) */
     int   gen_bar16;              /* 16th counter for bar-based retrigger */
     bool  gen_running;            /* transport running (stop when it stops) */

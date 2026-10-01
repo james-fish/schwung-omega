@@ -273,6 +273,11 @@ void groove_init(groove_state_t *g) {
     g->gen_sub_phase = 0.0f;       /* Finding 3: built-in sub-octave oscillator */
     g->gen_seed_raw = 12345u;
     g->gen_env_coef = 0.9995f;     /* recomputed from gen_decay in set_param */
+    /* GEN filter envelope + 3rd-pole resonant cascade (Finding 4). */
+    g->gen_filt_env      = 0.0f;
+    g->gen_filt_env_coef = 0.9992f;   /* recomputed from gen_decay (0.65*tau) */
+    g->gen_filt_lp3_l_s  = 0.0f;
+    g->gen_filt_lp3_r_s  = 0.0f;
     g->gen_running = false;
     groove_gen_rebuild(g);
     groove_gen_restart(g);
@@ -367,6 +372,7 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                         : scale_quantize(g->gen_scale, g->gen_seq[step]);
                     g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);  /* per-step only */
                     g->gen_env = 1.0f;
+                    g->gen_filt_env = 1.0f;    /* Finding 4: open the filter env on trigger */
                     g->gen_osc_phase = 0.0f;
                     g->gen_sub_phase = 0.0f;   /* Finding 3: re-zero the sub-octave phase on trigger */
                 }
@@ -417,6 +423,7 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         }
         float s = osc * g->gen_env;
         g->gen_env *= g->gen_env_coef;
+        g->gen_filt_env *= g->gen_filt_env_coef;   /* Finding 4: filter env decays (0.65*amp tau) */
         /* One divide for both oscillators: fundamental at inc, sub at 0.5*inc. */
         float inc = g->gen_freq / OMEGA_SR;
         g->gen_osc_phase += inc;
@@ -518,13 +525,39 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;      gr = lo_r; }
         else /* GRV_FILT_HP */                  { gl = gl - lo_l; gr = gr - lo_r; }
     } else {
-        /* GEN: 1-pole COLOR. */
-        tpt1_t lpl = { g->color_lp_l_s };
-        tpt1_t lpr = { g->color_lp_r_s };
-        float lo_l = tpt1_lp(&lpl, gl, cg);
-        float lo_r = tpt1_lp(&lpr, gr, cg);
-        g->color_lp_l_s = lpl.s;
-        g->color_lp_r_s = lpr.s;
+        /* GEN (Finding 4): 3-pole (18 dB/oct) RESONANT TPT cascade with a per-note
+         * filter-env cutoff lift. Three tpt1 LP stages share the env-modulated
+         * COLOR coefficient cg_eff; resonance feeds the 3rd-stage output back into
+         * the first stage input scaled by a fixed k (~0.2 → modest Q). The feedback
+         * sum is hard-clamped to [-2,2] so the resonant corner stays bounded (no
+         * runaway). The filter env opens the cutoff ~20% at onset:
+         *   cg_eff = cg * (1 + 0.2*gen_filt_env), clamped to the stable tpt range.
+         * All per-sample work is algebraic (adds/mults + one clampf) — RT-safe. */
+        float cg_eff = cg * (1.0f + 0.2f * g->gen_filt_env);
+        if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
+        const float kres = 0.2f;                 /* resonance feedback (~20% Q) */
+
+        tpt1_t l1 = { g->color_lp_l_s },  r1 = { g->color_lp_r_s };
+        tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
+        tpt1_t l3 = { g->gen_filt_lp3_l_s }, r3 = { g->gen_filt_lp3_r_s };
+
+        /* Resonant feedback from the PREVIOUS 3rd-stage output (one-sample delay). */
+        float inl = gl - kres * g->gen_filt_lp3_l_s;
+        float inr = gr - kres * g->gen_filt_lp3_r_s;
+        inl = clampf(inl, -2.0f, 2.0f);
+        inr = clampf(inr, -2.0f, 2.0f);
+
+        float s1l = tpt1_lp(&l1, inl, cg_eff);
+        float s1r = tpt1_lp(&r1, inr, cg_eff);
+        float s2l = tpt1_lp(&l2, s1l, cg_eff);
+        float s2r = tpt1_lp(&r2, s1r, cg_eff);
+        float lo_l = tpt1_lp(&l3, s2l, cg_eff);
+        float lo_r = tpt1_lp(&r3, s2r, cg_eff);
+
+        g->color_lp_l_s  = l1.s; g->color_lp_r_s  = r1.s;
+        g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+        g->gen_filt_lp3_l_s = l3.s; g->gen_filt_lp3_r_s = r3.s;
+
         if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;        gr = lo_r; }
         else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
     }
@@ -665,13 +698,18 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->gen_rotate = v * 2.0f - 1.0f;            /* bidirectional -1..1 → ±len steps */
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSWING) == 0) {
-        /* DECAY = gen note length (SWING removed). iter-3: short attack + short
-         * decay. Fine EXPONENTIAL curve so the musically useful short range has
-         * lots of resolution on the left: v=0 ~5 ms pluck → v=1 ~150 ms (fills
-         * roughly a 16th at techno tempos), no multi-step sustain smear. */
+        /* DECAY = gen note length (SWING removed). Finding 5: apply an EXPO input
+         * curve v' = v*v BEFORE the tau map so the musically useful short/plucky
+         * range spreads across most of the knob travel (mid-knob now lands much
+         * shorter). Endpoints unchanged: v'=0 -> 5 ms, v'=1 -> ~150 ms. */
         g->gen_decay = v;
-        float tau_s = 0.005f * powf(30.0f, v);      /* 5 ms .. ~150 ms, fine on the left */
+        float vp    = v * v;                        /* expo spread (Finding 5) */
+        float tau_s = 0.005f * powf(30.0f, vp);     /* 5 ms .. ~150 ms */
         g->gen_env_coef = expf(-1.0f / (tau_s * OMEGA_SR));
+        /* Finding 4: filter env decays at 0.65× the amp tau (closes BEFORE the
+         * note fully decays). Control-rate expf alongside the amp coef. */
+        float filt_tau_s = 0.65f * tau_s;
+        g->gen_filt_env_coef = expf(-1.0f / (filt_tau_s * OMEGA_SR));
     } else if (strcmp(key, PK_GRV_GWAVE) == 0) {
         /* Continuous WAVE SCAN 0..1 (not discrete): morphs sine→…→analog + fold. */
         g->gen_wave_pos = v;

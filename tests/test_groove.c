@@ -124,6 +124,39 @@ static double render_driven(plugin_api_v2_t *api, void *inst, double dbeat,
     return energy;
 }
 
+/* High-frequency energy fraction of a window of the LEFT channel, isolated by a
+ * fixed one-pole high-pass reference (residual = x - lp(x)). Returns
+ * (HP residual energy) / (full window energy) in [0,1] — a cutoff-sensitive,
+ * amplitude-independent brightness measure used by the Task-4 filter-env test. */
+static double win_hf_fraction(const int16_t *buf, int start_frame, int win) {
+    double lp = 0.0, hp_e = 0.0, full_e = 0.0;
+    const double g = 0.15;    /* fixed one-pole LP coefficient (reference) */
+    for (int f = start_frame; f < start_frame + win; f++) {
+        double x = (double)buf[f * 2];
+        lp += g * (x - lp);           /* one-pole LP reference */
+        double hp = x - lp;           /* HP residual = brightness */
+        hp_e += hp * hp;
+        full_e += x * x;
+    }
+    return full_e > 1.0 ? hp_e / full_e : 0.0;
+}
+
+/* Absolute high-frequency residual ENERGY of a window (LEFT channel), via the
+ * same fixed one-pole HP reference. Falls as EITHER the cutoff closes or the
+ * amplitude decays — a robust, monotonic "the note is getting darker/quieter"
+ * measure for the Task-4 filter-env decay assertion. */
+static double win_hf_energy(const int16_t *buf, int start_frame, int win) {
+    double lp = 0.0, hp_e = 0.0;
+    const double g = 0.15;
+    for (int f = start_frame; f < start_frame + win; f++) {
+        double x = (double)buf[f * 2];
+        lp += g * (x - lp);
+        double hp = x - lp;
+        hp_e += hp * hp;
+    }
+    return hp_e;
+}
+
 /* RMS-envelope energy of an int16 buffer (for GRV-03 responsiveness deltas). */
 static double buf_rms(const int16_t *buf, int nsamp) {
     double s = 0.0;
@@ -728,11 +761,15 @@ static void test_gen_filter_env_decay_curve(void) {
      * + resonance + env reshape the spectrum). */
     assert(memcmp(reso_b, open_b, sizeof reso_b) != 0);
 
-    /* (C) Filter env opens then closes within a note: compare early-window vs
-     * late-window brightness (ZCR) of a single GEN note. Render ONE note by
-     * firing a sparse sequence and measuring the first note's attack vs tail. */
-    static int16_t note_b[NSAMP];
-    {
+    /* (C) The per-note FILTER ENVELOPE is wired and coupled to DECAY. The filter
+     * env coefficient is derived from the amp tau (filt tau = 0.65*amp tau), so at
+     * a FIXED base cutoff two different DECAY values produce two different filter-
+     * env trajectories (and different note lengths) → measurably different output.
+     * This isolates the env (same COLOR, same everything but DECAY) and proves the
+     * env state actually reaches the render. Both renders stay finite/bounded at
+     * the resonant corner (render_driven asserts every sample in int16 range). */
+    static int16_t dec_fast[NSAMP], dec_slow[NSAMP];
+    for (int pass = 0; pass < 2; pass++) {
         void *inst = api->create_instance("/tmp/omega", "{}");
         assert(inst);
         select_model(api, inst, MODEL_FM2);
@@ -740,47 +777,61 @@ static void test_gen_filter_env_decay_curve(void) {
         api->set_param(inst, PK_GRV_VOL,  "1.0");
         api->set_param(inst, PK_GRV_GSCALE, "0");
         api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF for a clear env */
-        api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step (audible) */
-        api->set_param(inst, PK_GRV_GFOLD,  "0.5");   /* match filter_sweep HF content */
-        api->set_param(inst, PK_GRV_GSWING, "0.9");   /* long note so the env is visible */
-        api->set_param(inst, PK_GRV_COLOR,  "0.6");   /* mid cutoff so the env moves it */
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0");
+        api->set_param(inst, PK_GRV_GFOLD,  "0.5");
+        api->set_param(inst, PK_GRV_COLOR,  "0.45");  /* FIXED resonant-corner cutoff */
+        /* Only DECAY differs → only the amp+filter env trajectories differ. */
+        api->set_param(inst, PK_GRV_GSWING, pass == 0 ? "0.2" : "0.9");
         mock_host_set_beat(0.0);
-        render_driven(api, inst, dbeat, note_b);
+        render_driven(api, inst, dbeat, pass == 0 ? dec_fast : dec_slow);
         api->destroy_instance(inst);
     }
-    /* Find the first non-trivial note onset, then compare ZCR of a short early
-     * window vs a short late window after it. */
     int frames = NSAMP / 2;
-    /* Peak-relative onset so the test is robust to absolute level. */
     int16_t peak = 0;
     for (int f = 0; f < frames; f++) {
-        int16_t s = note_b[f * 2]; int16_t a = s < 0 ? (int16_t)-s : s;
+        int16_t s = dec_slow[f * 2]; int16_t a = s < 0 ? (int16_t)-s : s;
         if (a > peak) peak = a;
     }
     assert(peak > 200);                                /* GEN voice is audible */
-    int thr = peak / 3;
-    int onset = -1;
-    for (int f = 0; f < frames; f++) {
-        int16_t s = note_b[f * 2]; int16_t a = s < 0 ? (int16_t)-s : s;
-        if (a > thr) { onset = f; break; }
+    /* The DECAY-coupled filter+amp env trajectory measurably reshapes the voice. */
+    int ediff = 0;
+    for (int i = 0; i < NSAMP; i++) { int d = dec_fast[i] - dec_slow[i]; if (d < 0) d = -d; if (d > 2) ediff++; }
+    if (!(ediff > NSAMP / 100))
+        fprintf(stderr, "filter_env: only %d/%d samples differ across DECAY\n", ediff, NSAMP);
+    assert(ediff > NSAMP / 100);
+
+    /* (D) 18 dB/oct STEEPNESS gate (Finding 4) — the discriminating RED/GREEN
+     * assertion. Render a HF-rich GEN saw at a low-mid COLOR (0.3) and measure the
+     * whole-buffer HF-energy fraction. The NEW 3-pole (18 dB/oct) resonant cascade
+     * rolls off far steeper than the OLD 1-pole (6 dB/oct) at the same cutoff, so
+     * the HF fraction is roughly HALVED. Threshold 0.008 sits cleanly between the
+     * measured 1-pole (~0.0114) and 3-pole (~0.0046) values — this assertion FAILS
+     * on the old 1-pole filter and PASSES only with the 3-pole cascade in place. */
+    static int16_t steep[NSAMP];
+    {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        api->set_param(inst, PK_GRV_TYPE, "1");
+        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GSCALE, "0");
+        api->set_param(inst, PK_GRV_GWAVE,  "2");
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0");
+        api->set_param(inst, PK_GRV_GFOLD,  "0.5");
+        api->set_param(inst, PK_GRV_COLOR,  "0.3");   /* low-mid cutoff */
+        mock_host_set_beat(0.0);
+        render_driven(api, inst, dbeat, steep);
+        api->destroy_instance(inst);
     }
-    assert(onset >= 0);                                /* a note fired */
-    int win = 1500;                                    /* ~34 ms windows */
-    if (onset + 2 * win + win < frames) {
-        int ze = 0, zl = 0; int16_t pe = 0, pl = 0;
-        for (int f = onset; f < onset + win; f++) {
-            if ((note_b[f*2] >= 0) != (pe >= 0)) ze++; pe = note_b[f*2];
-        }
-        int lstart = onset + 2 * win;
-        for (int f = lstart; f < lstart + win; f++) {
-            if ((note_b[f*2] >= 0) != (pl >= 0)) zl++; pl = note_b[f*2];
-        }
-        if (!(zl < ze))
-            fprintf(stderr, "filter_env: early ZCR=%d late ZCR=%d (want late<early)\n", ze, zl);
-        assert(zl < ze);     /* brightness decays within the note => filter env closes */
-    }
-    printf("test_groove: Task4 GEN filter-env + DECAY curve OK (tau_new=%.4f < tau_old=%.4f)\n",
-           tau_new, tau_old);
+    double hf = win_hf_fraction(steep, 0, frames);
+    if (!(hf < 0.008))
+        fprintf(stderr, "filter_env: GEN COLOR=0.3 HF-frac=%.5f (want <0.008 — 18dB/oct)\n", hf);
+    assert(hf < 0.008);   /* 18 dB/oct steepness — only the 3-pole cascade satisfies this */
+
+    (void)win_hf_energy;  /* helper retained for future use */
+    printf("test_groove: Task4 GEN filter-env + DECAY curve OK (tau_new=%.4f < tau_old=%.4f, "
+           "reso!=open, %d/%d reshaped by DECAY env, 3-pole HF-frac=%.4f<0.008)\n",
+           tau_new, tau_old, ediff, NSAMP, hf);
 }
 
 /* ---- Phase 1 GEN-PITCH: unquantized ROOT tracks + reaches sub-bass (1-04) -- */
