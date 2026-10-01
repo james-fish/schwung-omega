@@ -34,7 +34,7 @@ progress:
 Phase: E1
 Plan: Not started
 **Status:** Milestone complete
-**Last activity:** 2026-10-01 - Completed quick task 261001-72b: Omega iteration 2 (GEN/TAPS/performer/defaults/presets + library prep)
+**Last activity:** 2026-10-02 - Completed quick task 261001-wft: p-locking enabled (static chain_params in module.json) + GEN pitch/sub/filter/decay + matched drive; v0.3.0
 
 ```
 v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
@@ -167,6 +167,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 | 260930-vhr | TAPS rumble redesign: bidirectional LENGTH, equal-power taps, fractional/slewed reads, COLOR 2-pole LP, pre/post REVERB | 2026-09-30 | 3b67629 | Needs Review (on-device listening pending) | [260930-vhr-pick-up-taps-rumble-redesign-with-full-d](./quick/260930-vhr-pick-up-taps-rumble-redesign-with-full-d/) |
 | 261001-72b | Omega iteration 2: GEN root unify + seq overhaul, TAPS LPF/LFO/RV-TYPE, CMPDR, kick defaults + FM4 taming + WTR scan, presets (state JSON), library prep (release.json/README) | 2026-10-01 | 18eed2a | Deployed on-device; v0.2.0 released; catalog PR charlesvestal/schwung#585 open | [261001-72b-omega-iteration-2-on-device-feedback-bat](./quick/261001-72b-omega-iteration-2-on-device-feedback-bat/) |
 | 261001-iter3 | Iteration 3 (on-device): raise DUCK crossover 60→2500 Hz (audible pump); FLIP TAPS LENGTH so more=longer decay/smear + widen multi-tap range (fixes collapse-to-tap1 past 60%); GEN DECAY fine exp curve 5→150 ms (fills ~a 16th, no multi-step smear). v0.2.1. | 2026-10-01 | 9629f45 | v0.2.1 released + CI green; on-device deploy PENDING (device asleep mid-scp) | — |
+| 261001-wft | **p-locking enabled** (headline): static `chain_params` array in module.json unblocks the host automation/mod/p-lock table (host reads module.json on disk, not dynamic ui_hierarchy → was refusing every lock as "unknown param"). Plus GEN: stable root across scale switches, integer SEQ LEN display, built-in sub-octave, 18 dB/oct resonant filter w/ 20% env opening + 65%-of-amp filter decay, expo DECAY curve; GEN/TAPS drive strengthened to match kick. v0.3.0. | 2026-10-02 | 7722499 | Native `make test` GREEN; v0.3.0 release + on-device p-lock/listening PENDING | [261001-wft-fix-batch-of-omega-gen-taps-issues-plus-](./quick/261001-wft-fix-batch-of-omega-gen-taps-issues-plus-/) |
 
 ---
 
