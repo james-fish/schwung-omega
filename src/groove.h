@@ -49,8 +49,10 @@ typedef struct groove_state {
     /* Page-1 params (control-rate). */
     float vol;                    /* VOL 0..1 */
     float tap_level[4];           /* TAP1..4 level 0..1 */
-    float tap_trim;               /* single global tap trim (LENGTH loudness comp) */
-    float tap_norm;               /* equal-power divisor 1/sqrt(max(sum gains,1)) precompute */
+    float tap_w[4];               /* precomputed per-tap decay weights (control rate) */
+    float tap_tau_s;              /* LENGTH-derived decay time constant (seconds) */
+    float rumble_makeup;          /* makeup gain for level-competitiveness (ONDEVICE #3) */
+    float tap_norm;               /* equal-power divisor = makeup/sqrt(Σ tap_w²) precompute */
     float color_g;               /* TPT COLOR coefficient tanf(pi*fc/SR) */
     float color_lp_l_s;          /* tpt1 lowpass state (the tpt1_t `.s`), L */
     float color_lp_r_s;          /* tpt1 lowpass state (the tpt1_t `.s`), R */
@@ -58,26 +60,16 @@ typedef struct groove_state {
     float color_lp2_r_s;         /* 2nd cascade stage state (2-pole COLOR), R */
     bool  mono;                   /* MONO force-sum toggle (GRV-05) */
 
-    /* --- Redesign (C1 + vhr) ---------------------------------------------
-     * type: 0 = TAPS (feedback multitap rumble), 1 = GEN (generative groove).
-     * TAPS is ONE 16th-note feedback delay line read at 4 fractional tap points.
-     * A bidirectional LENGTH knob morphs between (right) fb=0 / equal taps =
-     * exact clean kick copies on every 16th, and (left) high feedback + in-loop
-     * diffusion + COLOR-linked damping = a smeared resonant drone. The RAW kick
-     * is written to the ring (the ~30 Hz HP is feedback-path ONLY). */
+    /* --- Redesign (Phase 1: feedback-free FIR rumble) --------------------
+     * type: 0 = TAPS (FIR decay-enveloped ghost-kick rumble), 1 = GEN.
+     * TAPS writes ONLY the raw kick into the ring; rumble = a bounded sum of
+     * NTAPS ghost copies read at k·spq (16th-note) offsets, each weighted by a
+     * decay envelope sampled at that tap's age (tap_w[], precomputed at control
+     * rate). LENGTH sets the decay time (tap_tau_s): short → distinct separated
+     * ghost-kicks, long → overlapping smeared rumble. There is NO recirculating
+     * feedback — the output is an FIR of past raw-kick samples, so it is bounded
+     * by construction and cannot run away (the Phase 1 crackle/bit-crush fix). */
     int   type;                   /* GROOVE_TYPE_TAPS / _GEN */
-    float fb_amount;              /* feedback gain 0..0.85 (from LENGTH; 0 at v=1) */
-    float diffuse_amt;            /* in-loop allpass smear 0 (clean) .. 1 (drone) */
-    float fb_lp_l_s, fb_lp_r_s;   /* COLOR-linked 2-pole loop LP state (stage 1) */
-    float fb_lp2_l_s, fb_lp2_r_s; /* COLOR-linked 2-pole loop LP state (stage 2) */
-    float loop_hp_l_s, loop_hp_r_s; /* ~30 Hz feedback-path HP state (structural) */
-    float loop_hp_g;              /* fixed ~30 Hz HP coefficient (control-rate) */
-    /* In-loop Schroeder diffusion allpasses (mutually prime, ~2.6/5.5 ms). */
-    float ap1[241]; int ap1i;
-    float ap2[113]; int ap2i;
-    /* Bidirectional reverb routing amounts (vhr §B.2): center = off. */
-    float rv_pre_amt;             /* PRE mode: reverb(kick) into ring input */
-    float rv_post_amt;            /* POST mode: reverb(tap sum) mixed to output */
 
     /* --- Groove FX (C1-02, GRVX-03) — TAPS Page 2 ------------------------- */
     float drive;                  /* DRIVE 0..1 (saturation + makeup) */
@@ -91,6 +83,10 @@ typedef struct groove_state {
     float rv_c1_lp, rv_c2_lp;     /* comb damping LP state */
     float rv_fb;                  /* comb feedback (from DECAY) */
     float rv_damp;                /* comb damping coeff (from TONE) */
+    float rv_mix;                 /* plain dry/wet reverb MIX 0..1 (Phase 1; replaces PRE/POST) */
+    /* FX routing order (Phase 1 FX-ROUTE): permutation of {RUMBLE,DRIVE,REVERB}
+     * applied per-sample; set at control rate from PK_GRV_ROUTE. */
+    unsigned char route_order[3];
 
     /* --- GEN groove voice (C1-03, GRVX-04/05) — decoupled from the kick model.
      * A transport-clocked, scale-quantized step sequencer driving a wavetable
@@ -124,6 +120,8 @@ typedef struct groove_state {
 
 enum { GROOVE_TYPE_TAPS = 0, GROOVE_TYPE_GEN = 1 };
 enum { GRV_FILT_LP = 0, GRV_FILT_HP = 1, GRV_FILT_OFF = 2 };
+/* FX routing block IDs (Phase 1 FX-ROUTE). BLK_RUMBLE marks the source slot. */
+enum { BLK_RUMBLE = 0, BLK_DRIVE = 1, BLK_REVERB = 2 };
 enum { GRV_RETRIG_NONE = 0, GRV_RETRIG_1BAR, GRV_RETRIG_2BAR,
        GRV_RETRIG_4BAR, GRV_RETRIG_8BAR, GRV_RETRIG_NOTE };
 

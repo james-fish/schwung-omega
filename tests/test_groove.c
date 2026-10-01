@@ -442,58 +442,266 @@ static void test_gen_lpf_pole(void) {
     printf("test_groove: GRV-04 LPF POLE OK (2-pole r=%.4f vs 4-pole r=%.4f)\n", r2, r4);
 }
 
-/* ---- GRVX-02 (C1 + vhr): feedback rumble sustains + stays bounded ---------- */
-/* vhr redesign: LENGTH is BIDIRECTIONAL. LEFT (low LENGTH) = high feedback -> a
- * smeared resonant drone that SUSTAINS into the second half of the buffer. RIGHT
- * (high LENGTH) = fb=0 -> clean gated tap copies that decay once the kick is
- * gone. So low LENGTH must sustain MORE than high LENGTH (the inverse of the old
- * pre-vhr semantics), while both stay bounded (no runaway). */
-static void test_feedback_rumble(void) {
+/* ---- Phase 1: zero-crossing fundamental estimator (GEN-PITCH) ------------- */
+/* Downmix to mono and estimate the fundamental from the hysteresis zero-crossing
+ * rate: f = crossings * SR / (2 * frames). A small threshold (relative to the
+ * peak) ignores the quantised near-silent decay tail so only the loud fundamental
+ * is counted. Robust for a near-sine GEN burst. Returns 0 if near-silent. */
+static float autocorr_pitch_hz(const int16_t *buf, int nsamp) {
+    int frames = nsamp / 2;
+    float peak = 0.0f;
+    for (int f = 0; f < frames; f++) {
+        float v = 0.5f * ((float)buf[f * 2] + (float)buf[f * 2 + 1]);
+        float a = v < 0 ? -v : v;
+        if (a > peak) peak = a;
+    }
+    if (peak < 8.0f) return 0.0f;                    /* silence guard (int16 scale) */
+    float thr = peak * 0.15f;                        /* hysteresis band */
+    int crossings = 0, sign = 0;                     /* 0 = unknown, +1/-1 committed */
+    for (int f = 0; f < frames; f++) {
+        float v = 0.5f * ((float)buf[f * 2] + (float)buf[f * 2 + 1]);
+        if (v > thr) { if (sign < 0) crossings++; sign = 1; }
+        else if (v < -thr) { if (sign > 0) crossings++; sign = -1; }
+        /* within +/-thr: hold the last committed sign (ignore tiny noise) */
+    }
+    return (float)crossings * (float)SR / (2.0f * (float)frames);
+}
+
+/* ---- Phase 1 RUMBLE-CORE: no runaway across all routes (1-01-01/1-02-02) --- */
+/* Worst case (max LENGTH smear + max DRIVE + full REVERB + max DECAY), a kick
+ * every beat (steady excitation) for each of the 4 ROUTE orders, ~5.4 s. Compare
+ * a MID window (after the reverb has rung up) to a LATE window: a BIBO-stable
+ * system settles, so late <= mid*1.3; a runaway would keep growing. Also every
+ * sample finite/bounded and the late window not pinned at the rail. */
+static void test_no_runaway(void) {
     host_api_v1_t host = make_mock_host();
     mock_host_set_bpm(128.0f);
     plugin_api_v2_t *api = move_plugin_init_v2(&host);
     assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(128.0);
+    const int NB = 1900;                 /* ~5.5 s at 128 frames/block */
+    const int fpb = (int)(60.0 / 128.0 * SR);
+    for (int route = 0; route < 4; route++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        api->set_param(inst, KGRV_VOL,    "1.0");
+        api->set_param(inst, KGRV_LENGTH, "0.0");   /* max smear */
+        api->set_param(inst, PK_GRV_DRIVE, "1.0");
+        api->set_param(inst, PK_GRV_RVMIX, "1.0");
+        api->set_param(inst, PK_GRV_RVDECAY, "1.0");
+        char rbuf[4] = { (char)('0' + route), 0, 0, 0 };
+        api->set_param(inst, PK_GRV_ROUTE, rbuf);
+        mock_host_set_beat(0.0);
+        double mid = 0.0, late = 0.0; int nm = 0, nl = 0;
+        int16_t out[BLOCK * 2];
+        int fpos = 0, next = 0;
+        int mid_lo = 700 * BLOCK, mid_hi = 900 * BLOCK;      /* settled window */
+        int late_lo = 1700 * BLOCK, late_hi = 1900 * BLOCK;  /* much later */
+        for (int b = 0; b < NB; b++) {
+            if (fpos >= next) { uint8_t no[3]={0x90,36,100}; api->on_midi(inst,no,3,0); next += fpb; }
+            mock_host_advance_beat(dbeat);
+            api->render_block(inst, out, BLOCK);
+            for (int i = 0; i < BLOCK * 2; i++) {
+                assert(out[i] >= INT16_MIN && out[i] <= INT16_MAX);  /* finite/bounded */
+                double xv = (double)out[i] / 32768.0;
+                int gf = fpos + i / 2;
+                if (gf >= mid_lo && gf < mid_hi)  { mid  += xv * xv; nm++; }
+                if (gf >= late_lo && gf < late_hi){ late += xv * xv; nl++; }
+            }
+            fpos += BLOCK;
+        }
+        double mr = sqrt(mid / nm), lr = sqrt(late / nl);
+        if (!(lr <= mr * 1.3 + 1e-4))
+            fprintf(stderr, "no_runaway route %d: mid=%.5f late=%.5f (growth!)\n", route, mr, lr);
+        assert(mr > 1e-3);               /* genuinely excited */
+        assert(lr <= mr * 1.3 + 1e-4);   /* settled, not growing -> cannot run away */
+        assert(lr < 0.95);               /* not pinned at the rail */
+        api->destroy_instance(inst);
+    }
+    printf("test_groove: P1 no-runaway across 4 routes OK (bounded, settled tail)\n");
+}
+
+/* ---- Phase 1 RUMBLE-CORE: audible at default VOL (1-01-02, ONDEVICE #3) ---- */
+/* The groove rumble must be clearly audible, not near-silent. Compare the late
+ * window (after the kick attack) with groove OFF vs ON — ON must add real tail
+ * energy and clear an absolute floor. 174 BPM so >=2 ghost taps land in-window. */
+static void test_rumble_audible(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(174.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(174.0);
+    static int16_t off[NSAMP], on[NSAMP];
+    uint8_t noteon[3] = { 0x90, 36, 100 };
     void *inst = api->create_instance("/tmp/omega", "{}");
     assert(inst);
 
-    static int16_t buf[NSAMP];
-    double dbeat = dbeat_for_bpm(128.0);
-    uint8_t noteon[3] = { 0x90, 36, 100 };
-
-    /* LOW LENGTH (high feedback = drone), single kick, no re-trigger. */
     select_model(api, inst, MODEL_FM2);
     prime_groove(api, inst);
-    api->set_param(inst, KGRV_VOL,    "0.9");
-    api->set_param(inst, KGRV_LENGTH, "0.05");   /* strong feedback drone */
+    api->set_param(inst, KGRV_VOL, "0.0");       /* groove OFF reference */
+    api->set_param(inst, KGRV_LENGTH, "0.5");
     api->on_midi(inst, noteon, 3, 0);
-    render_driven(api, inst, dbeat, buf);
+    render_driven(api, inst, dbeat, off);
 
-    /* Second-half energy is a meaningful fraction of first-half (sustained), and
-     * every sample is in range (bounded, no runaway). */
-    double e1 = buf_rms(buf, NSAMP / 2);
-    double e2 = buf_rms(buf + NSAMP / 2, NSAMP / 2);
-    for (int i = 0; i < NSAMP; i++) assert(buf[i] >= -32768 && buf[i] <= 32767);
-    assert(e1 > 1e-3 && e2 > 1e-3);
-    assert(e2 > 0.15 * e1);   /* drone sustains, not gated to silence */
-
-    /* HIGH LENGTH (fb=0, clean copies) renders a DIFFERENT, bounded output — the
-     * bidirectional LENGTH knob morphs between two distinct regimes (drone vs
-     * clean copies). The exact energy ordering over this short window depends on
-     * tap alignment, so the load-bearing check is: both bounded + the two regimes
-     * differ (proving LENGTH actually re-voices the tail, not just trims level).
-     * The clean-copies EQUAL-LEVEL invariant is verified precisely in
-     * test_taps_redesign.c gate #1 with the post-groove chain neutralised. */
-    static int16_t bclean[NSAMP];
     prime_groove(api, inst);
-    api->set_param(inst, KGRV_VOL,    "0.9");
-    api->set_param(inst, KGRV_LENGTH, "1.0");    /* fb=0 -> clean gated copies */
+    api->set_param(inst, KGRV_VOL, "1.0");       /* groove ON at default-ish */
+    api->set_param(inst, KGRV_LENGTH, "0.5");
     api->on_midi(inst, noteon, 3, 0);
-    render_driven(api, inst, dbeat, bclean);
-    for (int i = 0; i < NSAMP; i++) assert(bclean[i] >= -32768 && bclean[i] <= 32767);
-    assert(memcmp(buf, bclean, sizeof buf) != 0);   /* the two LENGTH regimes differ */
+    render_driven(api, inst, dbeat, on);
 
+    int tail = NSAMP / 2;                          /* last half = after attack */
+    double roff = buf_rms(off + tail, NSAMP - tail);
+    double ron  = buf_rms(on  + tail, NSAMP - tail);
+    if (!(ron > 0.003))
+        fprintf(stderr, "rumble_audible: tail rms on=%.5f (want >0.003)\n", ron);
+    assert(ron > 0.003);            /* absolute audibility floor (not near-silent) */
+    assert(ron > roff * 2.0);       /* groove clearly adds a rumble tail */
     api->destroy_instance(inst);
-    printf("test_groove: GRVX-02 bidirectional LENGTH drone sustains + bounded OK (e2/e1=%.2f)\n", e2/e1);
+    printf("test_groove: P1 rumble audible at default OK (tail off=%.4f on=%.4f)\n", roff, ron);
+}
+
+/* ---- Phase 1 RUMBLE-CORE: LENGTH morphs distinct<->smear (1-01-03) --------- */
+static void test_length_morph(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(174.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(174.0);
+    static int16_t dist[NSAMP], smear[NSAMP];
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    for (int pass = 0; pass < 2; pass++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        api->set_param(inst, PK_LENGTH, "0.2");       /* short kick -> isolated taps */
+        api->set_param(inst, KGRV_VOL, "1.0");
+        api->set_param(inst, KGRV_COLOR, "1.0");      /* wide open */
+        api->set_param(inst, KGRV_LENGTH, pass == 0 ? "1.0" : "0.0"); /* distinct vs smear */
+        api->on_midi(inst, noteon, 3, 0);
+        render_driven(api, inst, dbeat, pass == 0 ? dist : smear);
+    }
+    int tail = (NSAMP * 4) / 5;                        /* last 20% */
+    double td = buf_rms(dist + tail, NSAMP - tail);
+    double ts = buf_rms(smear + tail, NSAMP - tail);
+    if (!(ts > td * 1.3))
+        fprintf(stderr, "length_morph: distinct tail=%.5f smear tail=%.5f (want smear>1.3*distinct)\n", td, ts);
+    assert(ts > td * 1.3);     /* long decay fills the tail -> smear */
+    printf("test_groove: P1 LENGTH morph OK (distinct tail=%.4f smear tail=%.4f)\n", td, ts);
+}
+
+/* ---- Phase 1 FX-ROUTE: routing order changes output (1-02-01) ------------- */
+static void test_route_changes_output(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(128.0);
+    static int16_t r0[NSAMP], r2[NSAMP];
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    const char *routes[2] = { "0", "2" };   /* Rumble>Drive>Reverb vs Reverb first */
+    for (int i = 0; i < 2; i++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        prime_groove(api, inst);
+        api->set_param(inst, KGRV_VOL, "1.0");
+        api->set_param(inst, PK_GRV_DRIVE, "0.7");
+        api->set_param(inst, PK_GRV_RVMIX, "0.7");
+        api->set_param(inst, PK_GRV_RVDECAY, "0.7");
+        api->set_param(inst, PK_GRV_ROUTE, routes[i]);
+        mock_host_set_beat(0.0);
+        api->on_midi(inst, noteon, 3, 0);
+        render_driven(api, inst, dbeat, i == 0 ? r0 : r2);
+        api->destroy_instance(inst);
+    }
+    int diff = 0;
+    for (int i = 0; i < NSAMP; i++) { int d = r0[i] - r2[i]; if (d < 0) d = -d; if (d > 2) diff++; }
+    if (!(diff > NSAMP / 100))
+        fprintf(stderr, "route_changes: only %d/%d samples differ\n", diff, NSAMP);
+    assert(diff > NSAMP / 100);   /* order clearly changes the output */
+    printf("test_groove: P1 route order changes output OK (%d samples differ)\n", diff);
+}
+
+/* ---- Phase 1 GEN-FILTER: GEN LP sweep attenuates highs (1-03-01) ---------- */
+static void test_gen_filter_sweep(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(128.0);
+    static int16_t open_b[NSAMP], closed_b[NSAMP];
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    for (int pass = 0; pass < 2; pass++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
+        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
+        api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF content */
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0");
+        api->set_param(inst, PK_GRV_GFOLD, "0.5");
+        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "1.0" : "0.0");  /* open vs closed */
+        mock_host_set_beat(0.0);
+        /* No kick note-on: the GEN groove runs off the transport, so the output is
+         * the PURE (filtered) groove — the unfiltered kick would mask the sweep. */
+        (void)noteon;
+        render_driven(api, inst, dbeat, pass == 0 ? open_b : closed_b);
+        api->destroy_instance(inst);
+    }
+    /* Zero-crossing rate: closing the LP removes highs -> lower ZCR. */
+    int zo = 0, zc = 0; int16_t po = 0, pc = 0; int frames = NSAMP / 2;
+    for (int f = 0; f < frames; f++) {
+        if ((open_b[f*2] >= 0) != (po >= 0)) zo++; po = open_b[f*2];
+        if ((closed_b[f*2] >= 0) != (pc >= 0)) zc++; pc = closed_b[f*2];
+    }
+    if (!(zc < zo * 0.9))
+        fprintf(stderr, "gen_filter_sweep: zcr open=%d closed=%d (want closed<0.9*open)\n", zo, zc);
+    assert(zc < (int)(zo * 0.9));   /* closed LP measurably darker */
+    printf("test_groove: P1 GEN filter sweep OK (zcr open=%d closed=%d)\n", zo, zc);
+}
+
+/* ---- Phase 1 GEN-PITCH: unquantized ROOT tracks + reaches sub-bass (1-04) -- */
+static void test_gen_root_pitch(void) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm(128.0f);
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    assert(api && api->api_version == 2);
+    double dbeat = dbeat_for_bpm(128.0);
+    static int16_t lo[NSAMP], hi[NSAMP];
+    uint8_t noteon[3] = { 0x90, 36, 100 };
+    float plo = 0.0f, phi = 0.0f;
+    for (int pass = 0; pass < 2; pass++) {
+        void *inst = api->create_instance("/tmp/omega", "{}");
+        assert(inst);
+        select_model(api, inst, MODEL_FM2);
+        api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
+        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
+        api->set_param(inst, PK_GRV_GWAVE,  "0");     /* sine -> clean pitch */
+        api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
+        api->set_param(inst, PK_GRV_GRANGE, "0.0");   /* narrow span -> stable pitch */
+        api->set_param(inst, PK_GRV_COLOR, "1.0");
+        api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "0.0" : "1.0");  /* low vs high root */
+        mock_host_set_beat(0.0);
+        /* No kick note-on: measure the PURE GEN groove pitch (the kick's ~50 Hz
+         * fundamental would corrupt the autocorrelation estimate). */
+        (void)noteon;
+        render_driven(api, inst, dbeat, pass == 0 ? lo : hi);
+        api->destroy_instance(inst);
+    }
+    plo = autocorr_pitch_hz(lo, NSAMP);
+    phi = autocorr_pitch_hz(hi, NSAMP);
+    if (!(plo > 15.0f && plo < 80.0f))
+        fprintf(stderr, "gen_root_pitch: low root pitch=%.1f Hz (want 15..80 sub-bass)\n", plo);
+    assert(plo > 15.0f && plo < 80.0f);   /* lowest reaches the sub-bass register (#21) */
+    if (!(phi > plo * 1.5f))
+        fprintf(stderr, "gen_root_pitch: low=%.1f high=%.1f (want high>1.5*low)\n", plo, phi);
+    assert(phi > plo * 1.5f);             /* ROOT HZ tracks upward */
+    printf("test_groove: P1 GEN unquantized root pitch OK (low=%.1f Hz high=%.1f Hz)\n", plo, phi);
 }
 
 /* ---- GRVX-03 (C1-02): groove FX (drive/filter/LFO/reverb) move + bound ----- */
@@ -662,9 +870,16 @@ int main(void) {
     test_tap_delay_presence();
     test_page1_responsive();
     test_mono_sum();
-    test_feedback_rumble();   /* GRVX-02: continuous rumble, not gated echo */
     test_groove_fx();         /* GRVX-03: groove drive/filter/LFO/reverb */
     test_gen_groove_type();   /* GRVX-04/05: GEN groove decoupled + retrigger/stop */
+
+    /* Phase 1: feedback-free FIR rumble + FX routing + GEN filter/pitch. */
+    test_no_runaway();            /* RUMBLE-CORE 1-01-01 + FX-ROUTE 1-02-02 */
+    test_rumble_audible();        /* RUMBLE-CORE 1-01-02 (ONDEVICE #3) */
+    test_length_morph();          /* RUMBLE-CORE 1-01-03 */
+    test_route_changes_output();  /* FX-ROUTE 1-02-01 */
+    test_gen_filter_sweep();      /* GEN-FILTER 1-03-01 */
+    test_gen_root_pitch();        /* GEN-PITCH 1-04-01 */
 
     /* GRV-04 (C-03): GEN clocks to the transport (not GEN_STEP_FRAMES) + the
      * LPF POLE 2/4-pole cascade toggle. Requires GEN registered. */

@@ -65,13 +65,16 @@ const float g_global_defaults[GKI_COUNT] = {
      * CENTER (0.5) = reverb OFF (deadzone), LEFT = pre-smear, RIGHT = post. A
      * bare create therefore sits neutral (rv_pre_amt/rv_post_amt both 0). */
     [GKI_GRV_DRIVE]=0.0f, [GKI_GRV_FILTYPE]=0.0f, [GKI_GRV_LFOSPD]=0.3f, [GKI_GRV_LFOAMT]=0.0f,
-    [GKI_GRV_RVMIX]=0.5f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
+    /* Phase 1: RVMIX is now a plain dry/wet (0 = off); ROUTE default 0 = Rumble>Drive>Reverb. */
+    [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
+    [GKI_GRV_ROUTE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
     [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
     [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.0f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,
     [GKI_GRV_GRETRIG]=0.0f,
-    /* E3: root note (A1 = MIDI 45 → 45/83 ≈ 0.542) and range (12 degrees → 12/24 = 0.5). */
-    [GKI_GRV_GROOT]=0.542f, [GKI_GRV_GRANGE]=0.5f,
+    /* E3/P1: root — quantized A1 (≈0.542) baseline; unquantized maps log 20..200 Hz,
+     * default 0.352 → ~45 Hz sub-bass (Phase 1 GEN-PITCH). Range 12 degrees (0.5). */
+    [GKI_GRV_GROOT]=0.352f, [GKI_GRV_GRANGE]=0.5f,
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
     [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
     [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,
@@ -129,6 +132,7 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_DUCK]=PK_DUCK, [GKI_DUCK_REL]=PK_DUCK_REL, [GKI_DUCK_SMT]=PK_DUCK_SMT,
     [GKI_DUCK_BS]=PK_DUCK_BS, [GKI_DJ_FILT]=PK_DJ_FILT, [GKI_DJ_RESO]=PK_DJ_RESO,
     [GKI_CLIP]=PK_CLIP,
+    [GKI_GRV_ROUTE]=PK_GRV_ROUTE,
 };
 
 int pk_kick_index(const char *key) {

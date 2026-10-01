@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 37   /* + 7 performer (Phase D) + 2 GEN root/range (E3) */
+#define OMEGA_GKI_COUNT 38   /* + 7 performer (Phase D) + 2 GEN root/range (E3) + 1 FX route (P1) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -279,6 +279,7 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_GRV_RVDECAY "grv_rvdecay"
 #define PK_GRV_RVTONE  "grv_rvtone"
 #define PK_GRV_RVTYPE  "grv_rvtype"
+#define PK_GRV_ROUTE   "grv_route"   /* Phase 1 FX-ROUTE: {RUMBLE,DRIVE,REVERB} order enum */
 
 /* --- GEN groove-type keys (C1-03, GRVX-04/05) — decoupled from MODEL_GEN --- */
 #define PK_GRV_GSCALE   "grv_gscale"

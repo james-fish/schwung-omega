@@ -48,6 +48,11 @@ static inline float clampf(float x, float lo, float hi) {
 /* Fractional-tap slew rate (~30 ms one-pole toward spq_target; vhr §A.6). */
 #define SPQ_SLEW 0.0005f
 
+/* Number of ghost-kick taps in the FIR rumble (reuses the four TAP1..4 knobs). */
+#ifndef NTAPS
+#define NTAPS 4
+#endif
+
 /* ---- Mono Schroeder reverb helper (vhr §B.2, ONE instance, pre OR post) ----
  * Runs the existing 2-comb + 1-allpass Schroeder on a mono input and returns
  * the mono wet. Called at the PRE point (on the kick) OR the POST point (on the
@@ -74,28 +79,66 @@ static inline float tpt_g_from_hz(float fc) {
     return tanf((float)M_PI * fc / OMEGA_SR);   /* control-rate only */
 }
 
-/* ---- Equal-power tap normalisation (control-rate, vhr §A.3) --------------- */
-/* Precompute 1/sqrt(max(sum of active tap gains, 1)) so the per-sample tap sum
- * needs NO sqrt. sum = Σ tap_level[t] (the global tap_trim is applied per tap
- * separately). At LENGTH=1 with all four taps=1 this divisor is sqrt(4)=2, so
- * each clean copy comes out at 0.5x the raw kick (× vol) — the stated
- * equal-power scale for the clean-copies invariant. */
-static void groove_update_tap_norm(groove_state_t *g) {
-    float sum = 0.0f;
-    for (int t = 0; t < 4; t++) sum += g->tap_level[t];
-    if (sum < 1.0f) sum = 1.0f;
-    g->tap_norm = 1.0f / sqrtf(sum);
+/* ---- FIR tap-weight precompute (control-rate, Phase 1 §Rumble Core) ------- */
+/* Each ghost-kick tap k (k=1..NTAPS) is read at k·spq behind the write head and
+ * weighted by tap_level[k-1] · exp(-age_k/tau), where age_k = k·spq/SR seconds
+ * and tau = tap_tau_s (from LENGTH). expf runs HERE (control rate), never per
+ * sample. tap_norm = rumble_makeup/sqrt(Σ tap_w²) gives equal-power makeup so a
+ * long smeared tail is not louder than a short distinct one, and a short tail is
+ * still audible (divisor floored at sqrt(0.25)=0.5). */
+static void groove_update_tap_weights(groove_state_t *g) {
+    float tau = g->tap_tau_s > 1e-4f ? g->tap_tau_s : 1e-4f;
+    float inv_tau = 1.0f / tau;
+    float energy = 0.0f;
+    for (int k = 1; k <= NTAPS; k++) {
+        float age_s = (float)k * g->spq_target / OMEGA_SR;   /* seconds */
+        float w = g->tap_level[k - 1] * expf(-age_s * inv_tau);  /* expf: CONTROL rate */
+        g->tap_w[k - 1] = w;
+        energy += w * w;
+    }
+    float norm = sqrtf(energy > 0.25f ? energy : 0.25f);
+    g->tap_norm = g->rumble_makeup / norm;
 }
 
-/* ---- LENGTH -> opposing feedback / tap-trim / diffusion (control-rate) ---- */
-/* Bidirectional morph (vhr §A.2). RIGHT (v=1): fb EXACTLY 0 + full tap trim ->
- * exact clean copies. LEFT (v=0): fb 0.85 (stability cap) + reduced tap trim
- * (equal-power loudness comp) + full diffusion -> smeared resonant drone. NO
- * per-tap pow decay (the deleted loudness bug). */
+/* ---- LENGTH -> decay time constant (control-rate, Phase 1 §Rumble Core) ---- */
+/* v=1 (right, "distinct"): tau ~40 ms — later taps near-silent → clean separated
+ * ghost-kick plucks. v=0 (left, "smeared"): tau ~1200 ms — all taps stay loud →
+ * overlapping continuous rumble. Exponential map, powf at control rate only. NO
+ * feedback: LENGTH shapes the FIR tap envelope, not a recirculation gain. */
 static void groove_set_length(groove_state_t *g, float v) {
-    g->fb_amount   = 0.85f * (1.0f - v);   /* 0 at v=1 (clean), 0.85 at v=0 (drone) */
-    g->tap_trim    = 0.6f + 0.4f * v;      /* 0.6 (drone) .. 1.0 (clean) */
-    g->diffuse_amt = 1.0f - v;             /* bypass diffusion at the clean end */
+    g->tap_tau_s = (40.0f * powf(30.0f, 1.0f - v)) * 0.001f;  /* powf: CONTROL rate */
+    groove_update_tap_weights(g);
+}
+
+/* ---- Routable FX blocks (Phase 1 FX-ROUTE) -------------------------------- */
+/* DRIVE block: saturation + makeup, dry/wet by amount, then the LFO tremolo
+ * (DRIVE's "+ its FX: LFO"). The LFO phase is advanced ONCE per sample in
+ * groove_tick (after the route loop) so the tremolo rate is order-independent. */
+static inline void groove_drive_block(groove_state_t *g, float *l, float *r) {
+    if (g->drive > 0.0f) {
+        float k  = 1.0f + g->drive * 4.0f;
+        float mk = 1.0f / (1.0f + g->drive * 0.7f);
+        float gl = *l, gr = *r;
+        float wl = (gl * k) / (1.0f + (gl < 0 ? -gl : gl) * k) * mk;
+        float wr = (gr * k) / (1.0f + (gr < 0 ? -gr : gr) * k) * mk;
+        *l = gl + g->drive * (wl - gl);
+        *r = gr + g->drive * (wr - gr);
+    }
+    if (g->lfo_amt > 0.0f) {
+        float ph  = g->lfo_phase;
+        float tri = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);   /* -1..1 */
+        float trem = 1.0f - g->lfo_amt * 0.5f * (1.0f - tri);                /* 1..1-amt */
+        *l *= trem; *r *= trem;
+    }
+}
+
+/* REVERB block: plain dry/wet via the existing Schroeder reverb. NEVER writes to
+ * the delay ring (that was the Phase-1 runaway bug); mono-in because the rumble
+ * is a near-mono sub. rv_fb (comb feedback) is clamped <1 in set_param. */
+static inline void groove_reverb_block(groove_state_t *g, float *l, float *r) {
+    float wet = groove_reverb_mono(g, 0.5f * (*l + *r));
+    *l += g->rv_mix * (wet - *l);
+    *r += g->rv_mix * (wet - *r);
 }
 
 /* ---- GEN groove sequencer (C1-03, GRVX-04/05) ---------------------------- */
@@ -110,10 +153,16 @@ static inline unsigned long long grv_xorshift(unsigned long long *s) {
 void groove_gen_rebuild(groove_state_t *g) {
     g->gen_rng = 0x2545F4914F6CDD1Dull ^ ((unsigned long long)g->gen_seed_raw * 0x9E3779B1u + 1u);
     int len = g->gen_seqlen; if (len < 1) len = 1; if (len > 32) len = 32;
-    /* Random scale degrees bounded by RANGE (1..24 degrees). */
-    int rng = g->gen_range < 1 ? 1 : (g->gen_range > 24 ? 24 : g->gen_range);
-    for (int i = 0; i < 32; i++)
-        g->gen_seq[i] = (signed char)(grv_xorshift(&g->gen_rng) % (unsigned)rng);
+    /* Random scale degrees bounded by RANGE, CENTERED around 0 (Phase 1 GEN-PITCH):
+     * offsets span roughly ±span/2 so degree 0 (the ROOT) is the most common value
+     * and negative degrees play BELOW the root — the root fundamental is audible
+     * and ROOT-in-Hz genuinely controls perceived pitch. scale_quantize handles
+     * negative degrees; the shift is deterministic (same seed → same sequence). */
+    int span = g->gen_range < 1 ? 1 : (g->gen_range > 24 ? 24 : g->gen_range);
+    for (int i = 0; i < 32; i++) {
+        int raw = (int)(grv_xorshift(&g->gen_rng) % (unsigned)span);  /* 0..span-1 */
+        g->gen_seq[i] = (signed char)(raw - span / 2);                /* center ±span/2 */
+    }
     /* Euclidean gate: DENSITY -> npulses of len, spread evenly (Bresenham). */
     int npulse = (int)(g->gen_density * (float)len + 0.5f);
     if (npulse < 1) npulse = 1; if (npulse > len) npulse = len;
@@ -164,8 +213,10 @@ void groove_init(groove_state_t *g) {
      * immediately shaped and audible (test_groove's prime_groove opens it). */
     g->vol = 0.0f;
     for (int t = 0; t < 4; t++) g->tap_level[t] = 0.6f;
-    groove_set_length(g, 0.5f);
-    groove_update_tap_norm(g);
+    /* Makeup gain so the FIR rumble is level-competitive with the kick at a
+     * musical default VOL without DRIVE (ONDEVICE #3 "way too quiet"). */
+    g->rumble_makeup = 2.0f;
+    groove_set_length(g, 0.5f);          /* seeds tap_tau_s + tap_w[] + tap_norm */
     g->color_g       = tpt_g_from_hz(8000.0f);
     g->color_lp_l_s  = 0.0f;
     g->color_lp_r_s  = 0.0f;
@@ -173,20 +224,14 @@ void groove_init(groove_state_t *g) {
     g->color_lp2_r_s = 0.0f;
     g->mono          = false;
 
-    /* Redesign defaults (C1 + vhr). */
+    /* Redesign defaults (Phase 1: feedback-free FIR). */
     g->type        = GROOVE_TYPE_TAPS;
-    g->fb_lp_l_s   = 0.0f;
-    g->fb_lp_r_s   = 0.0f;
-    g->fb_lp2_l_s  = 0.0f;
-    g->fb_lp2_r_s  = 0.0f;
-    g->loop_hp_l_s = 0.0f;
-    g->loop_hp_r_s = 0.0f;
-    /* ~30 Hz feedback-path HP coefficient (structural sub-cleaner; vhr §C.2). */
-    g->loop_hp_g   = tpt_g_from_hz(30.0f);
-    g->ap1i = 0; g->ap2i = 0;
-    /* Reverb routing: center = off on a bare create (vhr §B.2). */
-    g->rv_pre_amt  = 0.0f;
-    g->rv_post_amt = 0.0f;
+    /* FX routing: default RUMBLE→DRIVE→REVERB (reverb last, classic); reverb MIX
+     * off on a bare create. */
+    g->route_order[0] = BLK_RUMBLE;
+    g->route_order[1] = BLK_DRIVE;
+    g->route_order[2] = BLK_REVERB;
+    g->rv_mix      = 0.0f;
 
     /* Groove FX defaults (C1-02) — off/neutral (calloc already zeroed buffers). */
     g->drive       = 0.0f;
@@ -272,6 +317,9 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
         float fmaxspq = (float)((int)(GRV_DELAY_MASK) / 4);
         if (fspq > fmaxspq) fspq = fmaxspq;
         g->spq_target = fspq;
+        /* FIR tap ages depend on spq_target → recompute the decay weights at the
+         * new tempo (control rate, once per re-lock; never per sample). */
+        groove_update_tap_weights(g);
     }
 
     /* If the host exposes NO transport at all, treat the GEN sequencer as free-
@@ -341,113 +389,44 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         g->buf_l[g->write_pos] = 0.0f; g->buf_r[g->write_pos] = 0.0f;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
     } else {
-        /* TAPS (vhr redesign): ONE 16th-note feedback delay line read at 4
-         * fractional tap points. LENGTH morphs between clean equal-level copies
-         * (fb=0, right) and a smeared damped resonant drone (fb=0.85, left). The
-         * RAW kick is written to the ring; the ~30 Hz HP is FEEDBACK-PATH ONLY,
-         * so at fb=0 the taps are exact copies of the raw kick. All algebraic —
-         * only floorf per sample (single aarch64 instruction). */
+        /* TAPS (Phase 1: feedback-free FIR rumble). Write ONLY the raw kick into
+         * the ring; sum NTAPS ghost copies read at k·spq (16th-note) offsets, each
+         * weighted by the precomputed decay envelope tap_w[k-1] (control rate),
+         * then equal-power makeup by tap_norm. There is NO recirculation: the
+         * output is a finite weighted sum of past RAW kick samples (|ring| ≤
+         * kick_peak, weights ∈ [0,1]) → bounded by construction, cannot run away.
+         * Per sample: only MACs + floorf (single aarch64 instruction), no
+         * transcendental, no division. */
 
-        /* (1) Per-sample slew of the fractional 16th spacing (§A.6). */
+        /* (1) Per-sample slew of the fractional 16th spacing. */
         g->spq += (g->spq_target - g->spq) * SPQ_SLEW;
         float spq = g->spq;
         if (spq < 1.0f) spq = 1.0f;                  /* guard read distance */
-        float fmaxspq = (float)((int)(GRV_DELAY_MASK) / 4);
-        if (spq > fmaxspq) spq = fmaxspq;            /* 4*spq inside the ring */
+        float fmaxspq = (float)((int)(GRV_DELAY_MASK) / NTAPS);
+        if (spq > fmaxspq) spq = fmaxspq;            /* NTAPS*spq inside the ring */
 
-        /* (2) Feedback tap read at 1*spq behind the write head (fractional). */
-        float d1  = spq;
-        float rp1 = (float)g->write_pos - d1;
-        float f1  = rp1 - floorf(rp1);
-        int   a0  = ((int)floorf(rp1)) & GRV_DELAY_MASK;
-        int   a1  = (a0 + 1) & GRV_DELAY_MASK;
-        float fb_l = g->buf_l[a0] + f1 * (g->buf_l[a1] - g->buf_l[a0]);
-        float fb_r = g->buf_r[a0] + f1 * (g->buf_r[a1] - g->buf_r[a0]);
-
-        /* (3) ~30 Hz HP on the FEEDBACK signal ONLY (structural sub-cleaner +
-         * stability; §C.2/§A.4). hp = x - lp(x@30Hz). Do NOT high-pass the ring
-         * input — the raw kick must stay intact for the clean-copies invariant. */
-        {
-            tpt1_t hl = { g->loop_hp_l_s };
-            tpt1_t hr = { g->loop_hp_r_s };
-            float lo_l = tpt1_lp(&hl, fb_l, g->loop_hp_g);
-            float lo_r = tpt1_lp(&hr, fb_r, g->loop_hp_g);
-            g->loop_hp_l_s = hl.s;
-            g->loop_hp_r_s = hr.s;
-            fb_l = fb_l - lo_l;
-            fb_r = fb_r - lo_r;
-        }
-
-        /* (4) In-loop diffusion: two short Schroeder allpasses in series,
-         * crossfaded by diffuse_amt (0 clean .. 1 drone; §A.5). Mono-diffuse the
-         * L/R average through each allpass, then re-apply to both channels
-         * (rumble is sub-bass / near-mono; keeps RAM tiny and stays stable). */
-        {
-            const float g_ap = 0.5f;
-            float in_m  = 0.5f * (fb_l + fb_r);
-            float ab1   = g->ap1[g->ap1i];
-            float ao1   = -g_ap * in_m + ab1;
-            g->ap1[g->ap1i] = in_m + g_ap * ao1;
-            if (++g->ap1i >= 241) g->ap1i = 0;
-            float d1m   = in_m + g->diffuse_amt * (ao1 - in_m);
-            float ab2   = g->ap2[g->ap2i];
-            float ao2   = -g_ap * d1m + ab2;
-            g->ap2[g->ap2i] = d1m + g_ap * ao2;
-            if (++g->ap2i >= 113) g->ap2i = 0;
-            float d2m   = d1m + g->diffuse_amt * (ao2 - d1m);
-            float delta = d2m - in_m;                /* diffusion contribution */
-            fb_l += delta;
-            fb_r += delta;
-        }
-
-        /* (5) COLOR-linked 2-pole LP in the loop (darkens the drone as it
-         * decays; §C.3). Two cascaded tpt1 stages share the COLOR coefficient. */
-        {
-            tpt1_t l1 = { g->fb_lp_l_s },  r1 = { g->fb_lp_r_s };
-            fb_l = tpt1_lp(&l1, fb_l, g->color_g);
-            fb_r = tpt1_lp(&r1, fb_r, g->color_g);
-            g->fb_lp_l_s = l1.s;  g->fb_lp_r_s = r1.s;
-            tpt1_t l2 = { g->fb_lp2_l_s }, r2 = { g->fb_lp2_r_s };
-            fb_l = tpt1_lp(&l2, fb_l, g->color_g);
-            fb_r = tpt1_lp(&r2, fb_r, g->color_g);
-            g->fb_lp2_l_s = l2.s; g->fb_lp2_r_s = r2.s;
-        }
-
-        /* (6) Ring input = RAW kick + pre-reverb (if PRE) + fb_amount*feedback.
-         * NO ~30 Hz HP on this sum. NO x3.0 makeup. At fb=0 and rv_pre_amt=0 the
-         * ring input is EXACTLY the raw kick (the clean-copies invariant). The
-         * reverb-into-ring send is attenuated to <= ~0.5 for stability (§B.2). */
-        float wl = kick_l + g->fb_amount * fb_l;
-        float wr = kick_r + g->fb_amount * fb_r;
-        if (g->rv_pre_amt > 0.0f) {
-            float rin = 0.5f * (kick_l + kick_r);        /* reverb is mono-in */
-            float rwet = groove_reverb_mono(g, rin);
-            float send = 0.5f * g->rv_pre_amt * rwet;    /* cap effective send <= ~0.5 */
-            wl += send;
-            wr += send;
-        }
-        g->buf_l[g->write_pos] = wl;
-        g->buf_r[g->write_pos] = wr;
-
-        /* (7) Sum 4 EQUAL taps at k*spq behind the write head (fractional reads),
-         * each weighted by tap_level[t]*tap_trim, normalised equal-power by the
-         * precomputed tap_norm (1/sqrt(sum active gains); §A.3). NO per-tap pow
-         * decay, NO per-sample sqrt. */
-        for (int t = 0; t < 4; t++) {
-            float dk  = (float)(t + 1) * spq;
+        /* (2) Sum NTAPS decay-enveloped ghost taps at k·spq behind the write head
+         * (fractional, linear-interpolated, mask-wrapped). */
+        float acc_l = 0.0f, acc_r = 0.0f;
+        for (int k = 1; k <= NTAPS; k++) {
+            float dk  = (float)k * spq;
             float rpk = (float)g->write_pos - dk;
             float fk  = rpk - floorf(rpk);
             int   k0  = ((int)floorf(rpk)) & GRV_DELAY_MASK;
             int   k1  = (k0 + 1) & GRV_DELAY_MASK;
             float sl  = g->buf_l[k0] + fk * (g->buf_l[k1] - g->buf_l[k0]);
             float sr  = g->buf_r[k0] + fk * (g->buf_r[k1] - g->buf_r[k0]);
-            float w   = g->tap_level[t] * g->tap_trim;
-            gl += sl * w;
-            gr += sr * w;
+            acc_l += sl * g->tap_w[k - 1];
+            acc_r += sr * g->tap_w[k - 1];
         }
-        gl *= g->tap_norm;
-        gr *= g->tap_norm;
+
+        /* (3) Write the RAW kick ONLY — no feedback term ever enters the ring. */
+        g->buf_l[g->write_pos] = kick_l;
+        g->buf_r[g->write_pos] = kick_r;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
+
+        gl = acc_l * g->tap_norm;
+        gr = acc_r * g->tap_norm;
     }
 
     /* FILTER: the COLOR LP gives LP; HP = input - LP; Off is a TRUE bypass (no
@@ -497,34 +476,20 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
     }
 
-    /* DRIVE (C1-02): saturation with makeup, dry/wet by amount. */
-    if (g->drive > 0.0f) {
-        float k = 1.0f + g->drive * 4.0f;
-        float mk = 1.0f / (1.0f + g->drive * 0.7f);
-        float wl = (gl * k) / (1.0f + (gl < 0 ? -gl : gl) * k) * mk;
-        float wr = (gr * k) / (1.0f + (gr < 0 ? -gr : gr) * k) * mk;
-        gl = gl + g->drive * (wl - gl);
-        gr = gr + g->drive * (wr - gr);
+    /* FX ROUTING (Phase 1): apply DRIVE (+ its LFO tremolo) and the plain dry/wet
+     * REVERB in the user-selected order. The rumble/GEN source already produced
+     * gl/gr above (BLK_RUMBLE is a no-op slot whose POSITION decides whether DRIVE
+     * or REVERB comes first). The reverb NEVER writes to the delay ring. Dispatch
+     * is a branch-predictable switch over a 3-byte control-rate order table — no
+     * per-sample transcendental. */
+    for (int i = 0; i < 3; i++) {
+        switch (g->route_order[i]) {
+            case BLK_DRIVE:  groove_drive_block(g, &gl, &gr);  break;
+            case BLK_REVERB: groove_reverb_block(g, &gl, &gr); break;
+            case BLK_RUMBLE: default: break;   /* source slot (already produced) */
+        }
     }
-
-    /* REVERB POST (vhr §B.2): when the bidirectional MIX knob is on the RIGHT,
-     * run the SAME Schroeder reverb on the tap-summed (or GEN) output and mix
-     * rv_post_amt wet. The PRE point (§B.2) is handled inside the TAPS branch
-     * above; only ONE reverb instance exists. */
-    if (g->rv_post_amt > 0.0f) {
-        float in = 0.5f * (gl + gr);
-        float wet = groove_reverb_mono(g, in);
-        gl = gl + g->rv_post_amt * wet;
-        gr = gr + g->rv_post_amt * wet;
-    }
-
-    /* LFO tremolo (C1-02): triangle amplitude mod, depth by LFO AMT. */
-    if (g->lfo_amt > 0.0f) {
-        float ph = g->lfo_phase;
-        float tri = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);  /* -1..1 */
-        float trem = 1.0f - g->lfo_amt * 0.5f * (1.0f - tri);              /* 1..1-amt */
-        gl *= trem; gr *= trem;
-    }
+    /* Advance the tremolo LFO once per sample (order-independent rate). */
     g->lfo_phase += g->lfo_inc;
     if (g->lfo_phase >= 1.0f) g->lfo_phase -= 1.0f;
 
@@ -553,13 +518,13 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->color_g = tpt_g_from_hz(fc);
         g->filter_type = GRV_FILT_LP;
     } else if (strcmp(key, PK_GRV_TAP1) == 0) {
-        g->tap_level[0] = v; groove_update_tap_norm(g);
+        g->tap_level[0] = v; groove_update_tap_weights(g);
     } else if (strcmp(key, PK_GRV_TAP2) == 0) {
-        g->tap_level[1] = v; groove_update_tap_norm(g);
+        g->tap_level[1] = v; groove_update_tap_weights(g);
     } else if (strcmp(key, PK_GRV_TAP3) == 0) {
-        g->tap_level[2] = v; groove_update_tap_norm(g);
+        g->tap_level[2] = v; groove_update_tap_weights(g);
     } else if (strcmp(key, PK_GRV_TAP4) == 0) {
-        g->tap_level[3] = v; groove_update_tap_norm(g);
+        g->tap_level[3] = v; groove_update_tap_weights(g);
     } else if (strcmp(key, PK_GRV_MONO) == 0) {
         g->mono = (v >= 0.5f);
     } else if (strcmp(key, PK_GRV_DRIVE) == 0) {
@@ -574,23 +539,25 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_LFOAMT) == 0) {
         g->lfo_amt = v;
     } else if (strcmp(key, PK_GRV_RVMIX) == 0) {
-        /* Bidirectional reverb routing (vhr §B.2): center (0.5) = OFF (deadzone
-         * +/-0.03); LEFT = PRE (reverb pre-smear into the tap ring input); RIGHT
-         * = POST (reverb on the tap-summed output). ONE reverb instance; the sign
-         * of the knob selects its input/output tap point. The old linear
-         * post-only rv_mix=v semantics are gone. */
-        if (v < 0.47f) {                       /* PRE */
-            g->rv_pre_amt  = (0.5f - v) * 2.0f;
-            g->rv_post_amt = 0.0f;
-        } else if (v > 0.53f) {                /* POST */
-            g->rv_post_amt = (v - 0.5f) * 2.0f;
-            g->rv_pre_amt  = 0.0f;
-        } else {                               /* center deadzone: OFF */
-            g->rv_pre_amt  = 0.0f;
-            g->rv_post_amt = 0.0f;
-        }
+        /* Phase 1: plain dry/wet reverb MIX. 0 = dry (off), 1 = full wet. The
+         * reverb runs as an in-line block placed by PK_GRV_ROUTE; it NEVER feeds
+         * the delay ring (the old bidirectional PRE/POST hack is gone). */
+        g->rv_mix = v;
+    } else if (strcmp(key, PK_GRV_ROUTE) == 0) {
+        /* FX routing order: permutation of {RUMBLE,DRIVE,REVERB}. BLK_RUMBLE marks
+         * the source slot; its position decides whether DRIVE or REVERB comes
+         * first. Parse the integer enum index (like PK_GRV_RVTYPE/GWAVE). */
+        int idx = (int)(parse_f(val) + 0.5f);
+        static const unsigned char orders[4][3] = {
+            { BLK_RUMBLE, BLK_DRIVE,  BLK_REVERB }, /* 0 Rumble>Drive>Reverb (default) */
+            { BLK_RUMBLE, BLK_REVERB, BLK_DRIVE  }, /* 1 Rumble>Reverb>Drive */
+            { BLK_REVERB, BLK_RUMBLE, BLK_DRIVE  }, /* 2 Reverb first */
+            { BLK_DRIVE,  BLK_RUMBLE, BLK_REVERB }, /* 3 Drive first */
+        };
+        if (idx < 0) idx = 0; if (idx > 3) idx = 3;
+        for (int i = 0; i < 3; i++) g->route_order[i] = orders[idx][i];
     } else if (strcmp(key, PK_GRV_RVDECAY) == 0) {
-        g->rv_fb = 0.5f + 0.49f * v;           /* comb feedback 0.5..0.99 */
+        g->rv_fb = 0.5f + 0.49f * v;           /* comb feedback 0.5..0.99 (<1, bounded) */
     } else if (strcmp(key, PK_GRV_RVTONE) == 0) {
         g->rv_damp = 0.1f + 0.85f * (1.0f - v); /* brighter as TONE rises */
     } else if (strcmp(key, PK_GRV_RVTYPE) == 0) {
@@ -606,9 +573,12 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
             g->gen_unquantized = false;
             g->gen_scale = idx - 1;  /* maps UI 1..12 → g_scales[0..11] */
         }
-        /* Recompute root Hz since mode may have changed. */
+        /* Recompute root Hz since mode may have changed. Unquantized ROOT HZ is a
+         * LOG 20..200 Hz sweep (Phase 1 GEN-PITCH) so the sounding pitch reaches a
+         * true sub-bass (ONDEVICE #21), not the old linear 30..200 that bottomed
+         * out ~122 Hz by default. */
         if (g->gen_unquantized)
-            g->gen_base_hz = 30.0f + g->gen_root_param * 170.0f;
+            g->gen_base_hz = 20.0f * powf(200.0f / 20.0f, g->gen_root_param);
         else {
             int semi = (int)(g->gen_root_param * 83.0f + 0.5f);
             g->gen_base_hz = 8.175f * powf(2.0f, (float)semi / 12.0f);
@@ -616,7 +586,7 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
     } else if (strcmp(key, PK_GRV_GROOT) == 0) {
         g->gen_root_param = v;
         if (g->gen_unquantized)
-            g->gen_base_hz = 30.0f + v * 170.0f;
+            g->gen_base_hz = 20.0f * powf(200.0f / 20.0f, v);   /* log 20..200 Hz sub-bass */
         else {
             int semi = (int)(v * 83.0f + 0.5f);
             g->gen_base_hz = 8.175f * powf(2.0f, (float)semi / 12.0f);

@@ -116,6 +116,8 @@ static const char OPT_SCALE[]   = "[\"Unquantized\",\"Chromatic\",\"Major\",\"Mi
 static const char OPT_GWAVE[]   = "[\"Sine\",\"Tri\",\"Saw\",\"Square\",\"Digital\",\"Analog\"]";
 static const char OPT_RETRIG[]  = "[\"None\",\"1 Bar\",\"2 Bar\",\"4 Bar\",\"8 Bar\",\"On Note\"]";
 static const char OPT_ONOFF[]   = "[\"Off\",\"On\"]";
+/* Phase 1 FX-ROUTE: groove FX order (RUMBLE/DRIVE/REVERB). */
+static const char OPT_FXROUTE[] = "[\"Rmbl>Drv>Rev\",\"Rmbl>Rev>Drv\",\"Rev>Rmbl>Drv\",\"Drv>Rmbl>Rev\"]";
 
 /* Performer chain page (Phase D, PERF-05): duck -> DJ filter -> clip. DJ FILT is
  * a bidirectional centered sweep (0.5 = neutral). */
@@ -192,6 +194,9 @@ static const char KN_GROOVE1[] =
  * REVERB (vhr §B.2): the RV MIX knob is now BIDIRECTIONAL — CENTER = off,
  * LEFT = pre-smear (reverb into the tap ring input), RIGHT = post reverb. Same
  * key (PK_GRV_RVMIX), one Schroeder instance; the label communicates the range. */
+/* TAPS variant (7 knobs): the no-op RV TYPE was dropped to make room for ROUTE
+ * (Phase 1 FX-ROUTE). REVERB is now a plain dry/wet MIX. TAPS gets its FILTER
+ * from the Page-1 COLOR knob, so it has no FILTER here. */
 static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
@@ -199,11 +204,28 @@ static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
+    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
 };
 static const char KN_GROOVE_FX[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
-    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
+    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_ROUTE "\"]";
+
+/* GEN variant (8 knobs): same as TAPS + a FILTER knob (ONDEVICE #14 — GEN has no
+ * Page-1 COLOR, so its 30 Hz–20 kHz log LP sweep lives here on PK_GRV_COLOR). */
+static const uiparam_t P_GROOVE_FX_GEN[] = {
+    { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
+    { PK_GRV_COLOR,   "FILTER",  "FILT",  UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_GROOVE_FX_GEN[] =
+    "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
+    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE
+    "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_COLOR "\"]";
 
 /* GEN groove page 2: sequence controls (SCALE/ROOT/RANGE/RETRIG moved to groove1). */
 static const uiparam_t P_GROOVE_GEN_SEQ[] = {
@@ -288,7 +310,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
     };
     bool unq = inst && inst->groove.gen_unquantized;
     uiparam_t p_root = unq
-        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "30", "200" }
+        ? (uiparam_t){ PK_GRV_GROOT, "ROOT HZ", "RTHZ", UP_FLOAT, "Hz", "1", NULL, "20", "200" }
         : (uiparam_t){ PK_GRV_GROOT, "ROOT",    "ROOT", UP_FLOAT, "",   "0.012", NULL, NULL, NULL };
     ui_puts(buf, buf_len, off,
         "\"groove1\":{\"name\":\"Gen Groove\",\"params\":[");
@@ -360,7 +382,7 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
                       P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ);
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove3", "Groove Effects",
-                      P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX);
+                      P_GROOVE_FX_GEN, NELEM(P_GROOVE_FX_GEN), KN_GROOVE_FX_GEN);
     } else {
         ui_puts(buf, buf_len, &off, ",");
         ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",

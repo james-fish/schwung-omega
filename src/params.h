@@ -69,6 +69,7 @@ typedef enum {
     GKI_GRV_GROOT, GKI_GRV_GRANGE,
     GKI_DUCK, GKI_DUCK_REL, GKI_DUCK_SMT, GKI_DUCK_BS,
     GKI_DJ_FILT, GKI_DJ_RESO, GKI_CLIP,
+    GKI_GRV_ROUTE,                /* Phase 1 FX-ROUTE: groove FX order selector */
     GKI_COUNT
 } pk_global_index_t;
 
