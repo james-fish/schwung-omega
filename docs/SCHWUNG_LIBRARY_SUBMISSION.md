@@ -47,12 +47,11 @@ process (per the Schwung release workflow and existing module repos such as
    drum/kick subcategory name) and set `min_host_version` to the host version you
    test against.
 
-## Status / what's left (maintainer-facing, needs your call)
+## Status
 
-- `release.json`, `make dist`, and the catalog entry above are prepared in-repo.
-- Publishing the `v0.2.0` GitHub release and opening the cross-repo PR to
-  `charlesvestal/schwung` are public, maintainer-facing actions — left for you to
-  fire (or say the word and they can be done via `gh`).
+- ✅ `release.json`, `make dist`, and the catalog entry prepared in-repo.
+- ✅ **GitHub release `v0.2.0` published** — https://github.com/james-fish/schwung-omega/releases/tag/v0.2.0 (asset `omega-module.tar.gz`). `release.json`'s `download_url` resolves.
+- ✅ **Catalog PR opened** → https://github.com/charlesvestal/schwung/pull/585 (adds the entry to `module-catalog.json`). Awaiting maintainer review; may request `subcategory` / `min_host_version` / description tweaks.
 
 ## DR32 engine selector — finding
 
