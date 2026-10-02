@@ -278,17 +278,8 @@ static const char KN_GROOVE_GEN_SEQ[] =
     "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE
     "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_COLOR "\"]";
 
-static const uiparam_t P_GROOVE2[] = {
-    { PK_GEN_SEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.01", NULL },
-    { PK_GEN_SCALE,   "SCALE",   "SCALE", UP_FLOAT, "",  "0.01", NULL },
-    { PK_GEN_SEQLEN,  "SEQ LEN", "SEQLEN",UP_FLOAT, "",  "0.01", NULL },
-    { PK_GEN_LPFFREQ, "LPF FREQ","LPFFRQ",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GEN_LPFPOLE, "LPF POLE","LPFPOL",UP_ENUM,  "",  "0",    OPT_POLE },
-    { PK_GEN_DENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01", NULL },
-};
-static const char KN_GROOVE2[] =
-    "[\"" PK_GEN_SEED "\",\"" PK_GEN_SCALE "\",\"" PK_GEN_SEQLEN "\",\"" PK_GEN_LPFFREQ
-    "\",\"" PK_GEN_LPFPOLE "\",\"" PK_GEN_DENSITY "\"]";
+/* (Legacy MODEL_GEN-kick groove2 page removed: GEN is not a selectable kick
+ * model — OPT_MODEL is FM2..USR — so that branch was unreachable.) */
 
 /* ---- wrapper fragments --------------------------------------------------- */
 static const char UI_OPEN[] =
@@ -357,7 +348,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
      * (see ui_emit_level). equals:1 = GROOVE_TYPE_GEN; always true here since we
      * only emit this level in GEN mode. */
     ui_puts(buf, buf_len, off,
-        "\"groove1\":{\"name\":\"Gen Groove\",\"visible_if\":{\"param\":\"" PK_GRV_TYPE
+        "\"gengroove1\":{\"name\":\"Gen Groove\",\"visible_if\":{\"param\":\"" PK_GRV_TYPE
         "\",\"equals\":1},\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {
         if (i) ui_puts(buf, buf_len, off, ",");
@@ -375,29 +366,35 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         PK_GRV_GROOT "\",\"" PK_GRV_GRANGE "\",\"" PK_GRV_GRETRIG "\"]}");
 }
 
+/* Append a model's p2_slot_desc interior (bare comma-separated FLAT param
+ * objects; enum `options` use [] so every '}' closes exactly one object) into
+ * buf, inserting ,"visible_if":{"param":"model","equals":N} before EACH closing
+ * brace. This is what makes the kick page STATIC: every picker model's params
+ * are declared once, and the host shows ONLY the active model's (filtering each
+ * param on `model`) and re-plans when `model` changes. The host does NOT re-read
+ * ui_hierarchy on a knob-driven enum change — it re-filters the CACHED hierarchy
+ * by visible_if (page_controller replanNow) — so a per-model fixed gate is the
+ * only thing that actually switches the page. */
+static void ui_append_gated_interior(char *buf, int buf_len, int *off,
+                                      const char *interior, int model_idx) {
+    char gate[56];
+    int glen = snprintf(gate, sizeof gate,
+                        ",\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":%d}", model_idx);
+    for (const char *p = interior; *p; p++) {
+        if (*p == '}') ui_append(buf, buf_len, off, gate, glen);
+        ui_append(buf, buf_len, off, p, 1);
+    }
+}
+
 int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     if (!buf || buf_len <= 0) return 0;
 
-    /* Active model's Kick Page 2 interior (bare comma-separated slot objects). */
-    char scratch[1024];
-    int  slot_len = 0;
-    if (inst) {
-        const kick_model_vtable_t *vt = g_models[inst->model];
-        if (vt && vt->p2_slot_desc) {
-            slot_len = vt->p2_slot_desc(inst, scratch, (int)sizeof scratch);
-            if (slot_len < 0 || slot_len >= (int)sizeof scratch) slot_len = 0;
-        }
-    }
-
-    /* visible_if gate fragments (see ui_emit_level): `model` gates kick1 (which
-     * splices the active model's params) and `grv_type` gates the groove levels.
-     * equals is the CURRENT index, so the emitted level is always visible; the
-     * gate exists so the host registers these keys and REPLANS (re-reads this
-     * dynamic hierarchy) when a picker changes — otherwise the old page's params
-     * stay on screen. */
-    char vis_model[48];
-    snprintf(vis_model, sizeof vis_model,
-             "{\"param\":\"" PK_MODEL "\",\"equals\":%d}", inst ? (int)inst->model : 0);
+    /* grv_type gates are FIXED to each level's own type (never the current
+     * value): the groove levels are declared STATICALLY for both types and the
+     * host shows whichever set matches grv_type, re-filtering the cached
+     * hierarchy on a grv_type change. The shared FX page is ungated (identical
+     * for TAPS and GEN). A current-value gate would hide the level the instant
+     * the value changed — the v0.3.1 regression this replaces. */
     static const char VIS_GEN[]  = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}";
     static const char VIS_TAPS[] = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}";
 
@@ -406,58 +403,61 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
 
     ui_emit_root(buf, buf_len, &off);
 
-    /* kick1 (B2 reorg): PITCH/LENGTH/CURVE + the active model's unique params
-     * (spliced from p2_slot_desc). knobs = those fixed keys + the model keys
-     * extracted from the interior, so all 8 encoders map correctly. The
-     * visible_if on `model` makes a model switch replan + re-splice this page. */
-    ui_puts(buf, buf_len, &off, ",\"kick1\":{\"name\":\"Kick 1\",\"visible_if\":");
-    ui_puts(buf, buf_len, &off, vis_model);
-    ui_puts(buf, buf_len, &off, ",\"params\":[");
+    /* kick1 (STATIC): PITCH/LENGTH/CURVE (always visible) + EVERY picker model's
+     * unique params, each gated by visible_if model==N. The host filters to the
+     * active model's params (hidden keys drop out of params AND the knobs grid,
+     * which compacts — page_plan isHiddenParam) and re-plans on a model change.
+     * knobs lists the fixed keys + every model's keys; the active model's compact
+     * in after PITCH/LENGTH/CURVE. */
+    ui_puts(buf, buf_len, &off, ",\"kick1\":{\"name\":\"Kick 1\",\"params\":[");
     for (int i = 0; i < NELEM(P_KICK1); i++) {
         if (i) ui_puts(buf, buf_len, &off, ",");
         ui_emit_param(buf, buf_len, &off, &P_KICK1[i]);
     }
-    if (slot_len > 0) {
-        ui_puts(buf, buf_len, &off, ",");
-        ui_append(buf, buf_len, &off, scratch, slot_len);
+    char scratch[1024];
+    if (inst) {
+        for (int m = 0; m < MODEL_GEN; m++) {          /* 0..8 = the 9 picker models */
+            const kick_model_vtable_t *vt = g_models[m];
+            if (!vt || !vt->p2_slot_desc) continue;
+            int n = vt->p2_slot_desc(inst, scratch, (int)sizeof scratch);
+            if (n <= 0 || n >= (int)sizeof scratch) continue;
+            scratch[n] = '\0';
+            ui_puts(buf, buf_len, &off, ",");
+            ui_append_gated_interior(buf, buf_len, &off, scratch, m);
+        }
     }
     ui_puts(buf, buf_len, &off, "],\"knobs\":[\"" PK_PITCH "\",\"" PK_LENGTH "\",\"" PK_CURVE "\"");
-    if (slot_len > 0) ui_emit_interior_keys(buf, buf_len, &off, scratch);
+    if (inst) {
+        for (int m = 0; m < MODEL_GEN; m++) {
+            const kick_model_vtable_t *vt = g_models[m];
+            if (!vt || !vt->p2_slot_desc) continue;
+            int n = vt->p2_slot_desc(inst, scratch, (int)sizeof scratch);
+            if (n <= 0 || n >= (int)sizeof scratch) continue;
+            scratch[n] = '\0';
+            ui_emit_interior_keys(buf, buf_len, &off, scratch);
+        }
+    }
     ui_puts(buf, buf_len, &off, "]}");
 
-    /* kick2 (B2 reorg): static shared transient/FILTER/FX page — model-agnostic,
-     * no gate (a model change still replans via kick1's gate, re-reading this). */
+    /* kick2: static shared transient/FILTER/FX page (model-agnostic, no gate). */
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2, NULL);
 
-    /* Groove pages (E3 layout):
-     *   - GEN groove type: groove1=Gen Groove (SCALE/ROOT/RANGE/RETRIG), groove2=Gen Seq,
-     *                      groove3="Groove Effects" (shared FX)
-     *   - TAPS groove type: groove1=Groove 1 (shared), groove2="Groove Effects" (shared FX)
-     *   - MODEL_GEN kick (legacy): shared groove1 + legacy groove2 */
-    if (inst && inst->groove.type == GROOVE_TYPE_GEN) {
-        ui_puts(buf, buf_len, &off, ",");
-        ui_emit_gen_groove1(buf, buf_len, &off, inst);
-        ui_puts(buf, buf_len, &off, ",");
-        ui_emit_level(buf, buf_len, &off, "groove2", "Gen Seq",
-                      P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, VIS_GEN);
-        ui_puts(buf, buf_len, &off, ",");
-        ui_emit_level(buf, buf_len, &off, "groove3", "Groove Effects",
-                      P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, VIS_GEN);
-    } else {
-        ui_puts(buf, buf_len, &off, ",");
-        ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",
-                      P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, VIS_TAPS);
-        if (inst && inst->model == MODEL_GEN) {
-            ui_puts(buf, buf_len, &off, ",");
-            ui_emit_level(buf, buf_len, &off, "groove2", "Groove 2",
-                          P_GROOVE2, NELEM(P_GROOVE2), KN_GROOVE2, VIS_TAPS);
-        } else if (inst && inst->groove.type == GROOVE_TYPE_TAPS) {
-            ui_puts(buf, buf_len, &off, ",");
-            ui_emit_level(buf, buf_len, &off, "groove2", "Groove Effects",
-                          P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, VIS_TAPS);
-        }
-    }
+    /* Groove pages (STATIC; the host filters by grv_type):
+     *   TAPS (grv_type==0): groove1 "Groove 1"
+     *   GEN  (grv_type==1): gengroove1 "Gen Groove", genseq "Gen Seq"
+     *   shared (both):      groovefx "Groove Effects" (identical P_GROOVE_FX, ungated) */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",
+                  P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, VIS_TAPS);
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_gen_groove1(buf, buf_len, &off, inst);          /* "gengroove1" (VIS_GEN) */
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "genseq", "Gen Seq",
+                  P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, VIS_GEN);
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "groovefx", "Groove Effects",
+                  P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, NULL);
 
     /* Performer chain page (Phase D) — always present, no gate. */
     ui_puts(buf, buf_len, &off, ",");

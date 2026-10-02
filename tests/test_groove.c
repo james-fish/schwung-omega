@@ -935,12 +935,15 @@ static void test_gen_groove_type(void) {
     assert(memcmp(a, b, sizeof a) != 0);
 
     /* UI: GEN groove type exposes the Gen Seq + Gen Tone pages (GRVX-04). */
-    char ui[8192];
+    char ui[65536];
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
     assert(strstr(ui, PK_GRV_GSCALE) != NULL);
     assert(strstr(ui, PK_GRV_GRETRIG) != NULL);
-    assert(strstr(ui, "\"groove3\"") != NULL);   /* two GEN pages */
+    /* v0.3.2 static hierarchy: GEN control page (gengroove1) + Gen Seq (genseq)
+     * are always declared, gated by grv_type==1. */
+    assert(strstr(ui, "\"gengroove1\"") != NULL);
+    assert(strstr(ui, "\"genseq\"") != NULL);
 
     /* Transport STOP: with no beat advance the sequencer stops and the voice
      * decays (GRVX-05). Render several blocks with a static beat -> near silence. */
@@ -971,7 +974,7 @@ static void test_e3_gen_groove_enhancements(void) {
     api->set_param(inst, PK_GRV_VOL,  "0.9");
 
     /* SC1: OPT_SCALE must include >=13 options; spot-check exotic names. */
-    char ui[8192];
+    char ui[65536];
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
     assert(strstr(ui, "Hirajoshi")   != NULL);
@@ -979,15 +982,18 @@ static void test_e3_gen_groove_enhancements(void) {
     assert(strstr(ui, "Unquantized") != NULL);
     assert(strstr(ui, "WholeTone")   != NULL);
 
-    /* SC4: GEN groove1 must show ROOT and RANGE, not TAP controls. */
+    /* SC4: the GEN control page ("Gen Groove"/gengroove1) shows ROOT and RANGE. */
     assert(strstr(ui, PK_GRV_GROOT)  != NULL);
     assert(strstr(ui, PK_GRV_GRANGE) != NULL);
     assert(strstr(ui, "Gen Groove")  != NULL);
-    /* TAP controls must NOT appear in the GEN layout. */
-    assert(strstr(ui, "\"" PK_GRV_TAP1 "\"") == NULL);
-    assert(strstr(ui, "\"" PK_GRV_TAP2 "\"") == NULL);
+    /* v0.3.2 static hierarchy: the TAPS groove1 (with TAP controls) is ALWAYS
+     * declared but gated by grv_type==0, so it is HIDDEN in GEN mode rather than
+     * absent. Assert the gate exists (that is what hides the TAPS page in GEN),
+     * and that the GEN control page is gated grv_type==1. */
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}") != NULL);
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}") != NULL);
 
-    /* SC5: Both effect pages named "Groove Effects". */
+    /* SC5: the shared effects page is named "Groove Effects". */
     assert(strstr(ui, "Groove Effects") != NULL);
 
     /* SC2/SC3: GROOT moves the root pitch — render enough blocks for steps to fire. */

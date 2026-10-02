@@ -109,7 +109,7 @@ int main(void) {
 
     /* ---- ui_hierarchy contract (A-03) ------------------------------------ */
     /* Bytes-written return + in-bounds + null-terminated (Pitfall 3/4). */
-    char uibuf[4096];
+    char uibuf[65536];
     int n = api->get_param(inst, PK_UI_HIER, uibuf, sizeof(uibuf));
     assert(n > 0 && n < (int)sizeof(uibuf));
     assert(uibuf[n] == '\0');   /* return value excludes terminator; buf[n] is '\0' */

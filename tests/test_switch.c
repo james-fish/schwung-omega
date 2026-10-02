@@ -125,7 +125,7 @@ static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
         char idxbuf[4];
         model_index_str(m, idxbuf);
         api->set_param(inst, PK_MODEL, idxbuf);
-        char ui[8192];
+        char ui[65536];
         memset(ui, 0x7f, sizeof ui);
         int uilen = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
         assert(uilen > 0 && uilen < (int)sizeof ui);
@@ -144,15 +144,16 @@ static void assert_p2_json_valid(plugin_api_v2_t *api, void *inst) {
     printf("test_switch: p2_slot_desc JSON valid for %d models\n", checked);
 }
 
-/* GRV-04 gating: Groove Page 2 (`groove2`) must appear in ui_hierarchy ONLY
- * when the active model is GEN, and be hidden for every other model. Groove
- * Page 1 (`groove1`) is ALWAYS present. Also confirms the full hierarchy stays
- * brace/bracket-balanced + null-terminated with the groove levels present. */
+/* v0.3.2 STATIC visible_if gating: the host does NOT re-read ui_hierarchy on a
+ * knob-driven enum change — it re-filters the CACHED hierarchy by visible_if. So
+ * all groove levels are declared ALWAYS (TAPS `groove1`, GEN `gengroove1`+`genseq`,
+ * shared `groovefx`), each carrying a FIXED grv_type gate; and kick1 declares
+ * every picker model's params, each with a FIXED model==N gate. This asserts the
+ * static contract: all levels present, correct fixed gates, balanced JSON. */
 static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     char idxbuf[4];
-    char ui[8192];
+    char ui[65536];
 
-    /* Non-GEN model (FM2): groove1 present, groove2 ABSENT. */
     model_index_str(MODEL_FM2, idxbuf);
     api->set_param(inst, PK_MODEL, idxbuf);
     memset(ui, 0x7f, sizeof ui);
@@ -162,15 +163,24 @@ static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     assert((int)strlen(ui) == fl);
     assert(count_char(ui, '{') == count_char(ui, '}'));
     assert(count_char(ui, '[') == count_char(ui, ']'));
-    assert(strstr(ui, "\"groove1\"") != NULL);        /* always present */
-    /* C1: non-GEN now shows a TAPS-type Groove FX page (drive/filter/LFO/reverb),
-     * not the GEN control page. groove2 present + carries an FX key, NOT a GEN key. */
-    assert(strstr(ui, "\"groove2\"") != NULL);
-    assert(strstr(ui, PK_GRV_RVMIX) != NULL);         /* TAPS FX reverb mix */
-    assert(strstr(ui, PK_GEN_SEQLEN) == NULL);        /* not the GEN page */
+    /* All groove levels are present regardless of grv_type (static). */
+    assert(strstr(ui, "\"groove1\"")    != NULL);   /* TAPS groove page */
+    assert(strstr(ui, "\"gengroove1\"") != NULL);   /* GEN control page */
+    assert(strstr(ui, "\"genseq\"")     != NULL);   /* GEN seq page */
+    assert(strstr(ui, "\"groovefx\"")   != NULL);   /* shared FX page */
+    assert(strstr(ui, PK_GRV_RVMIX)   != NULL);     /* FX reverb mix */
+    assert(strstr(ui, PK_GRV_GSEQLEN) != NULL);     /* GEN SEQ LEN (static, always declared) */
+    /* Fixed grv_type gates: TAPS==0 and GEN==1 both present. */
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}") != NULL);
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}") != NULL);
+    /* kick1 per-model gates: FM2 (0) and USR (8) both present. */
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":0}") != NULL);
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":8}") != NULL);
 
-    /* GEN: both groove1 AND groove2 present, with the six GRV-04 keys. */
-    model_index_str(MODEL_GEN, idxbuf);
+    /* Switching the model does NOT change which levels exist (static); the host
+     * filters by the model gate. Verify the hierarchy stays valid + still carries
+     * every model gate after a switch. */
+    model_index_str(MODEL_USR, idxbuf);
     api->set_param(inst, PK_MODEL, idxbuf);
     memset(ui, 0x7f, sizeof ui);
     int gl = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
@@ -179,13 +189,10 @@ static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     assert((int)strlen(ui) == gl);
     assert(count_char(ui, '{') == count_char(ui, '}'));
     assert(count_char(ui, '[') == count_char(ui, ']'));
-    assert(strstr(ui, "\"groove1\"") != NULL);        /* always present */
-    assert(strstr(ui, "\"groove2\"") != NULL);        /* shown for GEN */
-    assert(strstr(ui, PK_GEN_SEQLEN)  != NULL);       /* SEQ LEN key */
-    assert(strstr(ui, PK_GEN_LPFFREQ) != NULL);       /* LPF FREQ key */
-    assert(strstr(ui, PK_GEN_LPFPOLE) != NULL);       /* LPF POLE key */
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":0}") != NULL);
+    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":8}") != NULL);
 
-    printf("test_switch: Groove Page 2 gating OK (groove2 iff GEN; groove1 always)\n");
+    printf("test_switch: STATIC visible_if gating OK (all groove+model levels present, fixed gates)\n");
 }
 
 /* Convert a model index to its decimal string for PK_MODEL (matches dsp.c's
