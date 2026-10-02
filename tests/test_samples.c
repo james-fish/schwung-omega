@@ -68,7 +68,7 @@ int main(void) {
     /* Switch to USR so SAMPLE SEL is on Kick Page 1. */
     api->set_param(inst, PK_MODEL, "8");   /* MODEL_USR */
 
-    char ui[8192];
+    char ui[65536];
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0 && ui[n] == '\0');
     /* SMPL-02: SAMPLE SEL is an enum with None + both names, sorted. */

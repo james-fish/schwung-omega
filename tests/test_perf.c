@@ -75,7 +75,7 @@ int main(void) {
     char buf[32];
     assert(api->get_param(inst, PK_DUCK, buf, sizeof buf) > 0);
     assert(api->get_param(inst, PK_DJ_FILT, buf, sizeof buf) > 0);
-    char ui[8192];
+    char ui[65536];
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0 && ui[n] == '\0');
     assert(strstr(ui, "\"perf1\"") != NULL);

@@ -111,7 +111,7 @@ int main(void) {
     /* Rich schema present (UIX-02/03/05): enum types, options, defaults, units,
      * short_names all emitted in the hierarchy. */
     {
-        char ui[8192];
+        char ui[65536];
         int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
         assert(n > 0 && ui[n] == '\0');
         assert(strstr(ui, "\"type\":\"enum\"") != NULL);       /* discrete selectors */
