@@ -240,14 +240,14 @@ static void usr_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
             float folded = fabsf(wt) * 2.0f - 1.0f;
             wt = wt + u->wt_morph * (folded - wt);   /* morph timbre */
         } else {
-            /* Built-in fallback: morph across sine(0)..analog(NUM_WAVES-1).
+            /* Built-in fallback: morph across sine(0)..analog(NUM_FACTORY_WAVES-1).
              * CROSSFADE between adjacent tables instead of rounding to the
              * nearest — rounding made WT MORPH jump discretely between waves
              * ("weird jumps", VOICE-06). Now the sweep is continuous. */
-            float fpos = u->wt_morph * (float)(NUM_WAVES - 1);
+            float fpos = u->wt_morph * (float)(NUM_FACTORY_WAVES - 1);
             int wa = (int)fpos;
             if (wa < 0) wa = 0;
-            if (wa > NUM_WAVES - 2) wa = NUM_WAVES - 2;   /* leave room for wa+1 */
+            if (wa > NUM_FACTORY_WAVES - 2) wa = NUM_FACTORY_WAVES - 2;   /* leave room for wa+1 */
             float fr = fpos - (float)wa;
             float w0 = wt_read_bl(wa,     0, u->body_phase);
             float w1 = wt_read_bl(wa + 1, 0, u->body_phase);

@@ -19,6 +19,11 @@
  *   3 SQUARE   — hollow odd harmonics (DIG chip character)
  *   4 DIGITAL  — bit-reduced/stepped sine (DIG retro crunch)
  *   5 ANALOG   — softly saturated sine (ANA vintage warmth)
+ *   --- GEN-only extended palette (indices 6..9, used by the GEN WAVE scan) ---
+ *   6 FOLD SINE — wavefolded sine (west-coast harmonic bloom)
+ *   7 FM LOW    — 2-op FM, ratio 2 / index 1.8 (hollow bell/FM body)
+ *   8 FM HIGH   — 2-op FM, ratio 3 / index 3.0 (metallic/clangy)
+ *   9 FOLD SAW  — folded saw (buzzy, formant-ish rich)
  *
  * BANDS=1 to start (kicks live at 40-200 Hz where aliasing is negligible);
  * add band-limited variants only if the voicing harness detects aliasing.
@@ -32,7 +37,7 @@
 
 #define TABLE_LEN  2048
 #define GUARD_LEN  (TABLE_LEN + 1)   /* 2049 */
-#define NUM_WAVES  6
+#define NUM_WAVES  10   /* 0-5 classic + 6 fold-sine,7 fm-lo,8 fm-hi,9 fold-saw */
 #define BANDS      1
 
 static const float PI = 3.14159265358979323846f;
@@ -61,6 +66,28 @@ static float wave_sample(int w, float p) {
             float drive = 1.6f;
             float sat = tanhf(drive * s) / tanhf(drive);  /* normalized to +/-1 */
             return sat;
+        }
+        case 6: { /* FOLD SINE: wavefolded sine — triangle-fold a driven sine */
+            float s = sinf(ph) * 2.2f;                 /* drive past +/-1 to fold */
+            /* fold into [-1,1] via reflective triangle fold */
+            float v = s - 4.0f * floorf(0.25f * s + 0.5f);   /* -> [-2,2] sawtooth-ish */
+            if (v > 1.0f) v = 2.0f - v; else if (v < -1.0f) v = -2.0f - v;  /* reflect */
+            return v;
+        }
+        case 7: { /* FM LOW: 2-op FM, carrier:mod 1:2, moderate index (hollow bell) */
+            float mod = sinf(2.0f * ph);               /* ratio 2 */
+            return sinf(ph + 1.8f * mod);
+        }
+        case 8: { /* FM HIGH: 2-op FM, ratio 3, higher index (metallic/clangy) */
+            float mod = sinf(3.0f * ph);               /* ratio 3 */
+            return sinf(ph + 3.0f * mod);
+        }
+        case 9: { /* FOLD SAW: folded soft-saw (buzzy, formant-ish) */
+            float saw = 2.0f * p - 1.0f;               /* -1..+1 ramp */
+            float s = saw * 1.8f;                      /* drive to fold */
+            float v = s - 4.0f * floorf(0.25f * s + 0.5f);
+            if (v > 1.0f) v = 2.0f - v; else if (v < -1.0f) v = -2.0f - v;
+            return v;
         }
         default:
             return sinf(ph);

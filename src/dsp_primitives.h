@@ -22,7 +22,13 @@
  * BANDS=1 to start: kicks live at 40-200 Hz where aliasing is negligible;
  * add band-limited variants only if the voicing harness detects aliasing on
  * a hi-pitch sweep (B-RESEARCH §New shared primitives / CLAUDE.md). */
-#define NUM_WAVES   6   /* sine, triangle, saw-ish, square, digital, analog */
+/* NUM_WAVES is the TOTAL factory bank size. Indices 0..NUM_FACTORY_WAVES-1 are
+ * the original palette (sine, triangle, saw-ish, square, digital, analog) shared
+ * by WTR/USR/DIG/etc — their WAVE knobs map over NUM_FACTORY_WAVES so adding GEN
+ * waves does NOT shift their mappings/defaults. Indices 6..9 are extra GEN-only
+ * timbres (folded sine, FM-low, FM-high, folded saw) used by the GEN WAVE scan. */
+#define NUM_WAVES          10  /* 0-5 classic + 6 fold-sine,7 fm-lo,8 fm-hi,9 fold-saw */
+#define NUM_FACTORY_WAVES  6   /* sine, triangle, saw-ish, square, digital, analog */
 #define BANDS       1
 #define WT_LEN      2048            /* single-cycle length */
 #define WT_GUARD    (WT_LEN + 1)    /* 2049: guard sample t[2048]==t[0] */

@@ -165,9 +165,9 @@ void gen_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         g->sweep_hz = clampf(g->f0 * (1.5f + g->curve * 7.0f), 0.0f, 1000.0f);
     } else if (strcmp(key, PK_ATTACK) == 0) {
         /* ATTACK biases the body wave brighter (more attack presence). */
-        g->wave = (int)(v * (float)(NUM_WAVES - 1) + 0.5f);
+        g->wave = (int)(v * (float)(NUM_FACTORY_WAVES - 1) + 0.5f);
         if (g->wave < 0) g->wave = 0;
-        if (g->wave >= NUM_WAVES) g->wave = NUM_WAVES - 1;
+        if (g->wave >= NUM_FACTORY_WAVES) g->wave = NUM_FACTORY_WAVES - 1;
     } else if (strcmp(key, PK_TRS_DEC) == 0) {
         /* TRS DEC nudges the tail contour (kept responsive; body-only model). */
         g->sustain = clampf(g->sustain + (v - 0.5f) * 0.2f, 0.0f, 1.0f);

@@ -397,18 +397,26 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
          * tables sine→tri→saw→square→digital→analog by crossfading adjacent bands
          * (no discrete jumps). The upper third also adds auto-wavefold for extra
          * harmonic "beef" (FM/fold character) on top of the FOLD knob. */
-        float wp = g->gen_wave_pos * (float)(NUM_WAVES - 1);
-        int   wa = (int)wp; if (wa < 0) wa = 0; if (wa > NUM_WAVES - 2) wa = NUM_WAVES - 2;
-        float wf = wp - (float)wa;
+        /* GEN WAVE scan uses a CURATED order so the classic shapes fill the FIRST
+         * HALF of the knob and the extended fold/FM timbres the second half
+         * (on-device request). Order: sine,tri,saw,square | foldsine,fm-lo,fm-hi,
+         * foldsaw (bank indices 0-3 then 6-9; digital/analog 4,5 stay WTR/USR-only). */
+        static const int GEN_WAVE_ORDER[] = { 0, 1, 2, 3, 6, 7, 8, 9 };
+        enum { GEN_WAVE_COUNT = (int)(sizeof GEN_WAVE_ORDER / sizeof GEN_WAVE_ORDER[0]) };
+        float wp = g->gen_wave_pos * (float)(GEN_WAVE_COUNT - 1);
+        int   oi = (int)wp; if (oi < 0) oi = 0; if (oi > GEN_WAVE_COUNT - 2) oi = GEN_WAVE_COUNT - 2;
+        float wf = wp - (float)oi;
+        int   wa = GEN_WAVE_ORDER[oi];
+        int   wb = GEN_WAVE_ORDER[oi + 1];
         float osc = wt_read_bl(wa, 0, g->gen_osc_phase)
-                  + wf * (wt_read_bl(wa + 1, 0, g->gen_osc_phase) - wt_read_bl(wa, 0, g->gen_osc_phase));
+                  + wf * (wt_read_bl(wb, 0, g->gen_osc_phase) - wt_read_bl(wa, 0, g->gen_osc_phase));
         /* Finding 3: built-in SUB-OCTAVE (no new UI param). Read the SAME morphed
          * wavetable position one octave below the fundamental (half phase
          * increment) and sum at a fixed blend. Added BEFORE the wavefolder/env so
          * the existing fold headroom + gen_env bound the summed signal; the sub is
          * an octave LOWER so it cannot alias at the top of the ROOT range. */
         float sub = wt_read_bl(wa, 0, g->gen_sub_phase)
-                  + wf * (wt_read_bl(wa + 1, 0, g->gen_sub_phase) - wt_read_bl(wa, 0, g->gen_sub_phase));
+                  + wf * (wt_read_bl(wb, 0, g->gen_sub_phase) - wt_read_bl(wa, 0, g->gen_sub_phase));
         osc = osc + 0.45f * sub;
         /* Auto-fold ramps in over the top of the scan (0 below 0.6, up to ~0.5 at
          * the top) for beefy wavefolded character, additive to the FOLD knob. */
