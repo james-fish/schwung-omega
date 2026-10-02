@@ -801,14 +801,15 @@ static void test_gen_filter_env_decay_curve(void) {
     assert(ediff > NSAMP / 100);
 
     /* (D) 18 dB/oct STEEPNESS gate (Finding 4) — the discriminating RED/GREEN
-     * assertion. Render a HF-rich GEN saw at a low-mid COLOR (0.3) and measure the
-     * whole-buffer HF-energy fraction. The NEW 3-pole (18 dB/oct) resonant cascade
-     * rolls off far steeper than the OLD 1-pole (6 dB/oct) at the same cutoff, so
-     * the HF fraction is roughly HALVED. Threshold 0.008 sits cleanly between the
-     * measured 1-pole (~0.0114) and 3-pole (~0.0046) values — this assertion FAILS
-     * on the old 1-pole filter and PASSES only with the 3-pole cascade in place. */
-    static int16_t steep[NSAMP];
-    {
+     * assertion. ENV-ROBUST form (iter-2): the stronger per-note filter env now
+     * opens the cutoff on every note, so an ABSOLUTE whole-buffer HF threshold no
+     * longer isolates filter ORDER (the env legitimately adds HF). Instead compare
+     * a CLOSED cutoff (COLOR=0.3) against a fully-OPEN one (COLOR=1.0) with the SAME
+     * env in both — the env confound cancels in the ratio. A steep 3-pole (18 dB/
+     * oct) cascade cuts the HF fraction to a small share of the open value when the
+     * cutoff closes; a bypass/flat filter would leave the ratio near 1. */
+    static int16_t steep[NSAMP], steep_open[NSAMP];
+    for (int pass = 0; pass < 2; pass++) {
         void *inst = api->create_instance("/tmp/omega", "{}");
         assert(inst);
         select_model(api, inst, MODEL_FM2);
@@ -818,20 +819,23 @@ static void test_gen_filter_env_decay_curve(void) {
         api->set_param(inst, PK_GRV_GWAVE,  "2");
         api->set_param(inst, PK_GRV_GDENSITY, "1.0");
         api->set_param(inst, PK_GRV_GFOLD,  "0.5");
-        api->set_param(inst, PK_GRV_COLOR,  "0.3");   /* low-mid cutoff */
+        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "0.3" : "1.0");
         mock_host_set_beat(0.0);
-        render_driven(api, inst, dbeat, steep);
+        render_driven(api, inst, dbeat, pass == 0 ? steep : steep_open);
         api->destroy_instance(inst);
     }
-    double hf = win_hf_fraction(steep, 0, frames);
-    if (!(hf < 0.008))
-        fprintf(stderr, "filter_env: GEN COLOR=0.3 HF-frac=%.5f (want <0.008 — 18dB/oct)\n", hf);
-    assert(hf < 0.008);   /* 18 dB/oct steepness — only the 3-pole cascade satisfies this */
+    double hf      = win_hf_fraction(steep, 0, frames);
+    double hf_open = win_hf_fraction(steep_open, 0, frames);
+    double hf_ratio = hf_open > 1e-9 ? hf / hf_open : 1.0;
+    if (!(hf_ratio < 0.5))
+        fprintf(stderr, "filter_env: closed/open HF ratio=%.3f (want <0.5 — 3-pole steepness)\n",
+                hf_ratio);
+    assert(hf_ratio < 0.5);   /* closing the cutoff steeply cuts HF — 3-pole cascade */
 
     (void)win_hf_energy;  /* helper retained for future use */
     printf("test_groove: Task4 GEN filter-env + DECAY curve OK (tau_new=%.4f < tau_old=%.4f, "
-           "reso!=open, %d/%d reshaped by DECAY env, 3-pole HF-frac=%.4f<0.008)\n",
-           tau_new, tau_old, ediff, NSAMP, hf);
+           "reso!=open, %d reshaped by DECAY env, closed/open HF-ratio=%.3f<0.5)\n",
+           tau_new, tau_old, ediff, hf_ratio);
 }
 
 /* ---- Phase 1 GEN-PITCH: unquantized ROOT tracks + reaches sub-bass (1-04) -- */

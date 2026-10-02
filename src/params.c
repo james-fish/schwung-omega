@@ -62,7 +62,11 @@ const float g_kick_defaults[PKI_COUNT] = {
  * middles (grv_vol silent opt-in, taps 0.6, color ~8 kHz -> ~0.44). */
 const float g_global_defaults[GKI_COUNT] = {
     [GKI_MASTER_VOL]=1.0f, [GKI_MODEL]=0.0f, [GKI_GRV_TYPE]=0.0f,  /* TAPS */
-    [GKI_GRV_VOL]=1.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
+    /* GRV_VOL default 0: the groove (taps + gen) is an opt-in performance voice.
+     * groove_init already seeds g->vol=0 (audibly silent); the UI default must
+     * MATCH (0 visually) so the knob isn't shown at 100% while audibly silent and
+     * only "activating" once turned (on-device feedback). */
+    [GKI_GRV_VOL]=0.0f, [GKI_GRV_LENGTH]=0.5f, [GKI_GRV_COLOR]=0.4375f,
     [GKI_GRV_TAP1]=0.6f, [GKI_GRV_TAP2]=0.6f, [GKI_GRV_TAP3]=0.6f,
     [GKI_GRV_TAP4]=0.6f, [GKI_GRV_MONO]=0.0f,
     /* Groove FX defaults (C1-02): off/neutral so the rumble is unchanged until

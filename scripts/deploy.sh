@@ -5,12 +5,12 @@
 # partially-transferred file is never loaded. Override the device host/path via
 # env vars before running:
 #   OMEGA_DEVICE_HOST=ableton@move.local \
-#   OMEGA_DEVICE_DIR=/data/UserData/schwung/modules/omega \
+#   OMEGA_DEVICE_DIR=/data/UserData/schwung/modules/sound_generators/omega \
 #   ./scripts/deploy.sh
 set -euo pipefail
 
 DEVICE_HOST="${OMEGA_DEVICE_HOST:-ableton@move.local}"
-DEVICE_DIR="${OMEGA_DEVICE_DIR:-/data/UserData/schwung/modules/omega}"
+DEVICE_DIR="${OMEGA_DEVICE_DIR:-/data/UserData/schwung/modules/sound_generators/omega}"
 SO="build/dsp.so"
 
 if [ ! -f "$SO" ]; then

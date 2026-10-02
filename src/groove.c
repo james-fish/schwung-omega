@@ -533,9 +533,14 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
          * runaway). The filter env opens the cutoff ~20% at onset:
          *   cg_eff = cg * (1 + 0.2*gen_filt_env), clamped to the stable tpt range.
          * All per-sample work is algebraic (adds/mults + one clampf) — RT-safe. */
-        float cg_eff = cg * (1.0f + 0.2f * g->gen_filt_env);
+        /* Finding 4 (iter-2, on-device feedback "filter env + resonance need to be
+         * stronger"): the per-note filter env now opens the cutoff up to ~6x at
+         * onset (was 1.2x) for a pronounced downward sweep, and the resonance
+         * feedback is raised to ~0.45 for an audible resonant peak. The feedback
+         * input stays clamped to [-2,2] so the resonant corner cannot run away. */
+        float cg_eff = cg * (1.0f + 3.0f * g->gen_filt_env);
         if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
-        const float kres = 0.2f;                 /* resonance feedback (~20% Q) */
+        const float kres = 0.45f;                /* resonance feedback (~45% Q) */
 
         tpt1_t l1 = { g->color_lp_l_s },  r1 = { g->color_lp_r_s };
         tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
@@ -703,7 +708,11 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
          * range spreads across most of the knob travel (mid-knob now lands much
          * shorter). Endpoints unchanged: v'=0 -> 5 ms, v'=1 -> ~150 ms. */
         g->gen_decay = v;
-        float vp    = v * v;                        /* expo spread (Finding 5) */
+        /* Finding 5 (iter-2, on-device "first 50% too aggressively short"): soften
+         * the pure v*v expo to v*(0.5+0.5v) = 0.5v + 0.5v². Endpoints unchanged
+         * (0 ms-end -> 5 ms, 1 -> ~150 ms) but the lower half lands notably longer
+         * (v=0.5: vp 0.375 vs 0.25 -> ~16 ms vs ~12 ms; v=0.25: 0.156 vs 0.0625). */
+        float vp    = v * (0.5f + 0.5f * v);        /* softened expo spread */
         float tau_s = 0.005f * powf(30.0f, vp);     /* 5 ms .. ~150 ms */
         g->gen_env_coef = expf(-1.0f / (tau_s * OMEGA_SR));
         /* Finding 4: filter env decays at 0.65× the amp tau (closes BEFORE the

@@ -263,9 +263,12 @@ static void perf_config(bohm_instance_t *inst) {
     float rel_ms = 10.0f + rel * 490.0f;                       /* 10..500 ms (PERF-01) */
     inst->duck_rel_coef = expf(-1.0f / (rel_ms * 0.001f * OMEGA_SR));
     inst->duck_smt_a = 0.02f + (1.0f - smt) * 0.6f;           /* slew: more SMT = slower */
-    float bs_fc = 150.0f + bs * 2350.0f;                      /* 150..2500 Hz crossover
-     * (iter-3: raised from 60..600 — ducking only the deep sub was too subtle;
-     * ducking up through the low-mids makes the pump clearly audible) */
+    /* DUCK FREQ crossover: 20 Hz .. 20 kHz (log). Only the band BELOW this corner
+     * is ducked (highs pass), so at the bottom almost nothing ducks and at the TOP
+     * the LP follows the full signal -> the ENTIRE taps/gen rumble ducks (on-device
+     * feedback: full-up should duck everything). This same path handles BOTH TAPS
+     * and GEN (groove_tick produces gl/gr for either type), so GEN ducks too. */
+    float bs_fc = 20.0f * powf(1000.0f, bs);                  /* 20 Hz .. 20 kHz log */
     inst->duck_bs_g = tanf((float)M_PI * bs_fc / OMEGA_SR);
 
     /* DJ filter: LP below neutral, HP above (PERF-03). */
