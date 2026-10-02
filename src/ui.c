@@ -19,6 +19,7 @@
  */
 #include "omega.h"
 #include "params.h"
+#include "dsp_primitives.h"   /* GROOT_NOTE_MAX (GEN root note-enum range) */
 
 #include <stdio.h>
 #include <string.h>
@@ -323,8 +324,27 @@ static void ui_emit_root(char *buf, int buf_len, int *off) {
     ui_puts(buf, buf_len, off, "}");
 }
 
-/* E3/SC4: GEN groove page 1 — TYPE/VOL/SCALE/ROOT/RANGE/RETRIG. ROOT is dynamic:
- * float Hz when unquantized, float 0..1 snapped to 84 note steps otherwise. */
+/* Emit the ROOT note-name enum options: ["C-2","C#-2",...] for MIDI 0..GROOT_NOTE_MAX
+ * (Ableton convention, MIDI 0 = C-2). Positive octaves have NO '+' sign; negative
+ * octaves keep the '-' (on-device spec). Built into the caller buffer, bounded. */
+static void ui_emit_root_note_options(char *buf, int buf_len, int *off) {
+    static const char *const pc[12] =
+        { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    ui_puts(buf, buf_len, off, "[");
+    for (int n = 0; n <= GROOT_NOTE_MAX; n++) {
+        char tmp[16];
+        snprintf(tmp, sizeof tmp, "%s\"%s%d\"", n ? "," : "", pc[n % 12], n / 12 - 2);
+        ui_puts(buf, buf_len, off, tmp);
+    }
+    ui_puts(buf, buf_len, off, "]");
+}
+
+/* E3/SC4: GEN groove page 1 — TYPE/VOL/SCALE/ROOT/RANGE/RETRIG. ROOT is scale-
+ * gated (on-device request): a continuous Hz float when SCALE=Unquantized, a
+ * note-name enum (C-2..C5) when any scale is active. Both descriptors share the
+ * key grv_groot and map to groove.gen_base_hz via groot_* helpers; the host shows
+ * whichever matches grv_gscale (equals 0 / not_equals 0) and re-reads on a SCALE
+ * change (grv_gscale is a visible_if gate key). */
 static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
                                 const bohm_instance_t *inst) {
     static const uiparam_t p_head[] = {
@@ -336,17 +356,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         { PK_GRV_GRANGE,  "RANGE",  "RANGE",  UP_FLOAT, "", "0.04", NULL, NULL, NULL },
         { PK_GRV_GRETRIG, "RETRIG", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
     };
-    /* Finding 2: ROOT is ALWAYS the normalized 0..1 descriptor in BOTH modes.
-     * The old unquantized Hz-domain swap (min 20 / max 2000) made the host send
-     * raw Hz, which groove_set_param clamps to 1.0 → gen_base_hz pinned to the
-     * top (2 kHz) and scale switches re-applied the explosion. A normalized knob
-     * keeps v in 0..1 so the gen_base_hz = 20*100^v log map stays pitch-stable. */
     (void)inst;
-    uiparam_t p_root =
-        (uiparam_t){ PK_GRV_GROOT, "ROOT", "ROOT", UP_FLOAT, "", "0.012", NULL, NULL, NULL };
-    /* visible_if gate so a grv_type change replans + re-reads this hierarchy
-     * (see ui_emit_level). equals:1 = GROOVE_TYPE_GEN; always true here since we
-     * only emit this level in GEN mode. */
     ui_puts(buf, buf_len, off,
         "\"gengroove1\":{\"name\":\"Gen Groove\",\"visible_if\":{\"param\":\"" PK_GRV_TYPE
         "\",\"equals\":1},\"params\":[");
@@ -354,8 +364,18 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         if (i) ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_head[i]);
     }
-    ui_puts(buf, buf_len, off, ",");
-    ui_emit_param(buf, buf_len, off, &p_root);
+    /* ROOT descriptor A — Hz float, shown only in Unquantized (grv_gscale==0). */
+    ui_puts(buf, buf_len, off,
+        ",{\"key\":\"" PK_GRV_GROOT "\",\"name\":\"ROOT\",\"short_name\":\"ROOT\","
+        "\"type\":\"float\",\"min\":20,\"max\":520,\"default\":45,\"step\":1,\"unit\":\"Hz\","
+        "\"visible_if\":{\"param\":\"" PK_GRV_GSCALE "\",\"equals\":0}}");
+    /* ROOT descriptor B — note-name enum, shown in any scale (grv_gscale!=0). */
+    ui_puts(buf, buf_len, off,
+        ",{\"key\":\"" PK_GRV_GROOT "\",\"name\":\"ROOT\",\"short_name\":\"ROOT\","
+        "\"type\":\"enum\",\"options\":");
+    ui_emit_root_note_options(buf, buf_len, off);
+    ui_puts(buf, buf_len, off,
+        ",\"default\":30,\"visible_if\":{\"param\":\"" PK_GRV_GSCALE "\",\"not_equals\":0}}");
     for (int i = 0; i < (int)(sizeof p_tail / sizeof p_tail[0]); i++) {
         ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_tail[i]);

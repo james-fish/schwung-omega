@@ -36,6 +36,27 @@
                          * mixolydian, hirajoshi, hungarian, whole-tone, blues,
                          * diminished */
 
+/* --- GEN ROOT dual-domain (Hz when unquantized, note names when scaled) ----
+ * The GEN root knob swaps descriptor by SCALE (ui.c): a continuous Hz float in
+ * Unquantized mode, a note-name enum (Ableton MIDI convention: MIDI 0 = C-2, A3 =
+ * 69 = 440 Hz) in any scale mode. Both map to groove.gen_base_hz (source of truth)
+ * via these shared helpers so groove_set_param (write) and omega_get_param
+ * (readback) agree — fixing the old "root snaps to 100%" readback mismatch. */
+#define GROOT_HZ_MIN    20.0f
+#define GROOT_HZ_MAX    520.0f
+#define GROOT_NOTE_MAX  84       /* MIDI 0 (C-2) .. 84 (C5), inclusive */
+
+static inline float groot_note_to_hz(int midi) {
+    if (midi < 0) midi = 0; else if (midi > GROOT_NOTE_MAX) midi = GROOT_NOTE_MAX;
+    return 440.0f * powf(2.0f, (float)(midi - 69) / 12.0f);
+}
+static inline int groot_hz_to_note(float hz) {
+    if (hz < 1.0f) hz = 1.0f;
+    int m = (int)lrintf(69.0f + 12.0f * (logf(hz / 440.0f) / 0.69314718f));
+    if (m < 0) m = 0; else if (m > GROOT_NOTE_MAX) m = GROOT_NOTE_MAX;
+    return m;
+}
+
 /* Shared single-cycle sine table (2048 + 1 guard). Defined in dsp_primitives.c
  * via the generated sine_table.h; every model reads this same table (D-04). */
 extern const float g_sine_table[2049];

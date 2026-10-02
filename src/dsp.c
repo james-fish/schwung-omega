@@ -551,12 +551,20 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
         return pk_format_value((float)seqlen, 0, buf, buf_len);
     }
     if (strcmp(key, PK_GRV_GROOT) == 0) {
-        /* Finding 2: derived Hz readout of the normalized root (20 Hz..2 kHz log,
-         * matching groove.c's gen_base_hz = 20*100^v). Display-only. */
-        int gri = pk_global_index(key);
-        float v = (gri >= 0) ? inst->global_cache[gri] : 0.0f;
-        float hz = 20.0f * powf(100.0f, v);
-        return pk_format_value(hz, 0, buf, buf_len);
+        /* Dual-domain ROOT readback (must agree with the ui.c descriptor the host
+         * currently shows, gated by SCALE, and with groove_set_param). Unquantized:
+         * the actual gen_base_hz in Hz (positions the float knob over [20,520] and
+         * displays "xx Hz"). Scaled: the nearest MIDI note index (0=C-2 .. 84=C5)
+         * so the enum shows the right note and the knob lands correctly. Returning
+         * the raw value in-range fixes the old "root snaps to 100%" bug (it used to
+         * return Hz against a 0..1 descriptor). */
+        if (inst->groove.gen_unquantized) {
+            float hz = inst->groove.gen_base_hz;
+            if (hz < GROOT_HZ_MIN) hz = GROOT_HZ_MIN; else if (hz > GROOT_HZ_MAX) hz = GROOT_HZ_MAX;
+            return pk_format_value(hz, 0, buf, buf_len);
+        }
+        int midi = groot_hz_to_note(inst->groove.gen_base_hz);
+        return pk_format_value((float)midi, 0, buf, buf_len);
     }
     int gi = pk_global_index(key);
     if (gi >= 0) return pk_format_value(inst->global_cache[gi], 4, buf, buf_len);

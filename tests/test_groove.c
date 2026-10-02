@@ -749,7 +749,7 @@ static void test_gen_filter_env_decay_curve(void) {
         api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF content */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
         api->set_param(inst, PK_GRV_GSWING, "0.5");   /* medium DECAY */
-        api->set_param(inst, PK_GRV_GROOT,  "0.4");   /* audible mid root */
+        api->set_param(inst, PK_GRV_GROOT,  "120");   /* audible mid root (Hz, Unquantized) */
         /* pass 0: filter parked at the resonant corner; pass 1: fully open. */
         api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "0.45" : "1.0");
         mock_host_set_beat(0.0);
@@ -859,7 +859,7 @@ static void test_gen_root_pitch(void) {
         api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
         api->set_param(inst, PK_GRV_GRANGE, "0.0");   /* narrow span -> stable pitch */
         api->set_param(inst, PK_GRV_COLOR, "1.0");
-        api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "0.0" : "1.0");  /* low vs high root */
+        api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "30" : "120");  /* low vs high root (Hz, Unquantized) */
         mock_host_set_beat(0.0);
         /* No kick note-on: measure the PURE GEN groove pitch (the kick's ~50 Hz
          * fundamental would corrupt the autocorrelation estimate). */
@@ -1000,35 +1000,35 @@ static void test_e3_gen_groove_enhancements(void) {
     /* SC5: the shared effects page is named "Groove Effects". */
     assert(strstr(ui, "Groove Effects") != NULL);
 
-    /* SC2/SC3: GROOT moves the root pitch — render enough blocks for steps to fire. */
-    api->set_param(inst, PK_GRV_GSCALE, "1");   /* Chromatic (UI idx 1) */
+    /* SC2/SC3: GROOT moves the root pitch. In a scale (Chromatic) ROOT is a NOTE
+     * index (MIDI; 24=C0, 48=C3) — the note-name enum descriptor. */
+    api->set_param(inst, PK_GRV_GSCALE, "1");   /* Chromatic (UI idx 1) -> note-name ROOT */
     double dbeat = dbeat_for_bpm(128.0);
-    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* low root */
+    api->set_param(inst, PK_GRV_GROOT, "24");   /* low root note (C0) */
     static int16_t low[NSAMP], high[NSAMP];
     render_driven(api, inst, dbeat, low);
-    api->set_param(inst, PK_GRV_GROOT, "0.9");  /* high root */
+    api->set_param(inst, PK_GRV_GROOT, "48");   /* high root note (C3) */
     render_driven(api, inst, dbeat, high);
     /* Different root → different pitch → different output (not byte-identical). */
     assert(memcmp(low, high, sizeof low) != 0);
 
-    /* Finding 2 (quick 261001-wft): ROOT is now the SAME normalized 0..1
-     * descriptor in BOTH modes — switching into Unquantized must NOT swap in a
-     * Hz-domain "ROOT HZ" descriptor (that min 20 / max 2000 range made the host
-     * send raw Hz, which clamped to 1.0 and pinned gen_base_hz to the top). The
-     * UI shows a single "ROOT" param whether quantized or not, and a scale switch
-     * does not jump the root pitch. */
+    /* iter-2 (on-device): ROOT is SCALE-GATED — a Hz float when Unquantized and a
+     * note-name enum (C-2..C5) when a scale is active, both keyed grv_groot and
+     * mapped to gen_base_hz. A SCALE switch re-expresses the SAME pitch (no jump). */
     api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized */
     n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
-    assert(strstr(ui, "ROOT HZ") == NULL);           /* no Hz-domain descriptor */
+    assert(strstr(ui, "\"unit\":\"Hz\"") != NULL);   /* Hz float descriptor present */
+    assert(strstr(ui, "\"param\":\"" PK_GRV_GSCALE "\",\"equals\":0}") != NULL);      /* Hz gated unquantized */
+    assert(strstr(ui, "\"param\":\"" PK_GRV_GSCALE "\",\"not_equals\":0}") != NULL);  /* note enum gated scaled */
+    assert(strstr(ui, "\"C-2\"") != NULL);           /* note names present in the enum */
     assert(strstr(ui, PK_GRV_GROOT) != NULL);        /* ROOT still present */
-    /* Switching scales does not change the base pitch: render a low-root GEN
-     * voice under Unquantized then re-assert the same low root is stable. */
-    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* low root (normalized) */
+    /* A scale switch PRESERVES the base pitch: set a low Hz root, render, switch to
+     * a scale (NO GROOT change), re-render — both audible, neither silent/exploded. */
+    api->set_param(inst, PK_GRV_GROOT, "30");   /* low root in Hz (Unquantized) */
     static int16_t unq_a[NSAMP], unq_b[NSAMP];
     render_driven(api, inst, dbeat, unq_a);
-    api->set_param(inst, PK_GRV_GSCALE, "3");   /* Minor — scale change only */
-    api->set_param(inst, PK_GRV_GROOT, "0.1");  /* same low root */
+    api->set_param(inst, PK_GRV_GSCALE, "3");   /* Minor — scale change only, root preserved */
     render_driven(api, inst, dbeat, unq_b);
     /* Low root stays low after a scale switch: output energy is non-trivial but
      * the root did not explode to the top (both are the SAME low-root voice). */

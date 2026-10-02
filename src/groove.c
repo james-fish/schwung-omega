@@ -680,16 +680,21 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
             g->gen_unquantized = false;
             g->gen_scale = idx - 1;  /* maps UI 1..12 → g_scales[0..11] */
         }
-        /* UNIFIED root→Hz (Phase 1 iter-2 GEN-PITCH fix): the SAME log map in BOTH
-         * modes (20 Hz..2 kHz) so switching scales NEVER changes the base pitch
-         * (kills the cross-contamination / "stuck high" bug) and the old quantized
-         * 8.175·2^(v·83/12) that jumped to ~1 kHz is gone. In quantized mode the
-         * scale only quantises the per-step melodic intervals relative to this
-         * root; the root itself is a free continuous Hz. */
-        g->gen_base_hz = 20.0f * powf(100.0f, g->gen_root_param);   /* 20 Hz..2 kHz log */
+        /* ROOT display swaps by scale (ui.c: Hz float when Unquantized, note enum
+         * otherwise) but gen_base_hz is PRESERVED across a scale change so toggling
+         * quantization never jumps the pitch — the readback (omega_get_param) just
+         * re-expresses the SAME gen_base_hz as Hz or as the nearest note. */
     } else if (strcmp(key, PK_GRV_GROOT) == 0) {
-        g->gen_root_param = v;
-        g->gen_base_hz = 20.0f * powf(100.0f, v);                    /* identical in both modes */
+        /* Dual-domain ROOT. The host sends Hz (Unquantized) or a note index
+         * (scaled); interpret by the CURRENT mode and fold both into gen_base_hz.
+         * Parse the RAW value (not the 0..1-clamped v) since Hz/note exceed 1. */
+        float raw = parse_f(val);
+        if (g->gen_unquantized) {
+            g->gen_base_hz = clampf(raw, GROOT_HZ_MIN, GROOT_HZ_MAX);
+        } else {
+            g->gen_base_hz = groot_note_to_hz((int)(raw + 0.5f));
+        }
+        g->gen_root_param = v;   /* kept for any legacy readers; not authoritative */
     } else if (strcmp(key, PK_GRV_GRANGE) == 0) {
         g->gen_range = 1 + (int)(v * 23.0f + 0.5f);   /* 1..24 degrees */
         if (g->gen_range < 1) g->gen_range = 1;
