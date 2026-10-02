@@ -65,6 +65,18 @@ typedef struct phy_state {
     env_t pitch_env_slow;     /* 808 slow sweep */
     float curve;              /* 0 = 808 slow, 1 = 909 fast */
 
+    /* Real downward head pitch sweep (kick "drop"). The head modal is excited
+     * HIGH (head_f_cur = head_f_start) then its rotation freq glides DOWN toward
+     * head_f_target (the true low pitch) by retuning cos_w/sin_w every 16 samples
+     * during the sweep only — so transcendentals stay out of the per-sample path
+     * yet the head actually LANDS on the low fundamental (fixes "won't go low").
+     * A fixed modal mode rings at a static freq, so without this CURVE merely
+     * detuned the ring upward and never dropped. */
+    float head_f_cur;         /* current head rotation freq (Hz) during glide */
+    float head_f_target;      /* landing freq (Hz) = true low pitch */
+    float head_glide;         /* per-16-sample glide coeff toward target */
+    int   head_retune_ctr;    /* render-side retune cadence counter */
+
     /* Amplitude envelope + tail contour */
     env_t amp_env;
     float sustain;            /* tail contour scalar (from SUSTAIN) */
@@ -233,7 +245,7 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
      * different at lo vs hi over the full RMS render (D-B02). */
     float trs_ms    = p->trs_dec_ms > 0.0f ? p->trs_dec_ms : 3.0f;
     float burst_ms  = clampf(trs_ms * (1.0f - 0.6f * p->beater), 0.5f, 12.0f);
-    float beater_amp = 0.1f + 0.7f * p->beater;    /* 0.1..0.8, driven by BEATER */
+    float beater_amp = 0.2f + 1.1f * p->beater;    /* 0.2..1.3, driven by BEATER */
     env_trigger(&p->burst_env, velf * beater_amp * p->attack,
                 env_coeff_from_ms(burst_ms));
 
@@ -243,21 +255,29 @@ static void phy_trigger(bohm_instance_t *inst, int note, int velocity) {
      * that, so the two controls are independent and PITCH reaches the low
      * register. Guard a zero pitch_hz (pre-prime) with the 50 Hz default. */
     float pbase = (p->pitch_hz > 0.0f) ? p->pitch_hz : 50.0f;
-    float head_f = pbase * (0.75f + 0.5f * p->head_tens);
+    float head_f = pbase * (0.75f + 0.5f * p->head_tens);   /* true LOW landing freq */
 
-    /* Downward head sweep: bias the excitation freq upward by the CURVE amount
-     * so the modal mode starts high and settles toward head_f. CURVE=0 excites
-     * at the target frequency (pure modal thud, no pitch drop). CURVE=0.5
-     * excites at 2x target (a moderate 909-style sweep). CURVE=1.0 excites at
-     * 3x target (deep drop). sweep_mult = 1 + curve*2 (no minimum offset, so
-     * CURVE=0 is truly a straight, non-sweeping tone). */
-    float sweep_mult = 1.0f + p->curve * 2.0f;   /* curve=0: no sweep; curve=1: 3x sweep */
-    float head_start = clampf(head_f * sweep_mult, 20.0f, 0.45f * OMEGA_SR);
+    /* Real downward head sweep. Excite the head HIGH and glide its rotation freq
+     * down to head_f (the true low pitch). CURVE sets both the start height and
+     * the sweep time: CURVE=0 -> no sweep (start == target, a straight low tone);
+     * CURVE=1 -> start 4x high with a long ~70 ms drop (deep 909-style boom).
+     * The glide retunes cos_w/sin_w every 16 samples in render (see phy_render),
+     * NOT per sample, so the per-sample path stays transcendental-free. Because a
+     * modal mode rings at a fixed freq, this is the only way the head actually
+     * reaches the low register — the old code rang 1..3x ABOVE pitch forever. */
+    float head_start = clampf(head_f * (1.0f + p->curve * 3.0f), 20.0f, 0.45f * OMEGA_SR);
+    float sweep_tau_ms = 10.0f + p->curve * 60.0f;        /* 10..70 ms glide */
+    p->head_f_target  = clampf(head_f, 20.0f, 0.45f * OMEGA_SR);
+    p->head_f_cur     = head_start;
+    p->head_glide     = expf(-16.0f / (sweep_tau_ms * 0.001f * OMEGA_SR));
+    p->head_retune_ctr = 0;
 
-    /* SHELL SIZE -> body-mode freqs. Bigger shell (high v) = LOWER freq.
-     * body1 ~ 110..200 Hz, body2 ~ 180..320 Hz (2nd shell mode, quieter). */
-    float body1_f = 110.0f + (1.0f - p->shell) * (200.0f - 110.0f);
-    float body2_f = 180.0f + (1.0f - p->shell) * (320.0f - 180.0f);
+    /* SHELL SIZE -> body-mode freqs, now TRACKING PITCH so they sit as shell
+     * overtones ABOVE the low fundamental instead of planting a fixed mid-tom
+     * fundamental (fixes "sounds like a mid tom"). Bigger shell (high v) = LOWER
+     * overtone ratio. body1 ~ 1.2..2.0x pitch, body2 ~ 1.8..3.0x pitch. */
+    float body1_f = pbase * (2.0f - 0.8f * p->shell);
+    float body2_f = pbase * (3.0f - 1.2f * p->shell);
     body1_f = clampf(body1_f, 20.0f, 0.45f * OMEGA_SR);
     body2_f = clampf(body2_f, 20.0f, 0.45f * OMEGA_SR);
 
@@ -303,6 +323,24 @@ static void phy_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
         (void)env_tick(&p->pitch_env_fast);
         (void)env_tick(&p->pitch_env_slow);
 
+        /* Head pitch glide: every 16 samples, while still above target, step the
+         * head rotation freq down toward head_f_target and retune cos_w/sin_w.
+         * cosf/sinf run at most once per 16 samples and only during the brief
+         * sweep (snaps + stops within ~0.5 Hz), so the per-sample path stays
+         * transcendental-free. re/im are untouched so magnitude/decay continue. */
+        if (p->head_f_cur > p->head_f_target + 0.5f) {
+            if (--p->head_retune_ctr <= 0) {
+                p->head_retune_ctr = 16;
+                p->head_f_cur = p->head_f_target
+                              + (p->head_f_cur - p->head_f_target) * p->head_glide;
+                if (p->head_f_cur <= p->head_f_target + 0.5f)
+                    p->head_f_cur = p->head_f_target;   /* snap + stop sweeping */
+                float w = 2.0f * (float)M_PI * p->head_f_cur / OMEGA_SR;
+                p->head.cos_w = cosf(w);
+                p->head.sin_w = sinf(w);
+            }
+        }
+
         /* Beater excitation burst: bright filtered noise, short envelope. */
         float burst = noise_tick(&p->exc) * env_tick(&p->burst_env);
         burst = tpt1_lp(&p->burst_lp, burst, p->burst_g);
@@ -312,14 +350,14 @@ static void phy_render(bohm_instance_t *inst, float *out_l, float *out_r, int fr
          * so TRS TNE persistently shifts the spectral brightness across the decay. */
         float b2_scale = p->body2_tne > 0.0f ? p->body2_tne : 1.0f;
         float modes = 0.9f  * modal_tick(&p->head)
-                    + 0.5f  * modal_tick(&p->body1)
+                    + 0.35f * modal_tick(&p->body1)
                     + 0.25f * b2_scale * modal_tick(&p->body2);
 
         float amp = env_tick(&p->amp_env) * (0.5f + 0.5f * p->sustain);
 
         /* Body (modal sum, self-limiting decay) + beater burst. Scale so the
          * summed peak stays within [-1,1] before the int16 boundary (FNDTN-07). */
-        float s = modes * amp * 0.7f + burst * 0.4f;
+        float s = modes * amp * 0.7f + burst * 0.7f;
 
         /* COLOR output LP. */
         s = tpt1_lp(&p->color_lp, s, p->color_g);
