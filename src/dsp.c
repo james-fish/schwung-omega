@@ -551,20 +551,19 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
         return pk_format_value((float)seqlen, 0, buf, buf_len);
     }
     if (strcmp(key, PK_GRV_GROOT) == 0) {
-        /* Dual-domain ROOT readback (must agree with the ui.c descriptor the host
-         * currently shows, gated by SCALE, and with groove_set_param). Unquantized:
-         * the actual gen_base_hz in Hz (positions the float knob over [20,520] and
-         * displays "xx Hz"). Scaled: the nearest MIDI note index (0=C-2 .. 84=C5)
-         * so the enum shows the right note and the knob lands correctly. Returning
-         * the raw value in-range fixes the old "root snaps to 100%" bug (it used to
-         * return Hz against a 0..1 descriptor). */
-        if (inst->groove.gen_unquantized) {
-            float hz = inst->groove.gen_base_hz;
-            if (hz < GROOT_HZ_MIN) hz = GROOT_HZ_MIN; else if (hz > GROOT_HZ_MAX) hz = GROOT_HZ_MAX;
-            return pk_format_value(hz, 0, buf, buf_len);
-        }
-        int midi = groot_hz_to_note(inst->groove.gen_base_hz);
-        return pk_format_value((float)midi, 0, buf, buf_len);
+        /* v0.4: ROOT (Hz) is a dedicated always-visible control (Unquantized mode).
+         * Return its stored Hz in-range so the float knob positions over [20,520]
+         * and shows "xx Hz" (no dynamic descriptor swap → no page corruption). */
+        float hz = inst->groove.gen_root_hz;
+        if (hz < GROOT_HZ_MIN) hz = GROOT_HZ_MIN; else if (hz > GROOT_HZ_MAX) hz = GROOT_HZ_MAX;
+        return pk_format_value(hz, 0, buf, buf_len);
+    }
+    if (strcmp(key, PK_GRV_GROOTNOTE) == 0) {
+        /* v0.4: ROOT NOTE is a dedicated always-visible note-enum control (Scale
+         * mode). Return the stored MIDI index (0..84) so the enum shows the note. */
+        int m = inst->groove.gen_root_note;
+        if (m < 0) m = 0; else if (m > GROOT_NOTE_MAX) m = GROOT_NOTE_MAX;
+        return pk_format_value((float)m, 0, buf, buf_len);
     }
     int gi = pk_global_index(key);
     if (gi >= 0) return pk_format_value(inst->global_cache[gi], 4, buf, buf_len);

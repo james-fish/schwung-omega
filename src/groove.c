@@ -83,6 +83,15 @@ static inline float tpt_g_from_hz(float fc) {
     return tanf((float)M_PI * fc / OMEGA_SR);   /* control-rate only */
 }
 
+/* v0.4 dual root: derive gen_base_hz from whichever control matches the mode —
+ * Unquantized uses the Hz control, a scale uses the note control. No dynamic UI
+ * descriptor swap (two separate controls, distinct keys); control-rate only. */
+static inline void gen_recompute_base_hz(groove_state_t *g) {
+    g->gen_base_hz = g->gen_unquantized
+        ? clampf(g->gen_root_hz, GROOT_HZ_MIN, GROOT_HZ_MAX)
+        : groot_note_to_hz(g->gen_root_note);
+}
+
 /* ---- FIR tap-weight precompute (control-rate, Phase 1 §Rumble Core) ------- */
 /* Each ghost-kick tap k (k=1..NTAPS) is read at k·spq behind the write head and
  * weighted by tap_level[k-1] · exp(-age_k/tau), where age_k = k·spq/SR seconds
@@ -219,7 +228,8 @@ void groove_init(groove_state_t *g) {
      * battery renders each kick model in isolation). tap_level/decay/COLOR are
      * seeded to musical middles so the moment grv_vol is raised the rumble is
      * immediately shaped and audible (test_groove's prime_groove opens it). */
-    g->vol = 0.0f;
+    g->vol = 0.0f;          /* TAPS voice: opt-in (silent until raised) */
+    g->gen_vol = 0.0f;      /* GEN voice: opt-in, independent, summed (v0.4) */
     for (int t = 0; t < 4; t++) g->tap_level[t] = 0.6f;
     /* Makeup gain so the FIR rumble is level-competitive with the kick at a
      * musical default VOL without DRIVE (ONDEVICE #3 "way too quiet"). */
@@ -258,7 +268,10 @@ void groove_init(groove_state_t *g) {
     /* GEN groove voice defaults (C1-03 / E3). */
     g->gen_unquantized = false;
     g->gen_scale   = 1;            /* major by default (UI idx 2 = Chromatic→0, Major→1) */
-    g->gen_root_param = 0.18f;     /* unified log root → ~45 Hz sub-bass default */
+    g->gen_root_param = 0.18f;     /* legacy (unused in v0.4) */
+    g->gen_root_hz    = 45.0f;     /* ROOT (Hz) default — Unquantized mode */
+    g->gen_root_note  = 30;        /* ROOT NOTE default MIDI 30 (F#0 ≈ 46 Hz) — Scale mode */
+    g->gen_color_g    = tpt_g_from_hz(2500.0f);  /* GEN filter default (mid-open) */
     g->gen_range   = 12;           /* 12 degrees ≈ one octave of sequence variation */
     g->gen_seqlen  = 16;
     g->gen_wave    = 0;
@@ -356,31 +369,31 @@ void groove_update_tempo(groove_state_t *g, const struct host_api_v1 *host_fwd,
  * applies the COLOR lowpass + MONO force-sum + VOL. NO transcendental here. */
 void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                  float *out_gl, float *out_gr) {
-    float gl = 0.0f, gr = 0.0f;
-
-    if (g->type == GROOVE_TYPE_GEN) {
-        /* GEN groove voice (C1-03): a transport-clocked scale-quantized step
-         * sequencer -> wavetable osc + wavefolder. Decoupled from the kick model
-         * (kick_l/r are ignored). Advances only while the transport runs (GRVX-05). */
+    /* ======================= GEN voice (v0.4) =========================
+     * GEN and TAPS now run SIMULTANEOUSLY (TYPE selector removed) and are summed
+     * with independent volumes. The GEN sequencer + wavetable osc is unchanged; it
+     * no longer owns the ring and has its OWN 3-pole resonant filter state
+     * (gen_filt_lp1/2/3 + gen_color_g) so it never fights the TAPS COLOR filter. */
+    float gen_l = 0.0f, gen_r = 0.0f;
+    {
         if (g->gen_running) {
             if (g->gen_step_ctr <= 0) {
                 int len = g->gen_seqlen < 1 ? 1 : (g->gen_seqlen > 64 ? 64 : g->gen_seqlen);
                 int step = g->gen_step % len;
                 if (g->gen_gate[step]) {
                     int semi = g->gen_unquantized
-                        ? (int)g->gen_seq[step]   /* raw chromatic offset when unquantized */
+                        ? (int)g->gen_seq[step]
                         : scale_quantize(g->gen_scale, g->gen_seq[step]);
-                    g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);  /* per-step only */
+                    g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);
                     g->gen_env = 1.0f;
-                    g->gen_filt_env = 1.0f;    /* Finding 4: open the filter env on trigger */
+                    g->gen_filt_env = 1.0f;
                     g->gen_osc_phase = 0.0f;
-                    g->gen_sub_phase = 0.0f;   /* Finding 3: re-zero the sub-octave phase on trigger */
+                    g->gen_sub_phase = 0.0f;
                 }
-                int dur = g->samples_per_16th;   /* even 16th grid (SWING removed; DECAY shapes notes) */
+                int dur = g->samples_per_16th;
                 g->gen_step_ctr = dur > 1 ? dur : 1;
                 g->gen_step++;
                 if (++g->gen_bar16 >= 16) g->gen_bar16 = 0;
-                /* Bar-based retrigger: restart at the top of the bar window. */
                 int bars = 0;
                 switch (g->gen_retrig) {
                     case GRV_RETRIG_1BAR: bars = 1; break;
@@ -393,14 +406,8 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
             }
             g->gen_step_ctr--;
         }
-        /* WAVE SCAN (continuous): gen_wave_pos 0..1 morphs across the factory
-         * tables sine→tri→saw→square→digital→analog by crossfading adjacent bands
-         * (no discrete jumps). The upper third also adds auto-wavefold for extra
-         * harmonic "beef" (FM/fold character) on top of the FOLD knob. */
-        /* GEN WAVE scan uses a CURATED order so the classic shapes fill the FIRST
-         * HALF of the knob and the extended fold/FM timbres the second half
-         * (on-device request). Order: sine,tri,saw,square | foldsine,fm-lo,fm-hi,
-         * foldsaw (bank indices 0-3 then 6-9; digital/analog 4,5 stay WTR/USR-only). */
+        /* WAVE scan (curated: classic sine/tri/saw/square in the first half, then
+         * fold/FM timbres) + built-in sub-octave + wavefolder + amp env. */
         static const int GEN_WAVE_ORDER[] = { 0, 1, 2, 3, 6, 7, 8, 9 };
         enum { GEN_WAVE_COUNT = (int)(sizeof GEN_WAVE_ORDER / sizeof GEN_WAVE_ORDER[0]) };
         float wp = g->gen_wave_pos * (float)(GEN_WAVE_COUNT - 1);
@@ -410,16 +417,9 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         int   wb = GEN_WAVE_ORDER[oi + 1];
         float osc = wt_read_bl(wa, 0, g->gen_osc_phase)
                   + wf * (wt_read_bl(wb, 0, g->gen_osc_phase) - wt_read_bl(wa, 0, g->gen_osc_phase));
-        /* Finding 3: built-in SUB-OCTAVE (no new UI param). Read the SAME morphed
-         * wavetable position one octave below the fundamental (half phase
-         * increment) and sum at a fixed blend. Added BEFORE the wavefolder/env so
-         * the existing fold headroom + gen_env bound the summed signal; the sub is
-         * an octave LOWER so it cannot alias at the top of the ROOT range. */
         float sub = wt_read_bl(wa, 0, g->gen_sub_phase)
                   + wf * (wt_read_bl(wb, 0, g->gen_sub_phase) - wt_read_bl(wa, 0, g->gen_sub_phase));
         osc = osc + 0.45f * sub;
-        /* Auto-fold ramps in over the top of the scan (0 below 0.6, up to ~0.5 at
-         * the top) for beefy wavefolded character, additive to the FOLD knob. */
         float autofold = g->gen_wave_pos > 0.6f ? (g->gen_wave_pos - 0.6f) * 1.25f : 0.0f;
         float foldamt = g->gen_fold + autofold;
         if (foldamt > 1.0f) foldamt = 1.0f;
@@ -431,36 +431,35 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         }
         float s = osc * g->gen_env;
         g->gen_env *= g->gen_env_coef;
-        g->gen_filt_env *= g->gen_filt_env_coef;   /* Finding 4: filter env decays (0.65*amp tau) */
-        /* One divide for both oscillators: fundamental at inc, sub at 0.5*inc. */
+        g->gen_filt_env *= g->gen_filt_env_coef;
         float inc = g->gen_freq / OMEGA_SR;
-        g->gen_osc_phase += inc;
-        if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
-        g->gen_sub_phase += 0.5f * inc;
-        if (g->gen_sub_phase >= 1.0f) g->gen_sub_phase -= 1.0f;
-        gl = gr = s;
-        /* Keep the ring write-head advancing so a later TAPS switch is coherent. */
-        g->buf_l[g->write_pos] = 0.0f; g->buf_r[g->write_pos] = 0.0f;
-        g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
-    } else {
-        /* TAPS (Phase 1: feedback-free FIR rumble). Write ONLY the raw kick into
-         * the ring; sum NTAPS ghost copies read at k·spq (16th-note) offsets, each
-         * weighted by the precomputed decay envelope tap_w[k-1] (control rate),
-         * then equal-power makeup by tap_norm. There is NO recirculation: the
-         * output is a finite weighted sum of past RAW kick samples (|ring| ≤
-         * kick_peak, weights ∈ [0,1]) → bounded by construction, cannot run away.
-         * Per sample: only MACs + floorf (single aarch64 instruction), no
-         * transcendental, no division. */
+        g->gen_osc_phase += inc; if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
+        g->gen_sub_phase += 0.5f * inc; if (g->gen_sub_phase >= 1.0f) g->gen_sub_phase -= 1.0f;
 
-        /* (1) Per-sample slew of the fractional 16th spacing. */
+        /* GEN 3-pole (18 dB/oct) RESONANT filter + per-note env (own state/coeff). */
+        float cg_eff = g->gen_color_g * (1.0f + 3.0f * g->gen_filt_env);
+        if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
+        const float kres = 0.45f;
+        float in = clampf(s - kres * g->gen_filt_lp3_l_s, -2.0f, 2.0f);
+        tpt1_t l1 = { g->gen_filt_lp1_l_s }, l2 = { g->gen_filt_lp2_l_s }, l3 = { g->gen_filt_lp3_l_s };
+        float f1 = tpt1_lp(&l1, in, cg_eff);
+        float f2 = tpt1_lp(&l2, f1, cg_eff);
+        float lo = tpt1_lp(&l3, f2, cg_eff);
+        g->gen_filt_lp1_l_s = l1.s; g->gen_filt_lp2_l_s = l2.s; g->gen_filt_lp3_l_s = l3.s;
+        gen_l = gen_r = lo;        /* GEN is mono */
+    }
+
+    /* ======================= TAPS voice (v0.4) ========================
+     * FIR multitap rumble fed by the live kick: write the raw kick into the ring,
+     * sum NTAPS decay-weighted ghost copies, then the 2-pole COLOR filter (LFO-
+     * modulated, LP/HP/Off). Own state (color_lp*). */
+    float taps_l = 0.0f, taps_r = 0.0f;
+    {
         g->spq += (g->spq_target - g->spq) * SPQ_SLEW;
         float spq = g->spq;
-        if (spq < 1.0f) spq = 1.0f;                  /* guard read distance */
+        if (spq < 1.0f) spq = 1.0f;
         float fmaxspq = (float)((int)(GRV_DELAY_MASK) / NTAPS);
-        if (spq > fmaxspq) spq = fmaxspq;            /* NTAPS*spq inside the ring */
-
-        /* (2) Sum NTAPS decay-enveloped ghost taps at k·spq behind the write head
-         * (fractional, linear-interpolated, mask-wrapped). */
+        if (spq > fmaxspq) spq = fmaxspq;
         float acc_l = 0.0f, acc_r = 0.0f;
         for (int k = 1; k <= NTAPS; k++) {
             float dk  = (float)k * spq;
@@ -473,107 +472,49 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
             acc_l += sl * g->tap_w[k - 1];
             acc_r += sr * g->tap_w[k - 1];
         }
-
-        /* (3) Write the RAW kick ONLY — no feedback term ever enters the ring. */
         g->buf_l[g->write_pos] = kick_l;
         g->buf_r[g->write_pos] = kick_r;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
+        taps_l = acc_l * g->tap_norm;
+        taps_r = acc_r * g->tap_norm;
 
-        gl = acc_l * g->tap_norm;
-        gr = acc_r * g->tap_norm;
-    }
-
-    /* FILTER: the COLOR LP gives LP; HP = input - LP; Off is a TRUE bypass (no
-     * attenuation, no phase shift) so the clean-copies gate can neutralise the
-     * output LP via GRV_FILTYPE=OFF. TAPS uses a 2-pole cascade (12 dB/oct — the
-     * "dial in darkness" authority, vhr §C.1); the GEN branch keeps the original
-     * 1-pole behaviour BYTE-IDENTICAL (constraint 6). The LP state is always
-     * advanced so toggling type is click-free. */
-    /* LFO (Phase 1 iter-2): the groove LFO now sweeps the COLOR/LPF cutoff AND the
-     * reverb tone TOGETHER (replaces the old tremolo). Triangle, rate = LFO SPD,
-     * depth = LFO AMT. Cheap — scales the already-computed coefficients, no
-     * per-sample transcendental. When LFO AMT = 0, cg == color_g and rv_damp_eff
-     * == rv_damp (byte-identical to the unmodulated path). */
-    float cg = g->color_g;
-    g->rv_damp_eff = g->rv_damp;
-    if (g->lfo_amt > 0.0f) {
-        float ph  = g->lfo_phase;
-        float tri = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);   /* -1..1 */
-        cg = g->color_g * (1.0f + 0.9f * g->lfo_amt * tri);
-        if (cg < 1e-4f) cg = 1e-4f; else if (cg > 0.99f) cg = 0.99f;
-        float dm = g->rv_damp + 0.4f * g->lfo_amt * tri;
-        g->rv_damp_eff = dm < 0.0f ? 0.0f : (dm > 0.95f ? 0.95f : dm);
-    }
-
-    if (g->filter_type == GRV_FILT_OFF) {
-        /* True bypass: still advance the LP state(s) so re-enabling is click-free. */
-        tpt1_t lpl = { g->color_lp_l_s };
-        tpt1_t lpr = { g->color_lp_r_s };
-        (void)tpt1_lp(&lpl, gl, cg);
-        (void)tpt1_lp(&lpr, gr, cg);
-        g->color_lp_l_s = lpl.s;
-        g->color_lp_r_s = lpr.s;
-        if (g->type == GROOVE_TYPE_TAPS) {
-            tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
-            (void)tpt1_lp(&l2, gl, cg);
-            (void)tpt1_lp(&r2, gr, cg);
-            g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+        /* LFO sweeps the TAPS cutoff + reverb damping (reverb reads rv_damp_eff). */
+        float cg = g->color_g;
+        g->rv_damp_eff = g->rv_damp;
+        if (g->lfo_amt > 0.0f) {
+            float ph  = g->lfo_phase;
+            float tri = (ph < 0.5f) ? (4.0f * ph - 1.0f) : (3.0f - 4.0f * ph);
+            cg = g->color_g * (1.0f + 0.9f * g->lfo_amt * tri);
+            if (cg < 1e-4f) cg = 1e-4f; else if (cg > 0.99f) cg = 0.99f;
+            float dm = g->rv_damp + 0.4f * g->lfo_amt * tri;
+            g->rv_damp_eff = dm < 0.0f ? 0.0f : (dm > 0.95f ? 0.95f : dm);
         }
-        /* leave gl/gr unfiltered */
-    } else if (g->type == GROOVE_TYPE_TAPS) {
-        /* 2-pole cascade LP (two tpt1 stages sharing the COLOR coefficient). */
-        tpt1_t lpl = { g->color_lp_l_s },  lpr = { g->color_lp_r_s };
-        float s1l = tpt1_lp(&lpl, gl, cg);
-        float s1r = tpt1_lp(&lpr, gr, cg);
-        g->color_lp_l_s = lpl.s; g->color_lp_r_s = lpr.s;
-        tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
-        float lo_l = tpt1_lp(&l2, s1l, cg);
-        float lo_r = tpt1_lp(&r2, s1r, cg);
-        g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
-        if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;      gr = lo_r; }
-        else /* GRV_FILT_HP */                  { gl = gl - lo_l; gr = gr - lo_r; }
-    } else {
-        /* GEN (Finding 4): 3-pole (18 dB/oct) RESONANT TPT cascade with a per-note
-         * filter-env cutoff lift. Three tpt1 LP stages share the env-modulated
-         * COLOR coefficient cg_eff; resonance feeds the 3rd-stage output back into
-         * the first stage input scaled by a fixed k (~0.2 → modest Q). The feedback
-         * sum is hard-clamped to [-2,2] so the resonant corner stays bounded (no
-         * runaway). The filter env opens the cutoff ~20% at onset:
-         *   cg_eff = cg * (1 + 0.2*gen_filt_env), clamped to the stable tpt range.
-         * All per-sample work is algebraic (adds/mults + one clampf) — RT-safe. */
-        /* Finding 4 (iter-2, on-device feedback "filter env + resonance need to be
-         * stronger"): the per-note filter env now opens the cutoff up to ~6x at
-         * onset (was 1.2x) for a pronounced downward sweep, and the resonance
-         * feedback is raised to ~0.45 for an audible resonant peak. The feedback
-         * input stays clamped to [-2,2] so the resonant corner cannot run away. */
-        float cg_eff = cg * (1.0f + 3.0f * g->gen_filt_env);
-        if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
-        const float kres = 0.45f;                /* resonance feedback (~45% Q) */
-
-        tpt1_t l1 = { g->color_lp_l_s },  r1 = { g->color_lp_r_s };
-        tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
-        tpt1_t l3 = { g->gen_filt_lp3_l_s }, r3 = { g->gen_filt_lp3_r_s };
-
-        /* Resonant feedback from the PREVIOUS 3rd-stage output (one-sample delay). */
-        float inl = gl - kres * g->gen_filt_lp3_l_s;
-        float inr = gr - kres * g->gen_filt_lp3_r_s;
-        inl = clampf(inl, -2.0f, 2.0f);
-        inr = clampf(inr, -2.0f, 2.0f);
-
-        float s1l = tpt1_lp(&l1, inl, cg_eff);
-        float s1r = tpt1_lp(&r1, inr, cg_eff);
-        float s2l = tpt1_lp(&l2, s1l, cg_eff);
-        float s2r = tpt1_lp(&r2, s1r, cg_eff);
-        float lo_l = tpt1_lp(&l3, s2l, cg_eff);
-        float lo_r = tpt1_lp(&r3, s2r, cg_eff);
-
-        g->color_lp_l_s  = l1.s; g->color_lp_r_s  = r1.s;
-        g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
-        g->gen_filt_lp3_l_s = l3.s; g->gen_filt_lp3_r_s = r3.s;
-
-        if (g->filter_type == GRV_FILT_LP)      { gl = lo_l;        gr = lo_r; }
-        else if (g->filter_type == GRV_FILT_HP) { gl = gl - lo_l;   gr = gr - lo_r; }
+        if (g->filter_type == GRV_FILT_OFF) {
+            tpt1_t lpl = { g->color_lp_l_s }, lpr = { g->color_lp_r_s };
+            (void)tpt1_lp(&lpl, taps_l, cg); (void)tpt1_lp(&lpr, taps_r, cg);
+            g->color_lp_l_s = lpl.s; g->color_lp_r_s = lpr.s;
+            tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
+            (void)tpt1_lp(&l2, taps_l, cg); (void)tpt1_lp(&r2, taps_r, cg);
+            g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+        } else {
+            tpt1_t lpl = { g->color_lp_l_s }, lpr = { g->color_lp_r_s };
+            float s1l = tpt1_lp(&lpl, taps_l, cg);
+            float s1r = tpt1_lp(&lpr, taps_r, cg);
+            g->color_lp_l_s = lpl.s; g->color_lp_r_s = lpr.s;
+            tpt1_t l2 = { g->color_lp2_l_s }, r2 = { g->color_lp2_r_s };
+            float lo_l = tpt1_lp(&l2, s1l, cg);
+            float lo_r = tpt1_lp(&r2, s1r, cg);
+            g->color_lp2_l_s = l2.s; g->color_lp2_r_s = r2.s;
+            if (g->filter_type == GRV_FILT_LP) { taps_l = lo_l; taps_r = lo_r; }
+            else { taps_l = taps_l - lo_l; taps_r = taps_r - lo_r; }   /* HP */
+        }
     }
+
+    /* ============================ Mix ================================
+     * Independent per-voice volumes (both default 0 — opt-in). The shared FX tail
+     * (drive/reverb route + mono below) processes the SUM. */
+    float gl = taps_l * g->vol + gen_l * g->gen_vol;
+    float gr = taps_r * g->vol + gen_r * g->gen_vol;
 
     /* FX ROUTING (Phase 1): apply DRIVE (+ its LFO tremolo) and the plain dry/wet
      * REVERB in the user-selected order. The rumble/GEN source already produced
@@ -593,7 +534,7 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
     if (g->lfo_phase >= 1.0f) g->lfo_phase -= 1.0f;
 
     if (g->mono) { float m = 0.5f * (gl + gr); gl = gr = m; }   /* GRV-05 sub-bass mono sum */
-    gl *= g->vol; gr *= g->vol;
+    /* v0.4: per-voice VOL already applied in the mix above (no final master VOL). */
     *out_gl = gl; *out_gr = gr;
 }
 
@@ -608,7 +549,13 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         if (nt != g->type && nt == GROOVE_TYPE_GEN) groove_gen_restart(g);
         g->type = nt;
     } else if (strcmp(key, PK_GRV_VOL) == 0) {
-        g->vol = v;
+        g->vol = v;                              /* TAPS voice volume (v0.4) */
+    } else if (strcmp(key, PK_GRV_GENVOL) == 0) {
+        g->gen_vol = v;                          /* GEN voice volume (independent) */
+    } else if (strcmp(key, PK_GRV_GENFILT) == 0) {
+        /* GEN's own filter cutoff (30 Hz..20 kHz log) — separate from TAPS COLOR. */
+        float fc = 30.0f * powf(20000.0f / 30.0f, v);
+        g->gen_color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_GRV_LENGTH) == 0) {
         groove_set_length(g, v);
     } else if (strcmp(key, PK_GRV_COLOR) == 0) {
@@ -680,21 +627,20 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
             g->gen_unquantized = false;
             g->gen_scale = idx - 1;  /* maps UI 1..12 → g_scales[0..11] */
         }
-        /* ROOT display swaps by scale (ui.c: Hz float when Unquantized, note enum
-         * otherwise) but gen_base_hz is PRESERVED across a scale change so toggling
-         * quantization never jumps the pitch — the readback (omega_get_param) just
-         * re-expresses the SAME gen_base_hz as Hz or as the nearest note. */
+        /* v0.4: two separate always-visible root controls (grv_groot Hz, grv_grootnote
+         * note). SCALE just picks which one feeds gen_base_hz — recompute from the
+         * active control so a scale change re-expresses the stored roots (no jump). */
+        gen_recompute_base_hz(g);
     } else if (strcmp(key, PK_GRV_GROOT) == 0) {
-        /* Dual-domain ROOT. The host sends Hz (Unquantized) or a note index
-         * (scaled); interpret by the CURRENT mode and fold both into gen_base_hz.
-         * Parse the RAW value (not the 0..1-clamped v) since Hz/note exceed 1. */
-        float raw = parse_f(val);
-        if (g->gen_unquantized) {
-            g->gen_base_hz = clampf(raw, GROOT_HZ_MIN, GROOT_HZ_MAX);
-        } else {
-            g->gen_base_hz = groot_note_to_hz((int)(raw + 0.5f));
-        }
-        g->gen_root_param = v;   /* kept for any legacy readers; not authoritative */
+        /* ROOT (Hz) — Unquantized mode. Parse RAW (Hz exceeds 1). */
+        g->gen_root_hz = clampf(parse_f(val), GROOT_HZ_MIN, GROOT_HZ_MAX);
+        gen_recompute_base_hz(g);
+    } else if (strcmp(key, PK_GRV_GROOTNOTE) == 0) {
+        /* ROOT NOTE (MIDI index 0..84) — Scale mode. Parse RAW (index exceeds 1). */
+        int m = (int)(parse_f(val) + 0.5f);
+        if (m < 0) m = 0; if (m > GROOT_NOTE_MAX) m = GROOT_NOTE_MAX;
+        g->gen_root_note = m;
+        gen_recompute_base_hz(g);
     } else if (strcmp(key, PK_GRV_GRANGE) == 0) {
         g->gen_range = 1 + (int)(v * 23.0f + 0.5f);   /* 1..24 degrees */
         if (g->gen_range < 1) g->gen_range = 1;

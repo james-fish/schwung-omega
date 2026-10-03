@@ -87,6 +87,10 @@ const float g_global_defaults[GKI_COUNT] = {
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
     [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
     [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,
+    /* v0.4 dual-voice groove: GEN VOL default 0 (opt-in, like TAPS vol); GEN note
+     * root default MIDI 30 (F#0, ~46 Hz sub, matches the Hz root default); GEN
+     * filter default ~0.5 (mid-open). */
+    [GKI_GRV_GENVOL]=0.0f, [GKI_GRV_GROOTNOTE]=30.0f, [GKI_GRV_GENFILT]=0.5f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -142,6 +146,8 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_DUCK_BS]=PK_DUCK_BS, [GKI_DJ_FILT]=PK_DJ_FILT, [GKI_DJ_RESO]=PK_DJ_RESO,
     [GKI_CLIP]=PK_CLIP,
     [GKI_GRV_ROUTE]=PK_GRV_ROUTE,
+    [GKI_GRV_GENVOL]=PK_GRV_GENVOL, [GKI_GRV_GROOTNOTE]=PK_GRV_GROOTNOTE,
+    [GKI_GRV_GENFILT]=PK_GRV_GENFILT,
 };
 
 int pk_kick_index(const char *key) {

@@ -220,8 +220,9 @@ static const char KN_KICK2[] =
  * morph (vhr): RIGHT = clean equal-level kick copies on every 16th (feedback=0),
  * LEFT = a smeared/diffused resonant feedback drone (no longer per-tap decay).
  * MONO moved to Groove Page 2 to keep Page 1 at 8 encoders. */
+/* v0.4: TYPE selector removed (TAPS + GEN run together). TAPS page = its own VOL
+ * (default 0) + the FIR rumble controls. */
 static const uiparam_t P_GROOVE1[] = {
-    { PK_GRV_TYPE,   "TYPE",   "TYPE", UP_ENUM,  "",  "0",    OPT_GRVTYPE },
     { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_COLOR,  "LPF",    "LPF",  UP_FLOAT, "%", "0.01", NULL },
@@ -231,7 +232,7 @@ static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_TAP4,   "TAP4",   "TAP4", UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_GROOVE1[] =
-    "[\"" PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
+    "[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
     "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
 
 /* P_GROOVE_FX: shared "Groove Effects" page — identical layout for TAPS and GEN
@@ -272,12 +273,12 @@ static const uiparam_t P_GROOVE_GEN_SEQ[] = {
     { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01",   NULL },
     { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_FLOAT, "%", "0.01",   NULL },
     { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_COLOR,    "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },
+    { PK_GRV_GENFILT,  "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },  /* GEN's own filter (v0.4) */
 };
 static const char KN_GROOVE_GEN_SEQ[] =
     "[\"" PK_GRV_GSEED "\",\"" PK_GRV_GSEQLEN "\",\"" PK_GRV_GDENSITY
     "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE
-    "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_COLOR "\"]";
+    "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_GENFILT "\"]";
 
 /* (Legacy MODEL_GEN-kick groove2 page removed: GEN is not a selectable kick
  * model — OPT_MODEL is FM2..USR — so that branch was unreachable.) */
@@ -339,51 +340,46 @@ static void ui_emit_root_note_options(char *buf, int buf_len, int *off) {
     ui_puts(buf, buf_len, off, "]");
 }
 
-/* E3/SC4: GEN groove page 1 — TYPE/VOL/SCALE/ROOT/RANGE/RETRIG. ROOT is scale-
- * gated (on-device request): a continuous Hz float when SCALE=Unquantized, a
- * note-name enum (C-2..C5) when any scale is active. Both descriptors share the
- * key grv_groot and map to groove.gen_base_hz via groot_* helpers; the host shows
- * whichever matches grv_gscale (equals 0 / not_equals 0) and re-reads on a SCALE
- * change (grv_gscale is a visible_if gate key). */
+/* v0.4 "Groove Gen" page 1 — GEN VOL / SCALE / ROOT (Hz) / ROOT NOTE / RANGE /
+ * RETRIG. No TYPE selector and NO grv_type/grv_gscale gating (that LEVEL-gating
+ * caused the host to re-plan and jump to the root page). Instead both root
+ * controls are ALWAYS present as SEPARATE keys: grv_groot is a Hz float (used in
+ * Unquantized mode) and grv_grootnote is a note-name enum (used in a scale) — no
+ * dynamic descriptor swap, so the page never gets corrupted. */
 static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
                                 const bohm_instance_t *inst) {
     static const uiparam_t p_head[] = {
-        { PK_GRV_TYPE,   "TYPE",  "TYPE",  UP_ENUM,  "", "0",    OPT_GRVTYPE, NULL, NULL },
-        { PK_GRV_VOL,    "VOL",   "VOL",   UP_FLOAT, "%","0.01", NULL,        NULL, NULL },
-        { PK_GRV_GSCALE, "SCALE", "SCALE", UP_ENUM,  "", "0",    OPT_SCALE,   NULL, NULL },
+        { PK_GRV_GENVOL, "GEN VOL","GVOL",  UP_FLOAT, "%","0.01", NULL,      NULL, NULL },
+        { PK_GRV_GSCALE, "SCALE",  "SCALE", UP_ENUM,  "", "0",    OPT_SCALE, NULL, NULL },
     };
     static const uiparam_t p_tail[] = {
         { PK_GRV_GRANGE,  "RANGE",  "RANGE",  UP_FLOAT, "", "0.04", NULL, NULL, NULL },
         { PK_GRV_GRETRIG, "RETRIG", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
     };
     (void)inst;
-    ui_puts(buf, buf_len, off,
-        "\"gengroove1\":{\"name\":\"Gen Groove\",\"visible_if\":{\"param\":\"" PK_GRV_TYPE
-        "\",\"equals\":1},\"params\":[");
+    ui_puts(buf, buf_len, off, "\"gengroove1\":{\"name\":\"Groove Gen\",\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {
         if (i) ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_head[i]);
     }
-    /* ROOT descriptor A — Hz float, shown only in Unquantized (grv_gscale==0). */
+    /* ROOT (Hz float) — used in Unquantized mode. */
     ui_puts(buf, buf_len, off,
         ",{\"key\":\"" PK_GRV_GROOT "\",\"name\":\"ROOT\",\"short_name\":\"ROOT\","
-        "\"type\":\"float\",\"min\":20,\"max\":520,\"default\":45,\"step\":1,\"unit\":\"Hz\","
-        "\"visible_if\":{\"param\":\"" PK_GRV_GSCALE "\",\"equals\":0}}");
-    /* ROOT descriptor B — note-name enum, shown in any scale (grv_gscale!=0). */
+        "\"type\":\"float\",\"min\":20,\"max\":520,\"default\":45,\"step\":1,\"unit\":\"Hz\"}");
+    /* ROOT NOTE (note-name enum) — used in a scale. */
     ui_puts(buf, buf_len, off,
-        ",{\"key\":\"" PK_GRV_GROOT "\",\"name\":\"ROOT\",\"short_name\":\"ROOT\","
+        ",{\"key\":\"" PK_GRV_GROOTNOTE "\",\"name\":\"ROOT NOTE\",\"short_name\":\"ROOTN\","
         "\"type\":\"enum\",\"options\":");
     ui_emit_root_note_options(buf, buf_len, off);
-    ui_puts(buf, buf_len, off,
-        ",\"default\":30,\"visible_if\":{\"param\":\"" PK_GRV_GSCALE "\",\"not_equals\":0}}");
+    ui_puts(buf, buf_len, off, ",\"default\":30}");
     for (int i = 0; i < (int)(sizeof p_tail / sizeof p_tail[0]); i++) {
         ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_tail[i]);
     }
     ui_puts(buf, buf_len, off,
         "],\"knobs\":[\""
-        PK_GRV_TYPE "\",\"" PK_GRV_VOL "\",\"" PK_GRV_GSCALE "\",\""
-        PK_GRV_GROOT "\",\"" PK_GRV_GRANGE "\",\"" PK_GRV_GRETRIG "\"]}");
+        PK_GRV_GENVOL "\",\"" PK_GRV_GSCALE "\",\"" PK_GRV_GROOT "\",\""
+        PK_GRV_GROOTNOTE "\",\"" PK_GRV_GRANGE "\",\"" PK_GRV_GRETRIG "\"]}");
 }
 
 /* Append a model's p2_slot_desc interior (bare comma-separated FLAT param
@@ -409,14 +405,10 @@ static void ui_append_gated_interior(char *buf, int buf_len, int *off,
 int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     if (!buf || buf_len <= 0) return 0;
 
-    /* grv_type gates are FIXED to each level's own type (never the current
-     * value): the groove levels are declared STATICALLY for both types and the
-     * host shows whichever set matches grv_type, re-filtering the cached
-     * hierarchy on a grv_type change. The shared FX page is ungated (identical
-     * for TAPS and GEN). A current-value gate would hide the level the instant
-     * the value changed — the v0.3.1 regression this replaces. */
-    static const char VIS_GEN[]  = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}";
-    static const char VIS_TAPS[] = "{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}";
+    /* v0.4: the groove pages are NO LONGER gated by grv_type. TAPS and GEN run
+     * simultaneously (independent VOLs), so all groove levels are ALWAYS visible.
+     * Removing the grv_type LEVEL-gate is what stops the host re-plan that kept
+     * jumping the view back to the root page on a TAPS/GEN switch. */
 
     int off = 0;
     ui_puts(buf, buf_len, &off, UI_OPEN);
@@ -463,18 +455,19 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2, NULL);
 
-    /* Groove pages (STATIC; the host filters by grv_type):
-     *   TAPS (grv_type==0): groove1 "Groove 1"
-     *   GEN  (grv_type==1): gengroove1 "Gen Groove", genseq "Gen Seq"
-     *   shared (both):      groovefx "Groove Effects" (identical P_GROOVE_FX, ungated) */
+    /* Groove pages (v0.4 — ALL ungated, always visible):
+     *   groove1    "Groove Taps"  (TAPS VOL + FIR rumble controls)
+     *   gengroove1 "Groove Gen"   (GEN VOL/SCALE/ROOT/ROOT NOTE/RANGE/RETRIG)
+     *   genseq     "Gen Seq"      (SEED/SEQLEN/.../GEN FILTER)
+     *   groovefx   "Groove Effects" (shared drive/reverb/route) */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "groove1", "Groove 1",
-                  P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, VIS_TAPS);
+    ui_emit_level(buf, buf_len, &off, "groove1", "Groove Taps",
+                  P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, NULL);
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_gen_groove1(buf, buf_len, &off, inst);          /* "gengroove1" (VIS_GEN) */
+    ui_emit_gen_groove1(buf, buf_len, &off, inst);          /* "gengroove1" "Groove Gen" */
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "genseq", "Gen Seq",
-                  P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, VIS_GEN);
+                  P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, NULL);
     ui_puts(buf, buf_len, &off, ",");
     ui_emit_level(buf, buf_len, &off, "groovefx", "Groove Effects",
                   P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, NULL);

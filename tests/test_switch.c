@@ -170,9 +170,14 @@ static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     assert(strstr(ui, "\"groovefx\"")   != NULL);   /* shared FX page */
     assert(strstr(ui, PK_GRV_RVMIX)   != NULL);     /* FX reverb mix */
     assert(strstr(ui, PK_GRV_GSEQLEN) != NULL);     /* GEN SEQ LEN (static, always declared) */
-    /* Fixed grv_type gates: TAPS==0 and GEN==1 both present. */
-    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}") != NULL);
-    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}") != NULL);
+    /* v0.4: groove pages are UNGATED (TAPS + GEN run together, always visible) —
+     * assert NO grv_type gate remains (removing it is what stops the nav jump). */
+    assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":0}") == NULL);
+    assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":1}") == NULL);
+    /* The new independent GEN voice controls are present (dual-voice groove). */
+    assert(strstr(ui, PK_GRV_GENVOL)    != NULL);   /* GEN VOL */
+    assert(strstr(ui, PK_GRV_GROOTNOTE) != NULL);   /* ROOT NOTE (note enum) */
+    assert(strstr(ui, PK_GRV_GENFILT)   != NULL);   /* GEN FILTER */
     /* kick1 per-model gates: FM2 (0) and USR (8) both present. */
     assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":0}") != NULL);
     assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":8}") != NULL);

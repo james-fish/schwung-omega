@@ -47,7 +47,8 @@ typedef struct groove_state {
     float spq_target;             /* BPM-derived target (re-locked at control rate) */
 
     /* Page-1 params (control-rate). */
-    float vol;                    /* VOL 0..1 */
+    float vol;                    /* TAPS voice VOL 0..1 (v0.4: TAPS-only) */
+    float gen_vol;                /* GEN voice VOL 0..1 (v0.4: independent, summed) */
     float tap_level[4];           /* TAP1..4 level 0..1 */
     float tap_w[4];               /* precomputed per-tap decay weights (control rate) */
     float tap_tau_s;              /* LENGTH-derived decay time constant (seconds) */
@@ -97,7 +98,12 @@ typedef struct groove_state {
      * type==GEN regardless of which kick model is selected. */
     bool  gen_unquantized;        /* true when SCALE = Unquantized (UI idx 0) */
     int   gen_scale;              /* SCALE index into g_scales (0..NUM_SCALES-1) */
-    float gen_root_param;         /* raw 0..1: note 0..83 (quantized) or 30..200 Hz (unquantized) */
+    float gen_root_param;         /* legacy (unused in v0.4; kept for struct stability) */
+    /* v0.4 dual root: separate controls (no dynamic descriptor swap — that corrupted
+     * the host page). gen_base_hz is derived from whichever matches the mode:
+     * Unquantized -> gen_root_hz; a scale -> note_to_hz(gen_root_note). */
+    float gen_root_hz;            /* ROOT (Hz) control value, Unquantized mode */
+    int   gen_root_note;          /* ROOT NOTE control value (MIDI 0..84), Scale mode */
     int   gen_range;              /* sequence degree span 1..24 */
     int   gen_seqlen;             /* SEQ LEN 1..64 (16th steps) */
     int   gen_wave;               /* legacy discrete WAVE index (kept for compat) */
@@ -124,6 +130,11 @@ typedef struct groove_state {
      * onset and decays at 0.65× the amplitude tau (closes before the note ends). */
     float gen_filt_env;           /* per-note filter env 0..1 */
     float gen_filt_env_coef;      /* filter env decay coef (= 0.65*amp tau) */
+    /* v0.4: GEN runs simultaneously with TAPS, so it needs its OWN filter coeff +
+     * state (TAPS keeps color_g / color_lp*). gen_color_g from PK_GRV_GENFILT. */
+    float gen_color_g;            /* GEN filter TPT coefficient (own cutoff) */
+    float gen_filt_lp1_l_s, gen_filt_lp1_r_s;  /* GEN 1st pole state */
+    float gen_filt_lp2_l_s, gen_filt_lp2_r_s;  /* GEN 2nd pole state */
     float gen_filt_lp3_l_s;       /* 3rd TPT 1-pole stage state, L */
     float gen_filt_lp3_r_s;       /* 3rd TPT 1-pole stage state, R */
     float gen_freq;               /* current note frequency (Hz) */

@@ -671,13 +671,12 @@ static void test_gen_filter_sweep(void) {
         void *inst = api->create_instance("/tmp/omega", "{}");
         assert(inst);
         select_model(api, inst, MODEL_FM2);
-        api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
-        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GENVOL, "1.0");    /* GEN voice audible (v0.4) */
         api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
         api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF content */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0");
         api->set_param(inst, PK_GRV_GFOLD, "0.5");
-        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "1.0" : "0.0");  /* open vs closed */
+        api->set_param(inst, PK_GRV_GENFILT, pass == 0 ? "1.0" : "0.0");  /* GEN filter open vs closed */
         mock_host_set_beat(0.0);
         /* No kick note-on: the GEN groove runs off the transport, so the output is
          * the PURE (filtered) groove — the unfiltered kick would mask the sweep. */
@@ -744,14 +743,14 @@ static void test_gen_filter_env_decay_curve(void) {
         assert(inst);
         select_model(api, inst, MODEL_FM2);
         api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
-        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GENVOL, "1.0");   /* GEN voice (v0.4) */
         api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
         api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF content */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
         api->set_param(inst, PK_GRV_GSWING, "0.5");   /* medium DECAY */
         api->set_param(inst, PK_GRV_GROOT,  "120");   /* audible mid root (Hz, Unquantized) */
         /* pass 0: filter parked at the resonant corner; pass 1: fully open. */
-        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "0.45" : "1.0");
+        api->set_param(inst, PK_GRV_GENFILT, pass == 0 ? "0.45" : "1.0");
         mock_host_set_beat(0.0);
         render_driven(api, inst, dbeat, pass == 0 ? reso_b : open_b);
         api->destroy_instance(inst);
@@ -774,12 +773,12 @@ static void test_gen_filter_env_decay_curve(void) {
         assert(inst);
         select_model(api, inst, MODEL_FM2);
         api->set_param(inst, PK_GRV_TYPE, "1");
-        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GENVOL, "1.0");   /* GEN voice (v0.4) */
         api->set_param(inst, PK_GRV_GSCALE, "0");
         api->set_param(inst, PK_GRV_GWAVE,  "2");     /* saw -> HF for a clear env */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0");
         api->set_param(inst, PK_GRV_GFOLD,  "0.5");
-        api->set_param(inst, PK_GRV_COLOR,  "0.45");  /* FIXED resonant-corner cutoff */
+        api->set_param(inst, PK_GRV_GENFILT, "0.45"); /* FIXED resonant-corner cutoff */
         /* Only DECAY differs → only the amp+filter env trajectories differ. */
         api->set_param(inst, PK_GRV_GSWING, pass == 0 ? "0.2" : "0.9");
         mock_host_set_beat(0.0);
@@ -814,12 +813,12 @@ static void test_gen_filter_env_decay_curve(void) {
         assert(inst);
         select_model(api, inst, MODEL_FM2);
         api->set_param(inst, PK_GRV_TYPE, "1");
-        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GENVOL, "1.0");   /* GEN voice (v0.4) */
         api->set_param(inst, PK_GRV_GSCALE, "0");
         api->set_param(inst, PK_GRV_GWAVE,  "2");
         api->set_param(inst, PK_GRV_GDENSITY, "1.0");
         api->set_param(inst, PK_GRV_GFOLD,  "0.5");
-        api->set_param(inst, PK_GRV_COLOR, pass == 0 ? "0.3" : "1.0");
+        api->set_param(inst, PK_GRV_GENFILT, pass == 0 ? "0.3" : "1.0");
         mock_host_set_beat(0.0);
         render_driven(api, inst, dbeat, pass == 0 ? steep : steep_open);
         api->destroy_instance(inst);
@@ -853,12 +852,12 @@ static void test_gen_root_pitch(void) {
         assert(inst);
         select_model(api, inst, MODEL_FM2);
         api->set_param(inst, PK_GRV_TYPE, "1");       /* GEN groove */
-        api->set_param(inst, PK_GRV_VOL,  "1.0");
+        api->set_param(inst, PK_GRV_GENVOL, "1.0");   /* GEN voice (v0.4) */
         api->set_param(inst, PK_GRV_GSCALE, "0");     /* Unquantized */
         api->set_param(inst, PK_GRV_GWAVE,  "0");     /* sine -> clean pitch */
         api->set_param(inst, PK_GRV_GDENSITY, "1.0"); /* fire every step */
         api->set_param(inst, PK_GRV_GRANGE, "0.0");   /* narrow span -> stable pitch */
-        api->set_param(inst, PK_GRV_COLOR, "1.0");
+        api->set_param(inst, PK_GRV_GENFILT, "1.0");  /* GEN filter open */
         api->set_param(inst, PK_GRV_GROOT, pass == 0 ? "30" : "120");  /* low vs high root (Hz, Unquantized) */
         mock_host_set_beat(0.0);
         /* No kick note-on: measure the PURE GEN groove pitch (the kick's ~50 Hz
@@ -922,10 +921,11 @@ static void test_gen_groove_type(void) {
     double dbeat = dbeat_for_bpm(128.0);
     uint8_t noteon[3] = { 0x90, 36, 100 };
 
-    /* FM2 kick model + GEN groove TYPE (decoupled — GRVX-01/04). */
+    /* FM2 kick + GEN groove voice (v0.4: no TYPE selector; GEN has its own VOL,
+     * TAPS VOL left at 0 to isolate the GEN voice for this stop-on-stop check). */
     select_model(api, inst, MODEL_FM2);
-    api->set_param(inst, PK_GRV_TYPE, "1");     /* GEN groove */
-    api->set_param(inst, PK_GRV_VOL,  "0.9");
+    api->set_param(inst, PK_GRV_VOL,    "0.0");  /* TAPS silent */
+    api->set_param(inst, PK_GRV_GENVOL, "0.9");  /* GEN voice audible */
     api->set_param(inst, PK_GRV_GSEED, "0.2");
     api->on_midi(inst, noteon, 3, 0);
     double e = render_driven(api, inst, dbeat, a);
@@ -974,8 +974,7 @@ static void test_e3_gen_groove_enhancements(void) {
     void *inst = api->create_instance("/tmp/omega", "{}");
     assert(inst);
 
-    api->set_param(inst, PK_GRV_TYPE, "1");   /* GEN groove */
-    api->set_param(inst, PK_GRV_VOL,  "0.9");
+    api->set_param(inst, PK_GRV_GENVOL, "0.9");   /* GEN voice (v0.4, no TYPE selector) */
 
     /* SC1: OPT_SCALE must include >=13 options; spot-check exotic names. */
     char ui[65536];
@@ -986,52 +985,49 @@ static void test_e3_gen_groove_enhancements(void) {
     assert(strstr(ui, "Unquantized") != NULL);
     assert(strstr(ui, "WholeTone")   != NULL);
 
-    /* SC4: the GEN control page ("Gen Groove"/gengroove1) shows ROOT and RANGE. */
+    /* SC4: the GEN control page ("Groove Gen"/gengroove1) shows ROOT and RANGE. */
     assert(strstr(ui, PK_GRV_GROOT)  != NULL);
     assert(strstr(ui, PK_GRV_GRANGE) != NULL);
-    assert(strstr(ui, "Gen Groove")  != NULL);
-    /* v0.3.2 static hierarchy: the TAPS groove1 (with TAP controls) is ALWAYS
-     * declared but gated by grv_type==0, so it is HIDDEN in GEN mode rather than
-     * absent. Assert the gate exists (that is what hides the TAPS page in GEN),
-     * and that the GEN control page is gated grv_type==1. */
-    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":0}") != NULL);
-    assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_GRV_TYPE "\",\"equals\":1}") != NULL);
+    assert(strstr(ui, "Groove Gen")  != NULL);
+    /* v0.4: groove pages are UNGATED (TAPS + GEN run together) — no grv_type gate,
+     * and the independent GEN VOL + note-root + GEN filter controls are present. */
+    assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":1}") == NULL);
+    assert(strstr(ui, PK_GRV_GENVOL)    != NULL);
+    assert(strstr(ui, PK_GRV_GROOTNOTE) != NULL);
 
     /* SC5: the shared effects page is named "Groove Effects". */
     assert(strstr(ui, "Groove Effects") != NULL);
 
-    /* SC2/SC3: GROOT moves the root pitch. In a scale (Chromatic) ROOT is a NOTE
-     * index (MIDI; 24=C0, 48=C3) — the note-name enum descriptor. */
-    api->set_param(inst, PK_GRV_GSCALE, "1");   /* Chromatic (UI idx 1) -> note-name ROOT */
+    /* SC2/SC3: in a scale, the root is the NOTE control (grv_grootnote; MIDI 24=C0,
+     * 48=C3). Moving it moves the pitch -> different output. */
+    api->set_param(inst, PK_GRV_GSCALE, "1");       /* Chromatic (scaled) */
     double dbeat = dbeat_for_bpm(128.0);
-    api->set_param(inst, PK_GRV_GROOT, "24");   /* low root note (C0) */
+    api->set_param(inst, PK_GRV_GROOTNOTE, "24");   /* low root note (C0) */
     static int16_t low[NSAMP], high[NSAMP];
     render_driven(api, inst, dbeat, low);
-    api->set_param(inst, PK_GRV_GROOT, "48");   /* high root note (C3) */
+    api->set_param(inst, PK_GRV_GROOTNOTE, "48");   /* high root note (C3) */
     render_driven(api, inst, dbeat, high);
-    /* Different root → different pitch → different output (not byte-identical). */
     assert(memcmp(low, high, sizeof low) != 0);
 
-    /* iter-2 (on-device): ROOT is SCALE-GATED — a Hz float when Unquantized and a
-     * note-name enum (C-2..C5) when a scale is active, both keyed grv_groot and
-     * mapped to gen_base_hz. A SCALE switch re-expresses the SAME pitch (no jump). */
-    api->set_param(inst, PK_GRV_GSCALE, "0");   /* Unquantized */
+    /* v0.4: TWO always-present root controls (no dynamic swap, no gating): a Hz
+     * float (grv_groot) and a note-name enum (grv_grootnote, C-2..C5). Assert both
+     * descriptors are in the hierarchy and NO grv_gscale gate remains. */
     n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
-    assert(strstr(ui, "\"unit\":\"Hz\"") != NULL);   /* Hz float descriptor present */
-    assert(strstr(ui, "\"param\":\"" PK_GRV_GSCALE "\",\"equals\":0}") != NULL);      /* Hz gated unquantized */
-    assert(strstr(ui, "\"param\":\"" PK_GRV_GSCALE "\",\"not_equals\":0}") != NULL);  /* note enum gated scaled */
-    assert(strstr(ui, "\"C-2\"") != NULL);           /* note names present in the enum */
-    assert(strstr(ui, PK_GRV_GROOT) != NULL);        /* ROOT still present */
-    /* A scale switch PRESERVES the base pitch: set a low Hz root, render, switch to
-     * a scale (NO GROOT change), re-render — both audible, neither silent/exploded. */
-    api->set_param(inst, PK_GRV_GROOT, "30");   /* low root in Hz (Unquantized) */
+    assert(strstr(ui, "\"unit\":\"Hz\"")  != NULL);  /* Hz float ROOT */
+    assert(strstr(ui, "\"C-2\"")          != NULL);  /* note names in ROOT NOTE enum */
+    assert(strstr(ui, PK_GRV_GROOT)       != NULL);
+    assert(strstr(ui, PK_GRV_GROOTNOTE)   != NULL);
+    assert(strstr(ui, PK_GRV_GSCALE "\",\"equals\":0}")     == NULL);  /* no gating */
+    assert(strstr(ui, PK_GRV_GSCALE "\",\"not_equals\":0}") == NULL);
+    /* Unquantized Hz root + a scale-mode note root are both audible (independent). */
+    api->set_param(inst, PK_GRV_GSCALE, "0");       /* Unquantized -> uses Hz root */
+    api->set_param(inst, PK_GRV_GROOT, "30");
     static int16_t unq_a[NSAMP], unq_b[NSAMP];
     render_driven(api, inst, dbeat, unq_a);
-    api->set_param(inst, PK_GRV_GSCALE, "3");   /* Minor — scale change only, root preserved */
+    api->set_param(inst, PK_GRV_GSCALE, "3");       /* Minor -> uses note root */
+    api->set_param(inst, PK_GRV_GROOTNOTE, "36");   /* C1 */
     render_driven(api, inst, dbeat, unq_b);
-    /* Low root stays low after a scale switch: output energy is non-trivial but
-     * the root did not explode to the top (both are the SAME low-root voice). */
     {
         double ea = 0.0, eb = 0.0;
         for (int i = 0; i < NSAMP; i++) { ea += (double)unq_a[i]*unq_a[i]; eb += (double)unq_b[i]*unq_b[i]; }
