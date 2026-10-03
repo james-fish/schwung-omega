@@ -993,40 +993,37 @@ static void test_e3_gen_groove_enhancements(void) {
      * and the independent GEN VOL + note-root + GEN filter controls are present. */
     assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":1}") == NULL);
     assert(strstr(ui, PK_GRV_GENVOL)    != NULL);
-    assert(strstr(ui, PK_GRV_GROOTNOTE) != NULL);
+    assert(strstr(ui, PK_GRV_GROOTNOTE) == NULL);   /* v0.4.1: ROOT NOTE merged away */
 
     /* SC5: the shared effects page is named "Groove Effects". */
     assert(strstr(ui, "Groove Effects") != NULL);
 
-    /* SC2/SC3: in a scale, the root is the NOTE control (grv_grootnote; MIDI 24=C0,
-     * 48=C3). Moving it moves the pitch -> different output. */
+    /* SC2/SC3 (v0.4.1): ROOT is a SINGLE Hz control used in BOTH modes. Moving it
+     * moves the pitch -> different output (in a scale too). */
     api->set_param(inst, PK_GRV_GSCALE, "1");       /* Chromatic (scaled) */
     double dbeat = dbeat_for_bpm(128.0);
-    api->set_param(inst, PK_GRV_GROOTNOTE, "24");   /* low root note (C0) */
+    api->set_param(inst, PK_GRV_GROOT, "30");       /* low root (Hz) */
     static int16_t low[NSAMP], high[NSAMP];
     render_driven(api, inst, dbeat, low);
-    api->set_param(inst, PK_GRV_GROOTNOTE, "48");   /* high root note (C3) */
+    api->set_param(inst, PK_GRV_GROOT, "120");      /* high root (Hz) */
     render_driven(api, inst, dbeat, high);
     assert(memcmp(low, high, sizeof low) != 0);
 
-    /* v0.4: TWO always-present root controls (no dynamic swap, no gating): a Hz
-     * float (grv_groot) and a note-name enum (grv_grootnote, C-2..C5). Assert both
-     * descriptors are in the hierarchy and NO grv_gscale gate remains. */
+    /* v0.4.1: ONE merged root control (Hz float); ROOT NOTE removed, no gating. */
     n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0);
     assert(strstr(ui, "\"unit\":\"Hz\"")  != NULL);  /* Hz float ROOT */
-    assert(strstr(ui, "\"C-2\"")          != NULL);  /* note names in ROOT NOTE enum */
     assert(strstr(ui, PK_GRV_GROOT)       != NULL);
-    assert(strstr(ui, PK_GRV_GROOTNOTE)   != NULL);
+    assert(strstr(ui, PK_GRV_GROOTNOTE)   == NULL);  /* merged away */
     assert(strstr(ui, PK_GRV_GSCALE "\",\"equals\":0}")     == NULL);  /* no gating */
     assert(strstr(ui, PK_GRV_GSCALE "\",\"not_equals\":0}") == NULL);
-    /* Unquantized Hz root + a scale-mode note root are both audible (independent). */
-    api->set_param(inst, PK_GRV_GSCALE, "0");       /* Unquantized -> uses Hz root */
+    /* ROOT Hz is audible in both unquantized and scale modes. */
+    api->set_param(inst, PK_GRV_GSCALE, "0");       /* Unquantized */
     api->set_param(inst, PK_GRV_GROOT, "30");
     static int16_t unq_a[NSAMP], unq_b[NSAMP];
     render_driven(api, inst, dbeat, unq_a);
-    api->set_param(inst, PK_GRV_GSCALE, "3");       /* Minor -> uses note root */
-    api->set_param(inst, PK_GRV_GROOTNOTE, "36");   /* C1 */
+    api->set_param(inst, PK_GRV_GSCALE, "3");       /* Minor */
+    api->set_param(inst, PK_GRV_GROOT, "45");
     render_driven(api, inst, dbeat, unq_b);
     {
         double ea = 0.0, eb = 0.0;

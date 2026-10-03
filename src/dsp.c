@@ -391,10 +391,10 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
         /* NULL-guard: an unimplemented (NULL) model slot ignores triggers. */
         if (g_models[inst->model] && g_models[inst->model]->trigger)
             g_models[inst->model]->trigger(inst, msg[1], msg[2]);
-        /* GEN groove RETRIG=On Note: restart the generative sequence on each kick
-         * (GRVX-05). Other retrigger modes are bar-based / free-run. */
-        if (inst->groove.type == GROOVE_TYPE_GEN &&
-            inst->groove.gen_retrig == GRV_RETRIG_NOTE)
+        /* GEN RESET = On Note: restart the generative sequence on EVERY kick note-on
+         * (item 8). v0.4 removed the TYPE selector (TAPS + GEN run together), so the
+         * old `type==GEN` gate was never true and On-Note never fired — drop it. */
+        if (inst->groove.gen_retrig == GRV_RETRIG_ONNOTE)
             groove_gen_restart(&inst->groove);
         /* Sidechain duck triggers on the kick note-on (PERF-01), not amplitude —
          * set the duck envelope to full; it recovers over DUCK REL. */
@@ -542,11 +542,11 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
      * 4-decimal fallthrough. get_param runs at UI/control rate (never render),
      * so powf here is fine. */
     if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
-        /* Finding 6: show a whole integer 1..64 (mirrors groove.c's
-         * gen_seqlen = 1 + (int)(v*63+0.5) map), not a 4-decimal fraction. */
+        /* v0.4.1: SEQ LEN is a RAW int (1..64). Echo the stored integer directly
+         * (the old v*63 map treated the raw value as normalized and always read 64). */
         int gsi = pk_global_index(key);
-        float v = (gsi >= 0) ? inst->global_cache[gsi] : 0.0f;
-        int seqlen = 1 + (int)(v * 63.0f + 0.5f);
+        float v = (gsi >= 0) ? inst->global_cache[gsi] : 16.0f;
+        int seqlen = (int)(v + 0.5f);
         if (seqlen < 1) seqlen = 1; if (seqlen > 64) seqlen = 64;
         return pk_format_value((float)seqlen, 0, buf, buf_len);
     }

@@ -133,7 +133,7 @@ void fm2_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc = 500.0f + v * (16000.0f - 500.0f);
         fm->trs_tone_g = tpt_g_from_hz(fc);       /* precompute — not per sample */
     } else if (strcmp(key, PK_COLOR) == 0) {
-        float fc = 200.0f + v * (18000.0f - 200.0f);
+        float fc = 50.0f + v * (18000.0f - 50.0f);   /* floor ~50 Hz (fully closed) */
         fm->color_g = tpt_g_from_hz(fc);          /* precompute — not per sample */
     } else if (strcmp(key, PK_FM_RATIO) == 0) {
         fm->ratio = 0.5f + v * (8.0f - 0.5f);

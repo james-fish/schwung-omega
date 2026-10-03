@@ -87,9 +87,37 @@ static inline float tpt_g_from_hz(float fc) {
  * Unquantized uses the Hz control, a scale uses the note control. No dynamic UI
  * descriptor swap (two separate controls, distinct keys); control-rate only. */
 static inline void gen_recompute_base_hz(groove_state_t *g) {
-    g->gen_base_hz = g->gen_unquantized
-        ? clampf(g->gen_root_hz, GROOT_HZ_MIN, GROOT_HZ_MAX)
-        : groot_note_to_hz(g->gen_root_note);
+    /* v0.4.1: ROOT merged into a SINGLE Hz control used in BOTH modes (the separate
+     * ROOT NOTE control is gone). The Hz knob is the base pitch; SCALE only governs
+     * how the sequence degrees quantize relative to that base (scale_quantize). */
+    g->gen_base_hz = clampf(g->gen_root_hz, GROOT_HZ_MIN, GROOT_HZ_MAX);
+}
+
+/* NOTE LEN enum -> step-duration multiplier in 16th-notes. Options (ui.c OPT_NOTELEN):
+ * 0:1/4d(6) 1:1/4(4) 2:1/8d(3) 3:1/8(2) 4:1/16d(1.5) 5:1/16(1) 6:1/32(0.5). */
+static inline float gen_notelen_to_mult(int idx) {
+    static const float M[7] = { 6.0f, 4.0f, 3.0f, 2.0f, 1.5f, 1.0f, 0.5f };
+    if (idx < 0) idx = 0; if (idx > 6) idx = 6;
+    return M[idx];
+}
+
+/* GEN amp/filter env decay times from the DECAY knob (v0.4.1, item 11): pluckier
+ * than before — a v*v expo so mid-knob is short. tau: 4 ms .. 160 ms. The amp env
+ * decays toward a 0.5 sustain floor (see groove_tick); the filter env decays to 0
+ * at 0.65× the amp tau (closes before the note settles). expf at CONTROL rate. */
+#define GEN_SUSTAIN 0.5f
+static inline void gen_set_decay(groove_state_t *g, float v) {
+    g->gen_decay = v;
+    float vp    = v * v;                         /* plucky expo spread */
+    float tau_s = 0.004f * powf(40.0f, vp);      /* 4 ms .. ~160 ms (pluck) */
+    g->gen_env_coef      = expf(-1.0f / (tau_s * OMEGA_SR));
+    /* The 50% body sustains ~8x the pluck so the note has an audible sustained tone
+     * (not just a transient click) yet still releases to silence when the sequencer
+     * stops. At the default DECAY this is ~80 ms; raising DECAY lengthens both. */
+    float body_tau_s     = 8.0f * tau_s;
+    g->gen_sus_coef      = expf(-1.0f / (body_tau_s * OMEGA_SR));
+    float filt_tau_s     = 0.65f * tau_s;        /* filter env = 65% of amp env */
+    g->gen_filt_env_coef = expf(-1.0f / (filt_tau_s * OMEGA_SR));
 }
 
 /* ---- FIR tap-weight precompute (control-rate, Phase 1 §Rumble Core) ------- */
@@ -201,7 +229,9 @@ void groove_gen_restart(groove_state_t *g) {
     g->gen_step = 0;
     g->gen_step_ctr = 0;   /* fire step 0 on the next tick */
     g->gen_bar16 = 0;
+    g->gen_sixteenth_acc = 0.0f;   /* v0.4.1: reset the bar accumulator too */
     g->gen_env = 0.0f;
+    g->gen_sus = 0.0f;
 }
 
 /* ---- groove_init: seed a valid tap interval + musical Page-1 middles ----- */
@@ -240,6 +270,10 @@ void groove_init(groove_state_t *g) {
     g->color_lp_r_s  = 0.0f;
     g->color_lp2_l_s = 0.0f;
     g->color_lp2_r_s = 0.0f;
+    /* TAPS HPF (v0.4.1): default OFF (hpf_g==0 sentinel bypasses the stage). */
+    g->hpf_g         = 0.0f;
+    g->hpf_lp_l_s    = 0.0f;
+    g->hpf_lp_r_s    = 0.0f;
     g->mono          = false;
 
     /* Redesign defaults (Phase 1: feedback-free FIR). */
@@ -276,19 +310,23 @@ void groove_init(groove_state_t *g) {
     g->gen_seqlen  = 16;
     g->gen_wave    = 0;
     g->gen_wave_pos = 0.0f;        /* sine end of the scan */
-    g->gen_retrig  = GRV_RETRIG_NONE;   /* free-run by default (GRVX-05) */
+    g->gen_retrig  = 0;            /* RESET None: free loop by default (v0.4.1) */
     g->gen_density = 0.6f;
     g->gen_rotate  = 0.0f;
-    g->gen_decay   = 0.5f;         /* medium gen-note length */
+    g->gen_decay   = 0.5f;         /* medium gen-note D/R time */
+    /* v0.4.1 batch defaults. */
+    g->gen_notelen      = 5;       /* 1/16 */
+    g->gen_notelen_mult = gen_notelen_to_mult(5);
+    g->gen_swing        = 0.0f;    /* center = no swing */
+    g->gen_gentaps      = 0.0f;    /* GEN>TAPS send off */
+    g->gen_sixteenth_acc = 0.0f;
     g->gen_fold    = 0.0f;
     g->gen_base_hz = 45.0f;        /* set from gen_root_param (unified log map) */
     g->gen_osc_phase = 0.0f;
     g->gen_sub_phase = 0.0f;       /* Finding 3: built-in sub-octave oscillator */
     g->gen_seed_raw = 12345u;
-    g->gen_env_coef = 0.9995f;     /* recomputed from gen_decay in set_param */
-    /* GEN filter envelope + 3rd-pole resonant cascade (Finding 4). */
     g->gen_filt_env      = 0.0f;
-    g->gen_filt_env_coef = 0.9992f;   /* recomputed from gen_decay (0.65*tau) */
+    gen_set_decay(g, g->gen_decay);   /* seed gen_env_coef + gen_filt_env_coef (v0.4.1) */
     g->gen_filt_lp3_l_s  = 0.0f;
     g->gen_filt_lp3_r_s  = 0.0f;
     g->gen_running = false;
@@ -379,30 +417,36 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
         if (g->gen_running) {
             if (g->gen_step_ctr <= 0) {
                 int len = g->gen_seqlen < 1 ? 1 : (g->gen_seqlen > 64 ? 64 : g->gen_seqlen);
-                int step = g->gen_step % len;
+                int step = g->gen_step % len;         /* pattern ALWAYS loops (item 4) */
                 if (g->gen_gate[step]) {
                     int semi = g->gen_unquantized
                         ? (int)g->gen_seq[step]
                         : scale_quantize(g->gen_scale, g->gen_seq[step]);
                     g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);
-                    g->gen_env = 1.0f;
+                    g->gen_env = 1.0f;          /* pluck top */
+                    g->gen_sus = GEN_SUSTAIN;   /* 50% body */
                     g->gen_filt_env = 1.0f;
                     g->gen_osc_phase = 0.0f;
                     g->gen_sub_phase = 0.0f;
                 }
-                int dur = g->samples_per_16th;
+                /* Step duration = NOTE LEN × a 16th (item 4/5), with SWING on alternate
+                 * steps (item 7): even steps lengthen, odd shorten, so pairs stay in
+                 * tempo. mult/swing are precomputed at control rate. */
+                float mult = g->gen_notelen_mult > 0.0f ? g->gen_notelen_mult : 1.0f;
+                float sw   = (g->gen_step & 1) ? (1.0f - g->gen_swing) : (1.0f + g->gen_swing);
+                int dur = (int)((float)g->samples_per_16th * mult * sw + 0.5f);
                 g->gen_step_ctr = dur > 1 ? dur : 1;
+                g->gen_sixteenth_acc += mult;        /* 16ths elapsed (bar-based RESET) */
                 g->gen_step++;
-                if (++g->gen_bar16 >= 16) g->gen_bar16 = 0;
-                int bars = 0;
-                switch (g->gen_retrig) {
-                    case GRV_RETRIG_1BAR: bars = 1; break;
-                    case GRV_RETRIG_2BAR: bars = 2; break;
-                    case GRV_RETRIG_4BAR: bars = 4; break;
-                    case GRV_RETRIG_8BAR: bars = 8; break;
-                    default: break;
+                /* RESET (item 4): 1..8 bars wrap the sequence to step 0 at the bar
+                 * boundary. The pattern itself keeps modulo-looping above, so a
+                 * sequence SHORTER than the reset interval loops repeatedly until the
+                 * reset fires — exactly the "hypnotic loop that resets every N bars". */
+                int bars = (g->gen_retrig >= 1 && g->gen_retrig <= 8) ? g->gen_retrig : 0;
+                if (bars && g->gen_sixteenth_acc >= (float)(16 * bars) - 1e-3f) {
+                    g->gen_step = 0;
+                    g->gen_sixteenth_acc = 0.0f;
                 }
-                if (bars && g->gen_step >= 16 * bars) g->gen_step = 0;
             }
             g->gen_step_ctr--;
         }
@@ -429,17 +473,24 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
             v = v - 4.0f * floorf(v * 0.25f + 0.5f);   /* fold into ~[-2,2] */
             osc = osc + foldamt * (0.5f * v - osc);
         }
-        float s = osc * g->gen_env;
+        /* Pluck amp env (item 11): a fast pluck (gen_env, 1->0) riding over a 50%
+         * body (gen_sus) that releases to 0. amp = 1.0 at onset, plucks down to the
+         * body, then the body releases — plucky with a sustain character, yet still
+         * silent once the sequencer stops retriggering (GRVX-05). */
+        float amp = g->gen_env * (1.0f - GEN_SUSTAIN) + g->gen_sus;
+        float s = osc * amp;
         g->gen_env *= g->gen_env_coef;
-        g->gen_filt_env *= g->gen_filt_env_coef;
+        g->gen_sus *= g->gen_sus_coef;
+        g->gen_filt_env *= g->gen_filt_env_coef;   /* filter env decays fully to 0 */
         float inc = g->gen_freq / OMEGA_SR;
         g->gen_osc_phase += inc; if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
         g->gen_sub_phase += 0.5f * inc; if (g->gen_sub_phase >= 1.0f) g->gen_sub_phase -= 1.0f;
 
-        /* GEN 3-pole (18 dB/oct) RESONANT filter + per-note env (own state/coeff). */
-        float cg_eff = g->gen_color_g * (1.0f + 3.0f * g->gen_filt_env);
+        /* GEN 3-pole (18 dB/oct) RESONANT filter + per-note env (own state/coeff).
+         * v0.4.1 item 9: env depth +10% (3.0->3.3), resonance +10% (0.45->0.495). */
+        float cg_eff = g->gen_color_g * (1.0f + 3.3f * g->gen_filt_env);
         if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
-        const float kres = 0.45f;
+        const float kres = 0.495f;
         float in = clampf(s - kres * g->gen_filt_lp3_l_s, -2.0f, 2.0f);
         tpt1_t l1 = { g->gen_filt_lp1_l_s }, l2 = { g->gen_filt_lp2_l_s }, l3 = { g->gen_filt_lp3_l_s };
         float f1 = tpt1_lp(&l1, in, cg_eff);
@@ -472,11 +523,23 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
             acc_l += sl * g->tap_w[k - 1];
             acc_r += sr * g->tap_w[k - 1];
         }
-        g->buf_l[g->write_pos] = kick_l;
-        g->buf_r[g->write_pos] = kick_r;
+        /* Ring input = live kick + GEN>TAPS send (item 10): routing GEN into the taps
+         * ring makes the rumble/reverb act as a delay/echo on the GEN voice. */
+        g->buf_l[g->write_pos] = kick_l + gen_l * g->gen_gentaps;
+        g->buf_r[g->write_pos] = kick_r + gen_r * g->gen_gentaps;
         g->write_pos = (g->write_pos + 1) & GRV_DELAY_MASK;
         taps_l = acc_l * g->tap_norm;
         taps_r = acc_r * g->tap_norm;
+
+        /* TAPS HPF (item 12): one-pole highpass BEFORE the COLOR lowpass (hp = x - lp).
+         * Bypassed when hpf_g==0 (control at minimum) so "off" is bit-transparent. */
+        if (g->hpf_g > 0.0f) {
+            tpt1_t hl = { g->hpf_lp_l_s }, hr = { g->hpf_lp_r_s };
+            float lol = tpt1_lp(&hl, taps_l, g->hpf_g);
+            float lor = tpt1_lp(&hr, taps_r, g->hpf_g);
+            g->hpf_lp_l_s = hl.s; g->hpf_lp_r_s = hr.s;
+            taps_l -= lol; taps_r -= lor;
+        }
 
         /* LFO sweeps the TAPS cutoff + reverb damping (reverb reads rv_damp_eff). */
         float cg = g->color_g;
@@ -632,15 +695,23 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
          * active control so a scale change re-expresses the stored roots (no jump). */
         gen_recompute_base_hz(g);
     } else if (strcmp(key, PK_GRV_GROOT) == 0) {
-        /* ROOT (Hz) — Unquantized mode. Parse RAW (Hz exceeds 1). */
-        g->gen_root_hz = clampf(parse_f(val), GROOT_HZ_MIN, GROOT_HZ_MAX);
+        /* ROOT (Hz) — single merged control used in BOTH modes (v0.4.1). Defensive
+         * parse: a raw Hz value (20..520) passes through; a stray normalized 0..1 is
+         * mapped log across the Hz range (fixes the "shows 1 Hz then snaps to 20 Hz"
+         * report where the knob fed a 0..1 value and clamped to the 20 Hz floor). */
+        float raw = parse_f(val);
+        if (raw <= 1.5f) {
+            float t = raw < 0.0f ? 0.0f : (raw > 1.0f ? 1.0f : raw);
+            raw = GROOT_HZ_MIN * powf(GROOT_HZ_MAX / GROOT_HZ_MIN, t);
+        }
+        g->gen_root_hz = clampf(raw, GROOT_HZ_MIN, GROOT_HZ_MAX);
         gen_recompute_base_hz(g);
     } else if (strcmp(key, PK_GRV_GROOTNOTE) == 0) {
-        /* ROOT NOTE (MIDI index 0..84) — Scale mode. Parse RAW (index exceeds 1). */
+        /* Legacy ROOT NOTE key — kept for preset/ABI compatibility (no longer on the
+         * UI; ROOT is merged into grv_groot). Still stored if a saved preset sets it. */
         int m = (int)(parse_f(val) + 0.5f);
         if (m < 0) m = 0; if (m > GROOT_NOTE_MAX) m = GROOT_NOTE_MAX;
         g->gen_root_note = m;
-        gen_recompute_base_hz(g);
     } else if (strcmp(key, PK_GRV_GRANGE) == 0) {
         g->gen_range = 1 + (int)(v * 23.0f + 0.5f);   /* 1..24 degrees */
         if (g->gen_range < 1) g->gen_range = 1;
@@ -652,8 +723,12 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->gen_seed_raw = (unsigned)(v * 127.0f + 0.5f);
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
-        g->gen_seqlen = 1 + (int)(v * 63.0f + 0.5f);   /* 1..64 */
-        if (g->gen_seqlen < 1) g->gen_seqlen = 1; if (g->gen_seqlen > 64) g->gen_seqlen = 64;
+        /* v0.4.1 fix: SEQ LEN is an `int` param — the host sends the RAW integer
+         * (1..64), exactly like grv_grootnote. The old `v*63` normalized map clamped
+         * every nonzero value to 64 ("snap to 64"). Parse raw. */
+        int n = (int)(parse_f(val) + 0.5f);
+        if (n < 1) n = 1; if (n > 64) n = 64;
+        g->gen_seqlen = n;
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GDENSITY) == 0) {
         g->gen_density = v;
@@ -662,30 +737,41 @@ void groove_set_param(groove_state_t *g, const char *key, const char *val) {
         g->gen_rotate = v * 2.0f - 1.0f;            /* bidirectional -1..1 → ±len steps */
         groove_gen_rebuild(g);
     } else if (strcmp(key, PK_GRV_GSWING) == 0) {
-        /* DECAY = gen note length (SWING removed). Finding 5: apply an EXPO input
-         * curve v' = v*v BEFORE the tau map so the musically useful short/plucky
-         * range spreads across most of the knob travel (mid-knob now lands much
-         * shorter). Endpoints unchanged: v'=0 -> 5 ms, v'=1 -> ~150 ms. */
-        g->gen_decay = v;
-        /* Finding 5 (iter-2, on-device "first 50% too aggressively short"): soften
-         * the pure v*v expo to v*(0.5+0.5v) = 0.5v + 0.5v². Endpoints unchanged
-         * (0 ms-end -> 5 ms, 1 -> ~150 ms) but the lower half lands notably longer
-         * (v=0.5: vp 0.375 vs 0.25 -> ~16 ms vs ~12 ms; v=0.25: 0.156 vs 0.0625). */
-        float vp    = v * (0.5f + 0.5f * v);        /* softened expo spread */
-        float tau_s = 0.005f * powf(30.0f, vp);     /* 5 ms .. ~150 ms */
-        g->gen_env_coef = expf(-1.0f / (tau_s * OMEGA_SR));
-        /* Finding 4: filter env decays at 0.65× the amp tau (closes BEFORE the
-         * note fully decays). Control-rate expf alongside the amp coef. */
-        float filt_tau_s = 0.65f * tau_s;
-        g->gen_filt_env_coef = expf(-1.0f / (filt_tau_s * OMEGA_SR));
+        /* DECAY = gen amp D/R time (v0.4.1, item 11): pluckier curve, decays toward a
+         * 0.5 sustain floor; filter env = 65% of amp env. See gen_set_decay. */
+        gen_set_decay(g, v);
+    } else if (strcmp(key, PK_GRV_GSWINGAMT) == 0) {
+        /* SWING (v0.4.1, item 7): bipolar, 0.5 = none. Subtle ±8% max so it stays
+         * musical even when DENSITY isn't full. Lengthens even / shortens odd steps. */
+        g->gen_swing = (v - 0.5f) * 2.0f * 0.08f;
+    } else if (strcmp(key, PK_GRV_GNOTELEN) == 0) {
+        /* NOTE LEN (v0.4.1, item 4/5): step division enum (raw index). */
+        int idx = (int)(parse_f(val) + 0.5f);
+        if (idx < 0) idx = 0; if (idx > 6) idx = 6;
+        g->gen_notelen = idx;
+        g->gen_notelen_mult = gen_notelen_to_mult(idx);
+    } else if (strcmp(key, PK_GRV_GENTAPS) == 0) {
+        /* GEN>TAPS send (v0.4.1, item 10): feeds the GEN voice into the taps delay
+         * ring so the rumble/reverb act as a delay/echo on GEN. */
+        g->gen_gentaps = v;
+    } else if (strcmp(key, PK_GRV_HPF) == 0) {
+        /* TAPS high-pass (v0.4.1, item 12): fully OFF at the bottom (hpf_g==0 bypass),
+         * else ~20 Hz .. ~2 kHz log. */
+        if (v <= 0.001f) {
+            g->hpf_g = 0.0f;
+        } else {
+            float fc = 20.0f * powf(2000.0f / 20.0f, v);
+            g->hpf_g = tpt_g_from_hz(fc);
+        }
     } else if (strcmp(key, PK_GRV_GWAVE) == 0) {
         /* Continuous WAVE SCAN 0..1 (not discrete): morphs sine→…→analog + fold. */
         g->gen_wave_pos = v;
     } else if (strcmp(key, PK_GRV_GFOLD) == 0) {
         g->gen_fold = v;
     } else if (strcmp(key, PK_GRV_GRETRIG) == 0) {
+        /* RESET (v0.4.1, item 4): 0 None, 1..8 = that many bars, 9 On Note. */
         int m = (int)(parse_f(val) + 0.5f);
-        g->gen_retrig = (m < 0) ? 0 : (m > 5 ? 5 : m);
+        g->gen_retrig = (m < 0) ? 0 : (m > 9 ? 9 : m);
     }
     /* Unknown keys ignored. */
 }

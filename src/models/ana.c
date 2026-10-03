@@ -136,8 +136,8 @@ void ana_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * wave B on top of WAVE MORPH), so the Page-1 knob is responsive. */
         a->tne = v;
     } else if (strcmp(key, PK_COLOR) == 0) {
-        /* Warm by default: COLOR opens a gentle LP (150 Hz .. 8 kHz). */
-        float fc = 150.0f + v * (8000.0f - 150.0f);
+        /* Warm by default: COLOR opens a gentle LP (~50 Hz .. 8 kHz). */
+        float fc = 50.0f + v * (8000.0f - 50.0f);
         a->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_ANA_MORPH) == 0) {
         /* WAVE MORPH: crossfade warm sine (0) <-> analog saturated (1). */

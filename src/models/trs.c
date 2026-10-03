@@ -125,7 +125,7 @@ void trs_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * Low = deep thuddy impact; high = crisp mid-range snap. */
         t->trs_modal_hz = 100.0f + v * (1200.0f - 100.0f);
     } else if (strcmp(key, PK_COLOR) == 0) {
-        float fc = 200.0f + v * (18000.0f - 200.0f);
+        float fc = 50.0f + v * (18000.0f - 50.0f);   /* floor ~50 Hz (fully closed) */
         t->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_TRS_TONE) == 0) {
         /* TRANS TONE: morph from a sharp sine tick CLICK (0) to a pitched

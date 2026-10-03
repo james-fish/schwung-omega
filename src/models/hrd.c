@@ -154,8 +154,8 @@ void hrd_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * factory wave, adding upper harmonics / zero crossings. */
         h->tne = v;
     } else if (strcmp(key, PK_COLOR) == 0) {
-        /* HRD stays aggressive: COLOR opens a wide LP (300 Hz .. 18 kHz). */
-        float fc = 300.0f + v * (18000.0f - 300.0f);
+        /* HRD stays aggressive: COLOR opens a wide LP (~50 Hz .. 18 kHz). */
+        float fc = 50.0f + v * (18000.0f - 50.0f);
         h->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_HRD_SAMPLE) == 0) {
         /* SAMPLE LAYER: enum 0=Saw,1=Square,2=Digital → wave indices 2/3/4. */

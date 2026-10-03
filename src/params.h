@@ -71,6 +71,7 @@ typedef enum {
     GKI_DJ_FILT, GKI_DJ_RESO, GKI_CLIP,
     GKI_GRV_ROUTE,                /* Phase 1 FX-ROUTE: groove FX order selector */
     GKI_GRV_GENVOL, GKI_GRV_GROOTNOTE, GKI_GRV_GENFILT,  /* v0.4 dual-voice groove */
+    GKI_GRV_HPF, GKI_GRV_GNOTELEN, GKI_GRV_GSWINGAMT, GKI_GRV_GENTAPS,  /* v0.4.1 batch */
     GKI_COUNT
 } pk_global_index_t;
 

@@ -138,7 +138,7 @@ void usr_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         u->trs_tone_g = tpt_g_from_hz(fc);
         u->trs_tne_mix = v;
     } else if (strcmp(key, PK_COLOR) == 0) {
-        float fc = 200.0f + v * (18000.0f - 200.0f);
+        float fc = 50.0f + v * (18000.0f - 50.0f);   /* floor ~50 Hz (fully closed) */
         u->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_USR_SAMPLE) == 0) {
         /* SAMPLE SELECT (B3, SMPL-02): a picker into the enumerated sample bank.

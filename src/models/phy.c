@@ -175,8 +175,8 @@ void phy_set_param(bohm_instance_t *inst, const char *key, const char *val) {
         float fc_burst = 800.0f + v * (12000.0f - 800.0f);
         p->burst_g = tpt_g_from_hz(fc_burst);
     } else if (strcmp(key, PK_COLOR) == 0) {
-        /* COLOR opens the output LP (200 Hz .. 16 kHz) — timbre morph. */
-        float fc = 200.0f + v * (16000.0f - 200.0f);
+        /* COLOR opens the output LP (~50 Hz .. 16 kHz) — timbre morph. */
+        float fc = 50.0f + v * (16000.0f - 50.0f);
         p->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_PHY_BEATER) == 0) {
         /* BEATER: excitation character. Brighter/harder = more HF + shorter burst.

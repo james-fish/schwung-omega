@@ -176,8 +176,14 @@ static void assert_groove2_gating(plugin_api_v2_t *api, void *inst) {
     assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":1}") == NULL);
     /* The new independent GEN voice controls are present (dual-voice groove). */
     assert(strstr(ui, PK_GRV_GENVOL)    != NULL);   /* GEN VOL */
-    assert(strstr(ui, PK_GRV_GROOTNOTE) != NULL);   /* ROOT NOTE (note enum) */
+    assert(strstr(ui, PK_GRV_GROOT)     != NULL);   /* ROOT (merged Hz control, v0.4.1) */
     assert(strstr(ui, PK_GRV_GENFILT)   != NULL);   /* GEN FILTER */
+    /* v0.4.1 batch: ROOT NOTE merged away; new GEN + TAPS controls present. */
+    assert(strstr(ui, PK_GRV_GROOTNOTE) == NULL);   /* ROOT NOTE removed (merged into ROOT) */
+    assert(strstr(ui, PK_GRV_GNOTELEN)  != NULL);   /* NOTE LEN */
+    assert(strstr(ui, PK_GRV_GSWINGAMT) != NULL);   /* SWING */
+    assert(strstr(ui, PK_GRV_GENTAPS)   != NULL);   /* GEN>TAPS send */
+    assert(strstr(ui, PK_GRV_HPF)       != NULL);   /* TAPS HPF */
     /* kick1 per-model gates: FM2 (0) and USR (8) both present. */
     assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":0}") != NULL);
     assert(strstr(ui, "\"visible_if\":{\"param\":\"" PK_MODEL "\",\"equals\":8}") != NULL);

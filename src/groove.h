@@ -59,6 +59,10 @@ typedef struct groove_state {
     float color_lp_r_s;          /* tpt1 lowpass state (the tpt1_t `.s`), R */
     float color_lp2_l_s;         /* 2nd cascade stage state (2-pole COLOR), L */
     float color_lp2_r_s;         /* 2nd cascade stage state (2-pole COLOR), R */
+    /* TAPS high-pass (v0.4.1): a TPT 1-pole highpass applied to the taps voice
+     * BEFORE the COLOR lowpass (hp = x - lp). hpf_g from grv_hpf cutoff. */
+    float hpf_g;                  /* TPT coefficient for the taps HPF */
+    float hpf_lp_l_s, hpf_lp_r_s; /* HPF's internal lowpass state (hp = x - lp) */
     bool  mono;                   /* MONO force-sum toggle (GRV-05) */
 
     /* --- Redesign (Phase 1: feedback-free FIR rumble) --------------------
@@ -108,10 +112,16 @@ typedef struct groove_state {
     int   gen_seqlen;             /* SEQ LEN 1..64 (16th steps) */
     int   gen_wave;               /* legacy discrete WAVE index (kept for compat) */
     float gen_wave_pos;           /* WAVE scan 0..1 (continuous morph across tables + fold) */
-    int   gen_retrig;             /* RETRIG: 0 none,1/2/4/8 bars,5 on-note */
+    int   gen_retrig;             /* RESET: 0 none, 1..8 = that many bars, 9 on-note */
     float gen_density;            /* DENSITY 0..1 (Euclidean gate) */
     float gen_rotate;             /* ROTATE -1..1 (bidirectional step rotate, ±len) */
-    float gen_decay;              /* DECAY 0..1 — gen note length (replaces SWING) */
+    float gen_decay;              /* DECAY 0..1 — gen amp D/R time (plucky env) */
+    /* v0.4.1 batch controls */
+    int   gen_notelen;            /* NOTE LEN enum index (step division) */
+    float gen_notelen_mult;       /* precomputed step duration multiplier in 16ths */
+    float gen_swing;              /* swing fraction -0.08..+0.08 (0 = none) */
+    float gen_gentaps;            /* GEN>TAPS send amount 0..1 */
+    float gen_sixteenth_acc;      /* accumulated 16th-notes since last bar reset */
     float gen_fold;               /* WAVEFOLDER 0..1 */
     float gen_base_hz;            /* base pitch (Hz) for degree 0 */
     unsigned long long gen_rng;   /* xorshift64 PRNG (seeded from SEED) */
@@ -122,8 +132,10 @@ typedef struct groove_state {
     int   gen_step_ctr;           /* samples remaining in the current step */
     float gen_osc_phase;          /* oscillator phase [0,1) */
     float gen_sub_phase;          /* sub-octave phase [0,1) — Finding 3 built-in sub */
-    float gen_env;                /* per-note amplitude env (decaying) */
-    float gen_env_coef;           /* env decay coefficient */
+    float gen_env;                /* per-note amp PLUCK component (fast, 1->0) */
+    float gen_env_coef;           /* pluck decay coefficient (from DECAY) */
+    float gen_sus;                /* per-note 50% BODY component (slower release, ->0) */
+    float gen_sus_coef;           /* body release coefficient (= 2.5x pluck tau) */
     /* GEN filter envelope + 3rd-pole resonant cascade state (Finding 4).
      * The first two poles reuse color_lp_*_s + color_lp2_*_s; this adds the 3rd
      * pole (→ 18 dB/oct) plus a per-note filter env that opens the cutoff ~20% at
@@ -146,8 +158,8 @@ enum { GROOVE_TYPE_TAPS = 0, GROOVE_TYPE_GEN = 1 };
 enum { GRV_FILT_LP = 0, GRV_FILT_HP = 1, GRV_FILT_OFF = 2 };
 /* FX routing block IDs (Phase 1 FX-ROUTE). BLK_RUMBLE marks the source slot. */
 enum { BLK_RUMBLE = 0, BLK_DRIVE = 1, BLK_REVERB = 2 };
-enum { GRV_RETRIG_NONE = 0, GRV_RETRIG_1BAR, GRV_RETRIG_2BAR,
-       GRV_RETRIG_4BAR, GRV_RETRIG_8BAR, GRV_RETRIG_NOTE };
+/* RESET (v0.4.1, item 4): 0 = None, 1..8 = that many bars (literal index), 9 = On Note. */
+enum { GRV_RETRIG_NONE = 0, GRV_RETRIG_ONNOTE = 9 };
 
 /* Rebuild the GEN sequence from SEED/SEQ LEN/DENSITY/ROTATE (control-rate). */
 void groove_gen_rebuild(groove_state_t *g);

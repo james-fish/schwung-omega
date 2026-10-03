@@ -78,12 +78,12 @@ const float g_global_defaults[GKI_COUNT] = {
     [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
     [GKI_GRV_ROUTE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
-    [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=1.0f, [GKI_GRV_GDENSITY]=0.6f,
+    [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=16.0f, [GKI_GRV_GDENSITY]=0.6f,  /* seqlen RAW int (1..64) */
     [GKI_GRV_GROTATE]=0.5f, [GKI_GRV_GSWING]=0.5f, [GKI_GRV_GWAVE]=0.0f, [GKI_GRV_GFOLD]=0.0f,  /* GSWING slot = DECAY (medium) */
     [GKI_GRV_GRETRIG]=0.0f,
     /* E3/P1: root — quantized A1 (≈0.542) baseline; unquantized maps log 20..200 Hz,
      * default 0.352 → ~45 Hz sub-bass (Phase 1 GEN-PITCH). Range 12 degrees (0.5). */
-    [GKI_GRV_GROOT]=0.18f, [GKI_GRV_GRANGE]=0.5f,   /* unified log root ≈ 45 Hz default */
+    [GKI_GRV_GROOT]=45.0f, [GKI_GRV_GRANGE]=0.5f,   /* ROOT is RAW Hz (20..520); 45 Hz default */
     /* Performer defaults (Phase D): duck off, DJ filter neutral, clip on. */
     [GKI_DUCK]=0.5f, [GKI_DUCK_REL]=0.4f, [GKI_DUCK_SMT]=0.3f, [GKI_DUCK_BS]=0.5f,
     [GKI_DJ_FILT]=0.5f, [GKI_DJ_RESO]=0.0f, [GKI_CLIP]=0.0f,
@@ -91,6 +91,9 @@ const float g_global_defaults[GKI_COUNT] = {
      * root default MIDI 30 (F#0, ~46 Hz sub, matches the Hz root default); GEN
      * filter default ~0.5 (mid-open). */
     [GKI_GRV_GENVOL]=0.0f, [GKI_GRV_GROOTNOTE]=30.0f, [GKI_GRV_GENFILT]=0.5f,
+    /* v0.4.1 batch: HPF open (off), NOTE LEN = 1/16 (raw idx 5), SWING center (0.5 = none),
+     * GEN>TAPS send off. */
+    [GKI_GRV_HPF]=0.0f, [GKI_GRV_GNOTELEN]=5.0f, [GKI_GRV_GSWINGAMT]=0.5f, [GKI_GRV_GENTAPS]=0.0f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -148,6 +151,8 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_GRV_ROUTE]=PK_GRV_ROUTE,
     [GKI_GRV_GENVOL]=PK_GRV_GENVOL, [GKI_GRV_GROOTNOTE]=PK_GRV_GROOTNOTE,
     [GKI_GRV_GENFILT]=PK_GRV_GENFILT,
+    [GKI_GRV_HPF]=PK_GRV_HPF, [GKI_GRV_GNOTELEN]=PK_GRV_GNOTELEN,
+    [GKI_GRV_GSWINGAMT]=PK_GRV_GSWINGAMT, [GKI_GRV_GENTAPS]=PK_GRV_GENTAPS,
 };
 
 int pk_kick_index(const char *key) {

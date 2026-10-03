@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 41   /* +1 FX route (P1) +3 v0.4 dual-voice (genvol/grootnote/genfilt) */
+#define OMEGA_GKI_COUNT 45   /* +1 FX route (P1) +3 v0.4 dual-voice +4 v0.4.1 batch (hpf/gnotelen/gswingamt/gentaps) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -305,6 +305,11 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_GRV_GENVOL    "grv_genvol"    /* GEN voice volume (independent of TAPS grv_vol) */
 #define PK_GRV_GROOTNOTE "grv_grootnote" /* GEN root as a note index (Scale mode), MIDI 0..84 */
 #define PK_GRV_GENFILT   "grv_genfilt"   /* GEN filter cutoff (own state; TAPS uses grv_color) */
+/* v0.4.1 batch additions */
+#define PK_GRV_HPF       "grv_hpf"        /* TAPS high-pass (before the LPF) */
+#define PK_GRV_GNOTELEN  "grv_gnotelen"   /* GEN step note length enum (1/4d..1/32) */
+#define PK_GRV_GSWINGAMT "grv_gswingamt"  /* GEN swing, bipolar 0..1 (0.5 = none) */
+#define PK_GRV_GENTAPS   "grv_gentaps"    /* GEN>TAPS send (feeds the taps delay ring) */
 
 /* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
 /* Each key is unique across all models (dispatch is a flat strcmp chain).

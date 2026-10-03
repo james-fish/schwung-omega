@@ -141,8 +141,8 @@ void dig_set_param(bohm_instance_t *inst, const char *key, const char *val) {
          * a crush nudge) is needed so the knob measurably moves the spectrum. */
         d->tne = v;
     } else if (strcmp(key, PK_COLOR) == 0) {
-        /* DIG stays crisp: COLOR opens a wide LP (400 Hz .. 18 kHz). */
-        float fc = 400.0f + v * (18000.0f - 400.0f);
+        /* DIG stays crisp: COLOR opens a wide LP (~50 Hz .. 18 kHz). */
+        float fc = 50.0f + v * (18000.0f - 50.0f);
         d->color_g = tpt_g_from_hz(fc);
     } else if (strcmp(key, PK_DIG_WAVEIDX) == 0) {
         /* WAVE IDX: enum 0=Saw,1=Square,2=Digital → wave indices 2/3/4. */

@@ -92,8 +92,11 @@ static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) 
         /* Locale-independent integer literal parse (no atof/strtol). */
         float mnv = (float)ui_parse_int_literal(mn);
         float mxv = (float)ui_parse_int_literal(mx);
-        float norm = ui_default_for(p->key);
-        float di   = mnv + norm * (mxv - mnv);
+        /* v0.4.1: int params store the RAW integer in the cache (the host sends raw
+         * integers for int params, like grv_grootnote). Emit it directly, clamped —
+         * NOT the old `min + norm*(max-min)` map that assumed a normalized cache. */
+        float di = ui_default_for(p->key);
+        if (di < mnv) di = mnv; if (di > mxv) di = mxv;
         pk_format_value(di, 0, defbuf, (int)sizeof defbuf);
         snprintf(obj, sizeof obj,
             "{\"key\":\"%s\",\"name\":\"%s\",\"short_name\":\"%s\","
@@ -159,10 +162,15 @@ static const char OPT_SCALE[]   = "[\"Unquantized\",\"Chromatic\",\"Major\",\"Mi
     "\"Penta\",\"Dorian\",\"Phrygian\",\"Mixolydian\","
     "\"Hirajoshi\",\"Hungarian\",\"WholeTone\",\"Blues\",\"Diminished\"]";
 static const char OPT_GWAVE[]   = "[\"Sine\",\"Tri\",\"Saw\",\"Square\",\"Digital\",\"Analog\"]";
-static const char OPT_RETRIG[]  = "[\"None\",\"1 Bar\",\"2 Bar\",\"4 Bar\",\"8 Bar\",\"On Note\"]";
+/* RESET (v0.4.1, item 4): None, 1..8 Bar, On Note (indices 0..9). */
+static const char OPT_RESET[]   = "[\"None\",\"1 Bar\",\"2 Bar\",\"3 Bar\",\"4 Bar\","
+    "\"5 Bar\",\"6 Bar\",\"7 Bar\",\"8 Bar\",\"On Note\"]";
+/* NOTE LEN (v0.4.1, item 4/5): GEN step division. Indices map to multipliers in
+ * groove.c gen_notelen_to_mult: {6,4,3,2,1.5,1,0.5} sixteenths. */
+static const char OPT_NOTELEN[] = "[\"1/4d\",\"1/4\",\"1/8d\",\"1/8\",\"1/16d\",\"1/16\",\"1/32\"]";
 static const char OPT_ONOFF[]   = "[\"Off\",\"On\"]";
-/* Phase 1 FX-ROUTE: groove FX order (RUMBLE/DRIVE/REVERB). */
-static const char OPT_FXROUTE[] = "[\"Rmbl>Drv>Rev\",\"Rmbl>Rev>Drv\",\"Rev>Rmbl>Drv\",\"Drv>Rmbl>Rev\"]";
+/* FX-ROUTE: groove FX order (GROOVE/DRIVE/REVERB) — item 6: Rmbl renamed Grv. */
+static const char OPT_FXROUTE[] = "[\"Grv>Drv>Rev\",\"Grv>Rev>Drv\",\"Rev>Grv>Drv\",\"Drv>Grv>Rev\"]";
 
 /* Performer chain page (Phase D, PERF-05): duck -> DJ filter -> clip. DJ FILT is
  * a bidirectional centered sweep (0.5 = neutral). */
@@ -222,9 +230,13 @@ static const char KN_KICK2[] =
  * MONO moved to Groove Page 2 to keep Page 1 at 8 encoders. */
 /* v0.4: TYPE selector removed (TAPS + GEN run together). TAPS page = its own VOL
  * (default 0) + the FIR rumble controls. */
+/* v0.4.1 (items 12/13): top row TVOL / DECAY / HPF / LPF, bottom row TAP1..4 (so the
+ * taps line up on the lower encoders). VOL shows "TAP VOL" up top, short "TVOL". The
+ * new HPF sits before the LPF in the signal chain and the UI. */
 static const uiparam_t P_GROOVE1[] = {
-    { PK_GRV_VOL,    "VOL",    "VOL",  UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_LENGTH, "LENGTH", "LEN",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_VOL,    "TAP VOL","TVOL", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_LENGTH, "DECAY",  "DECAY",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_HPF,    "HPF",    "HPF",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_COLOR,  "LPF",    "LPF",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP1,   "TAP1",   "TAP1", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_TAP2,   "TAP2",   "TAP2", UP_FLOAT, "%", "0.01", NULL },
@@ -232,7 +244,7 @@ static const uiparam_t P_GROOVE1[] = {
     { PK_GRV_TAP4,   "TAP4",   "TAP4", UP_FLOAT, "%", "0.01", NULL },
 };
 static const char KN_GROOVE1[] =
-    "[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_COLOR
+    "[\"" PK_GRV_VOL "\",\"" PK_GRV_LENGTH "\",\"" PK_GRV_HPF "\",\"" PK_GRV_COLOR
     "\",\"" PK_GRV_TAP1 "\",\"" PK_GRV_TAP2 "\",\"" PK_GRV_TAP3 "\",\"" PK_GRV_TAP4 "\"]";
 
 /* P_GROOVE_FX: shared "Groove Effects" page — identical layout for TAPS and GEN
@@ -348,13 +360,18 @@ static void ui_emit_root_note_options(char *buf, int buf_len, int *off) {
  * dynamic descriptor swap, so the page never gets corrupted. */
 static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
                                 const bohm_instance_t *inst) {
+    /* v0.4.1 layout — row1: GEN VOL, SCALE, ROOT, RANGE; row2: RESET, NOTE LEN,
+     * SWING, GEN>TAPS. ROOT is a SINGLE merged Hz control (ROOT NOTE removed). */
     static const uiparam_t p_head[] = {
         { PK_GRV_GENVOL, "GEN VOL","GVOL",  UP_FLOAT, "%","0.01", NULL,      NULL, NULL },
         { PK_GRV_GSCALE, "SCALE",  "SCALE", UP_ENUM,  "", "0",    OPT_SCALE, NULL, NULL },
     };
     static const uiparam_t p_tail[] = {
-        { PK_GRV_GRANGE,  "RANGE",  "RANGE",  UP_FLOAT, "", "0.04", NULL, NULL, NULL },
-        { PK_GRV_GRETRIG, "RETRIG", "RETRIG", UP_ENUM,  "", "0",    OPT_RETRIG, NULL, NULL },
+        { PK_GRV_GRANGE,   "RANGE",   "RANGE", UP_FLOAT, "",  "0.04", NULL,        NULL, NULL },
+        { PK_GRV_GRETRIG,  "RESET",   "RESET", UP_ENUM,  "",  "0",    OPT_RESET,   NULL, NULL },
+        { PK_GRV_GNOTELEN, "NOTE LEN","NLEN",  UP_ENUM,  "",  "0",    OPT_NOTELEN, NULL, NULL },
+        { PK_GRV_GSWINGAMT,"SWING",   "SWING", UP_FLOAT, "%", "0.01", NULL,        NULL, NULL },
+        { PK_GRV_GENTAPS,  "GEN>TAPS","G>TAP", UP_FLOAT, "%", "0.01", NULL,        NULL, NULL },
     };
     (void)inst;
     ui_puts(buf, buf_len, off, "\"gengroove1\":{\"name\":\"Groove Gen\",\"params\":[");
@@ -362,24 +379,19 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         if (i) ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_head[i]);
     }
-    /* ROOT (Hz float) — used in Unquantized mode. */
+    /* ROOT (Hz float) — single merged control, used in both scale + unquantized modes. */
     ui_puts(buf, buf_len, off,
         ",{\"key\":\"" PK_GRV_GROOT "\",\"name\":\"ROOT\",\"short_name\":\"ROOT\","
         "\"type\":\"float\",\"min\":20,\"max\":520,\"default\":45,\"step\":1,\"unit\":\"Hz\"}");
-    /* ROOT NOTE (note-name enum) — used in a scale. */
-    ui_puts(buf, buf_len, off,
-        ",{\"key\":\"" PK_GRV_GROOTNOTE "\",\"name\":\"ROOT NOTE\",\"short_name\":\"ROOTN\","
-        "\"type\":\"enum\",\"options\":");
-    ui_emit_root_note_options(buf, buf_len, off);
-    ui_puts(buf, buf_len, off, ",\"default\":30}");
     for (int i = 0; i < (int)(sizeof p_tail / sizeof p_tail[0]); i++) {
         ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_tail[i]);
     }
     ui_puts(buf, buf_len, off,
         "],\"knobs\":[\""
-        PK_GRV_GENVOL "\",\"" PK_GRV_GSCALE "\",\"" PK_GRV_GROOT "\",\""
-        PK_GRV_GROOTNOTE "\",\"" PK_GRV_GRANGE "\",\"" PK_GRV_GRETRIG "\"]}");
+        PK_GRV_GENVOL "\",\"" PK_GRV_GSCALE "\",\"" PK_GRV_GROOT "\",\"" PK_GRV_GRANGE
+        "\",\"" PK_GRV_GRETRIG "\",\"" PK_GRV_GNOTELEN "\",\"" PK_GRV_GSWINGAMT
+        "\",\"" PK_GRV_GENTAPS "\"]}");
 }
 
 /* Append a model's p2_slot_desc interior (bare comma-separated FLAT param

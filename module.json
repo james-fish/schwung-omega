@@ -2,7 +2,7 @@
   "id": "omega",
   "name": "Omega",
   "abbrev": "OMGA",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": "James Fish",
   "description": "Multi-engine techno kick synth + feedback-free groove rumble + generative bass/bleep sequencer + performer glue",
   "api_version": 2,
@@ -762,10 +762,10 @@
       "name": "ROUTE",
       "type": "enum",
       "options": [
-        "Rmbl>Drv>Rev",
-        "Rmbl>Rev>Drv",
-        "Rev>Rmbl>Drv",
-        "Drv>Rmbl>Rev"
+        "Grv>Drv>Rev",
+        "Grv>Rev>Drv",
+        "Rev>Grv>Drv",
+        "Drv>Grv>Rev"
       ],
       "default": 0
     },
@@ -861,13 +861,17 @@
     },
     {
       "key": "grv_gretrig",
-      "name": "RETRIG",
+      "name": "RESET",
       "type": "enum",
       "options": [
         "None",
         "1 Bar",
         "2 Bar",
+        "3 Bar",
         "4 Bar",
+        "5 Bar",
+        "6 Bar",
+        "7 Bar",
         "8 Bar",
         "On Note"
       ],
@@ -921,6 +925,51 @@
       "max": 1,
       "default": 0.5,
       "step": 0.04,
+      "unit": "%"
+    },
+    {
+      "key": "grv_hpf",
+      "name": "TAP HPF",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%"
+    },
+    {
+      "key": "grv_gnotelen",
+      "name": "NOTE LEN",
+      "type": "enum",
+      "options": [
+        "1/4d",
+        "1/4",
+        "1/8d",
+        "1/8",
+        "1/16d",
+        "1/16",
+        "1/32"
+      ],
+      "default": 5
+    },
+    {
+      "key": "grv_gswingamt",
+      "name": "SWING",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "step": 0.01,
+      "unit": "%"
+    },
+    {
+      "key": "grv_gentaps",
+      "name": "GEN>TAPS",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
       "unit": "%"
     },
     {
