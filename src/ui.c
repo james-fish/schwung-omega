@@ -234,7 +234,7 @@ static const char KN_KICK2[] =
  * taps line up on the lower encoders). VOL shows "TAP VOL" up top, short "TVOL". The
  * new HPF sits before the LPF in the signal chain and the UI. */
 static const uiparam_t P_GROOVE1[] = {
-    { PK_GRV_VOL,    "TAP VOL","TVOL", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_VOL,    "Taps Vol","TVOL",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LENGTH, "DECAY",  "DECAY",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_HPF,    "HPF",    "HPF",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_COLOR,  "LPF",    "LPF",  UP_FLOAT, "%", "0.01", NULL },
@@ -257,20 +257,22 @@ static const char KN_GROOVE1[] =
  * dry/wet MIX; ROUTE picks the {rumble,drive,reverb} order; RV TYPE is a real
  * Room/Hall/Plate flavor (same cost). GEN's LP filter lives on its Gen Seq page
  * (next to WAVE/FOLD), TAPS's on its Page-1 LPF — so neither needs a FILTER here. */
+/* v0.4.2: ROUTE moved to slot 4 (top row) so all four reverb controls (REVERB,
+ * RV DECAY, RV TONE, RV TYPE) sit together on the bottom row. */
 static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_DRIVE,   "DRIVE",   "DRIVE", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOSPD,  "LFO SPD", "LFOSPD",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_LFOAMT,  "LFO AMT", "LFOAMT",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
     { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_ROUTE,   "ROUTE",   "ROUTE", UP_ENUM,  "",  "0",    OPT_FXROUTE },
     { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
 };
 static const char KN_GROOVE_FX[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
-    "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY "\",\"" PK_GRV_RVTONE
-    "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_RVTYPE "\"]";
+    "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY
+    "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
 
 /* GEN groove page 2: sequence controls (SCALE/ROOT/RANGE/RETRIG moved to groove1). */
 /* Gen Seq (8 knobs). iter-2: SEQ LEN shows 1–64; ROTATE is bidirectional −32..+32;
@@ -363,7 +365,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
     /* v0.4.1 layout — row1: GEN VOL, SCALE, ROOT, RANGE; row2: RESET, NOTE LEN,
      * SWING, GEN>TAPS. ROOT is a SINGLE merged Hz control (ROOT NOTE removed). */
     static const uiparam_t p_head[] = {
-        { PK_GRV_GENVOL, "GEN VOL","GVOL",  UP_FLOAT, "%","0.01", NULL,      NULL, NULL },
+        { PK_GRV_GENVOL, "Gen Vol","GVOL",  UP_FLOAT, "%","0.01", NULL,      NULL, NULL },
         { PK_GRV_GSCALE, "SCALE",  "SCALE", UP_ENUM,  "", "0",    OPT_SCALE, NULL, NULL },
     };
     static const uiparam_t p_tail[] = {

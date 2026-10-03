@@ -53,6 +53,12 @@ static inline float clampf(float x, float lo, float hi) {
 #define NTAPS 4
 #endif
 
+/* Reverb pre-delay (v0.4.2): fixed 15 ms "distance" before the reverb. Buffer is a
+ * power of two for a masked wrap. 15 ms @ 44.1k = 662 frames. */
+#define RV_PRE_LEN       1024u
+#define RV_PRE_MASK      (RV_PRE_LEN - 1u)
+#define RV_PREDELAY_SAMP 662u
+
 /* ---- Mono Schroeder reverb helper (vhr §B.2, ONE instance, pre OR post) ----
  * Runs the existing 2-comb + 1-allpass Schroeder on a mono input and returns
  * the mono wet. Called at the PRE point (on the kick) OR the POST point (on the
@@ -116,8 +122,13 @@ static inline void gen_set_decay(groove_state_t *g, float v) {
      * stops. At the default DECAY this is ~80 ms; raising DECAY lengthens both. */
     float body_tau_s     = 8.0f * tau_s;
     g->gen_sus_coef      = expf(-1.0f / (body_tau_s * OMEGA_SR));
-    float filt_tau_s     = 0.65f * tau_s;        /* filter env = 65% of amp env */
-    g->gen_filt_env_coef = expf(-1.0f / (filt_tau_s * OMEGA_SR));
+    /* Filter env MIRRORS the amp env (same pluck + 50% body shape) but at 65% of
+     * each time constant -> the filter always closes a bit ahead of the amp (plucky
+     * filter action). Attack is instant for both (envs set to 1.0 on the gate). */
+    float filt_tau_s      = 0.65f * tau_s;
+    g->gen_filt_env_coef  = expf(-1.0f / (filt_tau_s * OMEGA_SR));
+    float filt_body_tau_s = 0.65f * body_tau_s;
+    g->gen_filt_sus_coef  = expf(-1.0f / (filt_body_tau_s * OMEGA_SR));
 }
 
 /* ---- FIR tap-weight precompute (control-rate, Phase 1 §Rumble Core) ------- */
@@ -181,7 +192,19 @@ static inline void groove_drive_block(groove_state_t *g, float *l, float *r) {
  * the delay ring (that was the Phase-1 runaway bug); mono-in because the rumble
  * is a near-mono sub. rv_fb (comb feedback) is clamped <1 in set_param. */
 static inline void groove_reverb_block(groove_state_t *g, float *l, float *r) {
-    float wet = groove_reverb_mono(g, 0.5f * (*l + *r));
+    /* Condition the reverb input (v0.4.2): 100 Hz high-pass (hp = x - lp) then a
+     * fixed 15 ms pre-delay ("distance"), so the tail sits further back and the sub
+     * / GEN body doesn't muddy it. Coef is control-rate; this is a few multiplies +
+     * a masked ring read per sample. */
+    float in = 0.5f * (*l + *r);
+    tpt1_t hp = { g->rv_hp_lp };
+    float lo = tpt1_lp(&hp, in, g->rv_hp_g);
+    g->rv_hp_lp = hp.s;
+    float hpin = in - lo;                                   /* 100 Hz high-passed */
+    g->rv_predelay[g->rv_pre_i & RV_PRE_MASK] = hpin;
+    float dly = g->rv_predelay[(g->rv_pre_i - RV_PREDELAY_SAMP) & RV_PRE_MASK];
+    g->rv_pre_i++;
+    float wet = groove_reverb_mono(g, dly);
     *l += g->rv_mix * (wet - *l);
     *r += g->rv_mix * (wet - *r);
 }
@@ -232,6 +255,8 @@ void groove_gen_restart(groove_state_t *g) {
     g->gen_sixteenth_acc = 0.0f;   /* v0.4.1: reset the bar accumulator too */
     g->gen_env = 0.0f;
     g->gen_sus = 0.0f;
+    g->gen_filt_env = 0.0f;
+    g->gen_filt_sus = 0.0f;
 }
 
 /* ---- groove_init: seed a valid tap interval + musical Page-1 middles ----- */
@@ -298,6 +323,10 @@ void groove_init(groove_state_t *g) {
     g->rv_c1_len   = 1557;
     g->rv_c2_len   = 1617;
     g->rv_ap_len   = 556;
+    /* Reverb input conditioning (v0.4.2): 100 Hz HPF + 15 ms pre-delay. */
+    g->rv_hp_g     = tpt_g_from_hz(100.0f);
+    g->rv_hp_lp    = 0.0f;
+    g->rv_pre_i    = 0u;
 
     /* GEN groove voice defaults (C1-03 / E3). */
     g->gen_unquantized = false;
@@ -423,9 +452,10 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
                         ? (int)g->gen_seq[step]
                         : scale_quantize(g->gen_scale, g->gen_seq[step]);
                     g->gen_freq = g->gen_base_hz * powf(2.0f, (float)semi / 12.0f);
-                    g->gen_env = 1.0f;          /* pluck top */
-                    g->gen_sus = GEN_SUSTAIN;   /* 50% body */
-                    g->gen_filt_env = 1.0f;
+                    g->gen_env = 1.0f;          /* amp pluck top */
+                    g->gen_sus = GEN_SUSTAIN;   /* amp 50% body */
+                    g->gen_filt_env = 1.0f;     /* filter pluck top */
+                    g->gen_filt_sus = GEN_SUSTAIN;  /* filter 50% body */
                     g->gen_osc_phase = 0.0f;
                     g->gen_sub_phase = 0.0f;
                 }
@@ -479,18 +509,21 @@ void groove_tick(groove_state_t *g, float kick_l, float kick_r,
          * silent once the sequencer stops retriggering (GRVX-05). */
         float amp = g->gen_env * (1.0f - GEN_SUSTAIN) + g->gen_sus;
         float s = osc * amp;
+        /* Filter env mirrors the amp env (pluck + 50% body), 65% timing. */
+        float filt_env = g->gen_filt_env * (1.0f - GEN_SUSTAIN) + g->gen_filt_sus;
         g->gen_env *= g->gen_env_coef;
         g->gen_sus *= g->gen_sus_coef;
-        g->gen_filt_env *= g->gen_filt_env_coef;   /* filter env decays fully to 0 */
+        g->gen_filt_env *= g->gen_filt_env_coef;
+        g->gen_filt_sus *= g->gen_filt_sus_coef;
         float inc = g->gen_freq / OMEGA_SR;
         g->gen_osc_phase += inc; if (g->gen_osc_phase >= 1.0f) g->gen_osc_phase -= 1.0f;
         g->gen_sub_phase += 0.5f * inc; if (g->gen_sub_phase >= 1.0f) g->gen_sub_phase -= 1.0f;
 
-        /* GEN 3-pole (18 dB/oct) RESONANT filter + per-note env (own state/coeff).
-         * v0.4.1 item 9: env depth +10% (3.0->3.3), resonance +10% (0.45->0.495). */
-        float cg_eff = g->gen_color_g * (1.0f + 3.3f * g->gen_filt_env);
+        /* GEN 3-pole (18 dB/oct) RESONANT filter, driven by the (positive) filter env.
+         * v0.4.2: depth +10% again (3.3->3.63), resonance +25% (0.495->0.619). */
+        float cg_eff = g->gen_color_g * (1.0f + 3.63f * filt_env);
         if (cg_eff < 1e-4f) cg_eff = 1e-4f; else if (cg_eff > 0.99f) cg_eff = 0.99f;
-        const float kres = 0.495f;
+        const float kres = 0.619f;
         float in = clampf(s - kres * g->gen_filt_lp3_l_s, -2.0f, 2.0f);
         tpt1_t l1 = { g->gen_filt_lp1_l_s }, l2 = { g->gen_filt_lp2_l_s }, l3 = { g->gen_filt_lp3_l_s };
         float f1 = tpt1_lp(&l1, in, cg_eff);

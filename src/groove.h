@@ -92,6 +92,13 @@ typedef struct groove_state {
     int   rv_type;                /* 0 Room / 1 Hall / 2 Plate — scales comb lengths */
     int   rv_c1_len, rv_c2_len, rv_ap_len; /* effective comb/allpass lengths (per type) */
     float rv_mix;                 /* plain dry/wet reverb MIX 0..1 (Phase 1; replaces PRE/POST) */
+    /* Reverb input conditioning (v0.4.2): a fixed 15 ms pre-delay ("distance") +
+     * 100 Hz high-pass BEFORE the reverb, so the tail sits back and the sub/gen
+     * body doesn't muddy it. Buffer sized to a power of two for a masked wrap. */
+    float rv_predelay[1024];
+    unsigned rv_pre_i;            /* pre-delay write index (masked) */
+    float rv_hp_lp;               /* 100 Hz HPF state (hp = x - lp) */
+    float rv_hp_g;                /* 100 Hz HPF TPT coefficient */
     /* FX routing order (Phase 1 FX-ROUTE): permutation of {RUMBLE,DRIVE,REVERB}
      * applied per-sample; set at control rate from PK_GRV_ROUTE. */
     unsigned char route_order[3];
@@ -140,8 +147,10 @@ typedef struct groove_state {
      * The first two poles reuse color_lp_*_s + color_lp2_*_s; this adds the 3rd
      * pole (→ 18 dB/oct) plus a per-note filter env that opens the cutoff ~20% at
      * onset and decays at 0.65× the amplitude tau (closes before the note ends). */
-    float gen_filt_env;           /* per-note filter env 0..1 */
-    float gen_filt_env_coef;      /* filter env decay coef (= 0.65*amp tau) */
+    float gen_filt_env;           /* filter PLUCK component (mirrors amp, 65% tau) */
+    float gen_filt_env_coef;      /* filter pluck coef (= 0.65 * amp pluck tau) */
+    float gen_filt_sus;           /* filter 50% BODY component (mirrors amp body) */
+    float gen_filt_sus_coef;      /* filter body coef (= 0.65 * amp body tau) */
     /* v0.4: GEN runs simultaneously with TAPS, so it needs its OWN filter coeff +
      * state (TAPS keeps color_g / color_lp*). gen_color_g from PK_GRV_GENFILT. */
     float gen_color_g;            /* GEN filter TPT coefficient (own cutoff) */

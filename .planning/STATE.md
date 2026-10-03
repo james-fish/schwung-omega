@@ -34,7 +34,7 @@ progress:
 Phase: E1
 Plan: Not started
 **Status:** Milestone complete
-**Last activity:** 2026-10-04 - v0.4.1 GEN/groove/kick-filter batch (quick 261003-wt3): SEQ LEN raw-int fix, ROOT merged to single Hz control, RESET (1–8 bar/on-note) with looping, NOTE LEN, SWING, GEN>TAPS send, pluckier GEN env, TAPS HPF + page relayout (TVOL/DECAY/HPF/LPF), kick LPF floor →50 Hz. Native tests GREEN; on-device verify pending
+**Last activity:** 2026-10-04 - v0.4.2 follow-up (quick 261003-wt3): Groove FX ROUTE→slot 4 (reverb controls share the bottom row); Taps/Gen Vol toast names fixed via module.json `name` (host on-turn toast reads module.json, NOT ui_hierarchy); GEN filter env now MIRRORS the amp pluck+50%-body shape at 65% timing, depth +10% (3.63), resonance +25% (0.619); reverb input gets a fixed 15 ms pre-delay + 100 Hz HPF (tames GEN reverb muddiness). Native tests GREEN; deployed on-device. (v0.4.1 batch shipped prior)
 
 ```
 v1.0 shipped: A (code+CI, on-device pending), B (10 models coded), C (groove+GEN coded)
