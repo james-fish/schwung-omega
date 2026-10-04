@@ -98,6 +98,40 @@ CI (GitHub Actions) runs `make test`, the aarch64 cross-build, and the glibc gat
 
 ---
 
+## Playing Omega's kicks in DR32
+
+[DR32](https://github.com/legsmechanical/schwung-dr32) is a 32-pad drum rack for Schwung in which
+any pad can play a synth engine instead of a sample. From DR32 0.5.0 it loads engines that other
+modules bring, and Omega can offer its kick models to it.
+
+```bash
+# Build the DR32 engine plugin (a second shared object, beside dsp.so)
+docker run --rm -v "$PWD:/workspace" -w /workspace \
+  ghcr.io/charlesvestal/schwung-builder:latest make dr32_engine.so
+
+# Put it in Omega's module folder on the Move, then restart the Move
+scp build/dr32_engine.so ableton@move.local:/data/UserData/schwung/modules/sound_generators/omega/
+```
+
+DR32's engine picker then has an **Omega** section with eight kicks: FM2, FM4, WTR, PHY, HRD, DIG,
+TRS and ANA. Each pad gets that model's own knobs on three pages: Kick, the model's page, and FX
+(type, amount, tone).
+
+- **What carries over:** one kick model per pad, with its Page 1 and Page 2 controls and the
+  post-kick FX. The model code is the same code `dsp.so` runs.
+- **What does not:** the groove rumble, GEN, duck, DJ filter and comp/drive are Omega's master
+  section and stay in Omega. DR32 has its own mix, sends and choke groups for each pad. USR is left
+  out because it needs the user's files.
+- **Pitch:** DR32's pad transpose and detune move the kick's pitch, within the models' 30–200 Hz
+  range.
+- **Names are permanent:** a saved DR32 kit stores a pad by the keys and model names in
+  `src/dr32_engine.c`, so renaming one there breaks kits that use it.
+
+Omega itself is unchanged by this and does not need DR32. `make test` covers the adapter
+(`tests/test_dr32_engine.c`).
+
+---
+
 ## Constraints
 
 - C11, no C++. The audio thread does zero allocation, zero file I/O, and zero per-sample transcendentals.

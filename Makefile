@@ -38,7 +38,9 @@ endif
 LDLIBS = -lm
 
 # --- Sources -----------------------------------------------------------------
-DSP_SRCS  = $(wildcard src/*.c) $(wildcard src/models/*.c)
+# src/dr32_engine.c is the DR32 engine plugin, a shared object of its own
+# (dr32_engine.so below): it is NOT part of dsp.so.
+DSP_SRCS  = $(filter-out src/dr32_engine.c,$(wildcard src/*.c)) $(wildcard src/models/*.c)
 # Full-lifecycle harness (A-02 Task 3): drives move_plugin_init_v2 through the
 # real dsp.c / fm2.c / registry (create -> on_midi -> render x512 -> destroy).
 # Uses the src/models/*.c wildcard so each model TU (fm2 + every B-04..B-08
@@ -52,6 +54,14 @@ TEST_SRCS = tests/test_render.c tests/mock_host.c tests/wav.c tests/malloc_trap.
 # a stack instance (no dsp.c lifecycle) — non-silent, deterministic, params.
 FM2_TEST_SRCS = tests/test_fm2.c tests/malloc_trap.c \
                 src/models/fm2.c src/dsp_primitives.c
+# The DR32 engine plugin's sources: the adapter, the eight kick models it
+# offers and what they need. No groove, no host ABI.
+DR32_SRCS = src/dr32_engine.c src/dsp_primitives.c src/params.c \
+            $(addprefix src/models/,fm2.c fm4.c wtr.c phy.c hrd.c dig.c trs.c ana.c)
+
+# DR32 engine plugin test: drives src/dr32_engine.c as DR32 does (tables,
+# create, set, note_on, render) with the malloc trap armed on the audio path.
+DR32_TEST_SRCS = tests/test_dr32_engine.c tests/malloc_trap.c $(DR32_SRCS)
 # Post-kick FX chain unit test (B-02 Task 1, KICK-14): drives fx_config/
 # fx_process directly — bounded-at-max, transparent-at-zero, audible-at-max,
 # Crush statefulness, safe uninitialized crush_levels.
@@ -114,7 +124,7 @@ TAPS_TEST_SRCS = tests/test_taps_redesign.c tests/mock_host.c tests/wav.c \
                    tests/malloc_trap.c src/dsp.c src/groove.c src/ui.c src/params.c \
                    $(wildcard src/models/*.c) src/dsp_primitives.c
 
-.PHONY: dsp.so dist test test-fm2 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign fixtures wavetables clean deploy
+.PHONY: dsp.so dr32_engine.so dist test test-fm2 test-dr32 test-switch test-fx test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign fixtures wavetables clean deploy
 
 # --- Generated wavetables (B-02 Task 3, KICK-15) -----------------------------
 # src/wavetables.h defines g_wavetables[NUM_WAVES][BANDS][2049] in .rodata,
@@ -150,6 +160,16 @@ dsp.so: | src/wavetables.h
 	@mkdir -p build
 	$(XCC) $(AARCH_FLAGS) $(DSP_SRCS) -o build/dsp.so $(LDLIBS)
 
+# DR32 engine plugin: Omega's kick models as engines for the DR32 drum rack
+# (src/dr32_engine.c, against DR32's vendored src/dr32_engine_api.h). Its own
+# shared object beside dsp.so; DR32 finds it by name. Only the kick models and
+# what they need are linked: no groove, no host ABI. -Bsymbolic + hidden
+# visibility keep it from binding to dsp.so's copy of the same symbols when
+# both are loaded in one process.
+dr32_engine.so: | src/wavetables.h
+	@mkdir -p build
+	$(XCC) $(AARCH_FLAGS) -Wl,-Bsymbolic $(DR32_SRCS) -o build/dr32_engine.so $(LDLIBS)
+
 # dist: package the Schwung-library release asset `omega-module.tar.gz` (the
 # module folder — module.json + dsp.so) that release.json's download_url points
 # at. Run after `make dsp.so` (needs the aarch64 build). The tarball lays the
@@ -164,7 +184,7 @@ dist: dsp.so
 # test: native gate. Runs the FM2 unit test, the FX unit test, the switch
 # harness, the voicing battery, the distinctness metric, then the full offline
 # lifecycle harness.
-test: test-fm2 test-fx test-switch test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign | src/wavetables.h tests/fixtures/user_kick.wav
+test: test-fm2 test-fx test-dr32 test-switch test-params test-distinct test-gen test-groove test-readback test-samples test-perf test-taps-redesign | src/wavetables.h tests/fixtures/user_kick.wav
 	@mkdir -p build tests/output
 	$(CC) $(TEST_FLAGS) $(TEST_SRCS) -o build/test_render $(LDLIBS)
 	./build/test_render
@@ -180,6 +200,12 @@ test-fx: | src/wavetables.h
 	@mkdir -p build
 	$(CC) $(TEST_FLAGS) $(FX_TEST_SRCS) -o build/test_fx $(LDLIBS)
 	./build/test_fx
+
+# test-dr32: the DR32 engine plugin, as DR32 drives it (< 5 s).
+test-dr32: | src/wavetables.h
+	@mkdir -p build
+	$(CC) $(TEST_FLAGS) $(DR32_TEST_SRCS) -o build/test_dr32_engine $(LDLIBS)
+	./build/test_dr32_engine
 
 # test-switch: model-switch re-init hazard harness (KICK-13). Forward-
 # compatible — skips NULL registry slots.

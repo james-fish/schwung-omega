@@ -53,23 +53,25 @@ process (per the Schwung release workflow and existing module repos such as
 - ✅ **GitHub release `v0.2.0` published** — https://github.com/james-fish/schwung-omega/releases/tag/v0.2.0 (asset `omega-module.tar.gz`). `release.json`'s `download_url` resolves.
 - ✅ **Catalog PR opened** → https://github.com/charlesvestal/schwung/pull/585 (adds the entry to `module-catalog.json`). Awaiting maintainer review; may request `subcategory` / `min_host_version` / description tweaks.
 
-## DR32 engine selector — finding
+## DR32 engine selector
 
-Omega not appearing in DrumRack32's engine list is **expected and not fixable
-from Omega's `module.json`**. DR32 (`legsmechanical/schwung-dr32`) ships a
-**hardcoded** engine set (Sample, Simian, Urchin, 9W9, 6W6, 8W8, CW-78, ChowKick,
-FM) compiled into `dsp/engines/` with a generated `engine_ui.json`. The `ENGN`
-selector is populated from that compiled list, not by scanning modules or reading
-a capability flag. To make Omega selectable as a DR32 pad engine you would need
-to either:
+DR32 (`legsmechanical/schwung-dr32`) used to ship a **hardcoded** engine set,
+so Omega could not appear in its `ENGN` picker and nothing in Omega's
+`module.json` could change that. That was the finding recorded here.
 
-1. contribute Omega to `schwung-dr32` as a built-in engine (add it to
-   `dsp/engines/` + `engine_ui.json` and rebuild DR32), or
-2. wait for / request DR32 support for loading arbitrary `plugin_api_v2_t`
-   modules by id.
+**From DR32 0.5.0 that is no longer true.** DR32 loads engines other modules
+bring: it looks for a `dr32_engine.so` in its sibling module folders. Omega
+builds one (`make dr32_engine.so`, from `src/dr32_engine.c`), offering eight of
+its kick models as DR32 engines. See "Playing Omega's kicks in DR32" in the
+README. The contract is DR32's `dsp/dr32_engine_api.h` (vendored here as
+`src/dr32_engine_api.h`), documented in DR32's `docs/ENGINE_PLUGINS.md`.
 
-Omega already loads fine as a full module in **Schwung instrument slots** and
-**Movy tracks**, which host any `plugin_api_v2_t` module dynamically.
+⚠ The file is **built but not yet shipped**: `make dist`, CI and
+`scripts/deploy.sh` still handle `dsp.so` alone. To ship it, `dist` must copy
+`build/dr32_engine.so` into the tarball's `omega/` folder beside `dsp.so`.
+
+Omega also loads as a full module in **Schwung instrument slots** and **Movy
+tracks**, as before.
 
 ## Sources
 
