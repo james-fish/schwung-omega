@@ -4,12 +4,16 @@
 # Fails (nonzero) if:
 #   1. any referenced GLIBC_x.y symbol version is > 2.35, OR
 #   2. any libmvec vectorized-math symbol (_ZGV*) leaked in, OR
-#   3. move_plugin_init_v2 is not exactly the one default-visibility export.
+#   3. the expected export symbol is not exactly the one default-visibility export.
 #
-# Usage: ./scripts/glibc_gate.sh build/dsp.so
+# Usage: ./scripts/glibc_gate.sh <path-to-.so> [export-symbol]
+#   export-symbol defaults to move_plugin_init_v2 (dsp.so). Pass the DR32
+#   engine's export (dr32_engine_plugin) to gate build/dr32_engine.so, e.g.:
+#     ./scripts/glibc_gate.sh build/dr32_engine.so dr32_engine_plugin
 set -euo pipefail
 
-SO="${1:?usage: glibc_gate.sh <path-to-dsp.so>}"
+SO="${1:?usage: glibc_gate.sh <path-to-.so> [export-symbol]}"
+EXPECT="${2:-move_plugin_init_v2}"
 
 if [ ! -f "$SO" ]; then
     echo "glibc_gate: file not found: $SO" >&2
@@ -33,12 +37,12 @@ else
     echo "libmvec gate OK (no _ZGV/libmvec symbols)"
 fi
 
-# 3. Exactly one default-visibility export: move_plugin_init_v2.
-EXPORTS=$(objdump -T "$SO" | grep ' g ' | grep -c move_plugin_init_v2 || true)
+# 3. Exactly one default-visibility export: $EXPECT.
+EXPORTS=$(objdump -T "$SO" | grep ' g ' | grep -c "$EXPECT" || true)
 if [ "$EXPORTS" -eq 1 ]; then
-    echo "export gate OK (exactly one move_plugin_init_v2)"
+    echo "export gate OK (exactly one $EXPECT)"
 else
-    echo "export gate FAILED (found $EXPORTS move_plugin_init_v2 exports, expected 1)" >&2
+    echo "export gate FAILED (found $EXPORTS $EXPECT exports, expected 1)" >&2
     exit 1
 fi
 

@@ -31,11 +31,17 @@ jobs:
         run: make dsp.so
       - name: glibc / libmvec / export gate
         run: ./scripts/glibc_gate.sh build/dsp.so
-      - name: Upload deployable artifact (dsp.so + module.json)
+      - name: Cross-compile dr32_engine.so
+        run: make dr32_engine.so
+      - name: dr32 glibc / libmvec / export gate
+        run: ./scripts/glibc_gate.sh build/dr32_engine.so dr32_engine_plugin
+      - name: Upload deployable artifact (dsp.so + dr32_engine.so + module.json + help.json)
         uses: actions/upload-artifact@v4
         with:
           name: omega-dsp-aarch64
           path: |
             build/dsp.so
+            build/dr32_engine.so
             module.json
+            help.json
           if-no-files-found: error

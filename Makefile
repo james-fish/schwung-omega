@@ -171,13 +171,16 @@ dr32_engine.so: | src/wavetables.h
 	$(XCC) $(AARCH_FLAGS) -Wl,-Bsymbolic $(DR32_SRCS) -o build/dr32_engine.so $(LDLIBS)
 
 # dist: package the Schwung-library release asset `omega-module.tar.gz` (the
-# module folder — module.json + dsp.so) that release.json's download_url points
-# at. Run after `make dsp.so` (needs the aarch64 build). The tarball lays the
-# files under an `omega/` dir so it extracts into sound_generators/omega/.
-dist: dsp.so
+# module folder — module.json + dsp.so + dr32_engine.so + help.json) that
+# release.json's download_url points at. Run after the aarch64 builds. The
+# tarball lays the files under an `omega/` dir so it extracts into
+# sound_generators/omega/.
+dist: dsp.so dr32_engine.so
 	@mkdir -p build/dist/omega
-	cp build/dsp.so build/dist/omega/dsp.so
-	cp module.json  build/dist/omega/module.json
+	cp build/dsp.so          build/dist/omega/dsp.so
+	cp build/dr32_engine.so  build/dist/omega/dr32_engine.so
+	cp module.json           build/dist/omega/module.json
+	cp help.json             build/dist/omega/help.json
 	tar -czf build/omega-module.tar.gz -C build/dist omega
 	@echo "dist: build/omega-module.tar.gz"
 
