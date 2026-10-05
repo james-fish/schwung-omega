@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Refinement
 status: completed
-stopped_at: Completed E2 — all 9 discrete-controls bugs (#8-#16) fixed inline from research, 11 suites GREEN, commit 93e00a1
-last_updated: "2026-09-30T11:30:00.000Z"
-last_activity: 2026-09-30
+stopped_at: Completed quick-261005-cla — DR32 shipping path + ui accessibility re-base, 12 suites GREEN, commits ae334b6/300f553/2f32b65
+last_updated: "2026-10-05T07:19:02.942Z"
+last_activity: "2026-10-04 - v0.4.2 follow-up (quick 261003-wt3): Groove FX ROUTE→slot 4 (reverb controls share the bottom row); Taps/Gen Vol toast names fixed via module.json `name` (host on-turn toast reads module.json, NOT ui_hierarchy); GEN filter env now MIRRORS the amp pluck+50%-body shape at 65% timing, depth +10% (3.63), resonance +25% (0.619); reverb input gets a fixed 15 ms pre-delay + 100 Hz HPF (tames GEN reverb muddiness). Native tests GREEN; deployed on-device. (v0.4.1 batch shipped prior)"
 progress:
   total_phases: 8
   completed_phases: 0
@@ -180,7 +180,7 @@ v1.1 Refinement: B.1 UI infra, B.2 voicing, B.3 samples, C.1 groove redesign →
 
 **Next action:** Phase C is code-complete (3/3 plans; GRV-01/02/03/04/05 all GREEN offline) — run `/gsd:verify-work` for Phase C, then proceed to Phase D (performer mixer: sidechain duck + DJ filter + soft clip at the labeled `PHASE D INSERTION POINT` in dsp.c). (B-09 on-device voicing audit + A-04 runbooks remain outstanding hardware UAT debt, tracked in Blockers — not a code blocker.)
 
-**Stopped at:** Completed E1-03-PLAN.md (tap makeup gain 3x; params defaults CLIP/CRUSH/DRIVE/VOL/DUCK; PHY BEATER+TRS_TNE responsive; make test GREEN)
+**Stopped at:** Completed quick-261005-cla — DR32 shipping path + ui accessibility re-base, 12 suites GREEN, commits ae334b6/300f553/2f32b65
 
 **Recent activity:**
 
