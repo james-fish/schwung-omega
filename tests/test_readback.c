@@ -115,13 +115,17 @@ int main(void) {
         int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
         assert(n > 0 && ui[n] == '\0');
         assert(strstr(ui, "\"type\":\"enum\"") != NULL);       /* discrete selectors */
-        assert(strstr(ui, "\"options\":[\"FM2\"") != NULL);    /* MODEL enum options */
-        assert(strstr(ui, "\"Diode\",\"Clip\",\"SAT\"") != NULL); /* FX TYPE enum */
+        /* A11Y-REBASE: MODEL `options` are now SPOKEN names; the codes moved to
+         * `short_options` (OLED grid still draws them). */
+        assert(strstr(ui, "\"options\":[\"FM 2-Op\"") != NULL);    /* MODEL spoken options */
+        assert(strstr(ui, "\"short_options\":[\"FM2\"") != NULL);  /* MODEL codes migrated */
+        assert(strstr(ui, "\"Diode\",\"Clip\",\"Saturate\"") != NULL); /* FX TYPE spoken options */
+        assert(strstr(ui, "\"short_options\":[\"Diode\",\"Clip\",\"SAT\"") != NULL); /* FX codes */
         assert(strstr(ui, "\"default\":") != NULL);            /* knob start position */
         assert(strstr(ui, "\"short_name\":") != NULL);         /* OLED label */
         assert(strstr(ui, "\"unit\":") != NULL);               /* real-world unit */
         assert(strstr(ui, "\"step\":") != NULL);
-        printf("test_readback: rich schema OK (enum/options/default/short_name/unit/step)\n");
+        printf("test_readback: rich schema OK (enum/options/short_options/default/short_name/unit/step)\n");
 
         /* B2 page reorg (VOICE-03/04/05): model-unique params live on kick1;
          * kick2 is the static transient/FILTER/FX page; PITCH is Hz; SUSTAIN is

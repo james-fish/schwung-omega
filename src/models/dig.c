@@ -268,10 +268,10 @@ static void dig_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int dig_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_DIG_WAVEIDX  "\",\"name\":\"WAVE IDX\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
-        "{\"key\":\"" PK_DIG_SAMPLE   "\",\"name\":\"SAMPLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_DIG_BITDEPTH "\",\"name\":\"BIT DEPTH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_DIG_PITCHENV "\",\"name\":\"PITCH ENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_DIG_WAVEIDX  "\",\"name\":\"Wave Index\",\"short_name\":\"WAVIDX\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
+        "{\"key\":\"" PK_DIG_SAMPLE   "\",\"name\":\"Sample\",\"short_name\":\"SAMPLE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_DIG_BITDEPTH "\",\"name\":\"Bit Depth\",\"short_name\":\"BITDEP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_DIG_PITCHENV "\",\"name\":\"Pitch Env\",\"short_name\":\"PCHENV\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

@@ -71,8 +71,9 @@ int main(void) {
     char ui[65536];
     int n = api->get_param(inst, "ui_hierarchy", ui, (int)sizeof ui);
     assert(n > 0 && ui[n] == '\0');
-    /* SMPL-02: SAMPLE SEL is an enum with None + both names, sorted. */
-    assert(strstr(ui, "SAMPLE SEL") != NULL);
+    /* SMPL-02: Sample Select is an enum with None + both names, sorted.
+     * A11Y-REBASE: spoken name is "Sample Select" (grid short_name "SMPSEL"). */
+    assert(strstr(ui, "Sample Select") != NULL);
     assert(strstr(ui, "\"None\"") != NULL);
     assert(strstr(ui, "\"aaa_low\"") != NULL);
     assert(strstr(ui, "\"zzz_high\"") != NULL);

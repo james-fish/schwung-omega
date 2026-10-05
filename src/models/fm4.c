@@ -356,11 +356,11 @@ static void fm4_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int fm4_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_FM4_ALGO     "\",\"name\":\"ALGORITHM\",\"type\":\"enum\",\"options\":[\"Chain\",\"Stacks\",\"Bright\",\"Hollow\"]},"
-        "{\"key\":\"" PK_FM4_OPRATIO  "\",\"name\":\"OP RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM4_OPINDEX  "\",\"name\":\"OP INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM4_OPAMP    "\",\"name\":\"OP AMP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM4_FEEDBACK "\",\"name\":\"FEEDBACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_FM4_ALGO     "\",\"name\":\"Algorithm\",\"short_name\":\"ALGO\",\"type\":\"enum\",\"options\":[\"Chain\",\"Stacks\",\"Bright\",\"Hollow\"]},"
+        "{\"key\":\"" PK_FM4_OPRATIO  "\",\"name\":\"Op Ratio\",\"short_name\":\"OPRAT\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_FM4_OPINDEX  "\",\"name\":\"Op Index\",\"short_name\":\"OPIDX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_FM4_OPAMP    "\",\"name\":\"Op Amp\",\"short_name\":\"OPAMP\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_FM4_FEEDBACK "\",\"name\":\"Feedback\",\"short_name\":\"FBACK\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"}";
         /* B2 (VOICE-04): ALGO2 (metallic-detune morph) merged away to fit FM4's
          * unique params on Kick Page 1 (PITCH/LENGTH/CURVE + 5). PK_FM4_ALGO2 is
          * still handled in set_param (defaulted via the cache prime), just not a

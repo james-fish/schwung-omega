@@ -292,10 +292,10 @@ static void hrd_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int hrd_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_HRD_SAMPLE "\",\"name\":\"SAMPLE LAYER\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
-        "{\"key\":\"" PK_HRD_MIX    "\",\"name\":\"MIX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_HRD_DRIVE  "\",\"name\":\"DRIVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_HRD_CRUSH  "\",\"name\":\"CRUSH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0}";
+        "{\"key\":\"" PK_HRD_SAMPLE "\",\"name\":\"Sample Layer\",\"short_name\":\"SAMPLE\",\"type\":\"enum\",\"options\":[\"Saw\",\"Square\",\"Digital\"]},"
+        "{\"key\":\"" PK_HRD_MIX    "\",\"name\":\"Mix\",\"short_name\":\"MIX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_HRD_DRIVE  "\",\"name\":\"Drive\",\"short_name\":\"DRIVE\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_HRD_CRUSH  "\",\"name\":\"Crush\",\"short_name\":\"CRUSH\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"}";
     int len = (int)(sizeof(json) - 1);
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);

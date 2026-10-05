@@ -266,9 +266,9 @@ static void fm2_set_p2(bohm_instance_t *inst, const char *key, const char *val) 
 static int fm2_p2_slot_desc(bohm_instance_t *inst, char *buf, int buf_len) {
     (void)inst;
     static const char json[] =
-        "{\"key\":\"" PK_FM_RATIO "\",\"name\":\"FM RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_FM_INDEX "\",\"name\":\"FM INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0},"
-        "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"OP2 WAVE\",\"type\":\"enum\",\"options\":[\"Sine\",\"Fold\",\"Tri\"]}";
+        "{\"key\":\"" PK_FM_RATIO "\",\"name\":\"FM Ratio\",\"short_name\":\"RATIO\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_FM_INDEX "\",\"name\":\"FM Index\",\"short_name\":\"INDEX\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":\"0.01\",\"unit\":\"%\"},"
+        "{\"key\":\"" PK_OP2_WAVE "\",\"name\":\"Op 2 Wave\",\"short_name\":\"OP2WAV\",\"type\":\"enum\",\"options\":[\"Sine\",\"Fold\",\"Tri\"]}";
     int len = (int)(sizeof(json) - 1);   /* exclude null terminator */
     if (buf_len <= len) return 0;        /* bounded: no overflow */
     memcpy(buf, json, (size_t)len);
