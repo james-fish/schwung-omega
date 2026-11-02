@@ -2,9 +2,9 @@
   "id": "omega",
   "name": "Omega",
   "abbrev": "OMGA",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "James Fish",
-  "description": "Multi-engine techno kick synth + feedback-free groove rumble + generative bass/bleep sequencer + performer glue",
+  "description": "Multi-engine techno kick synth + feedback-free rumble + gritty warehouse reverb + 9-voice generative sequencer (acid with slide, detune, FM, dirt, stabs) with arp-style variation + performer glue",
   "api_version": 2,
   "capabilities": {
     "chainable": true,
@@ -29,7 +29,15 @@
         "ANA",
         "USR"
       ],
-      "default": 0
+      "default": 0,
+      "viz": {
+        "kind": "custom:okick",
+        "extra_keys": [
+          "pitch",
+          "length",
+          "curve"
+        ]
+      }
     },
     {
       "key": "master_vol",
@@ -49,7 +57,12 @@
       "max": 200,
       "default": 50,
       "step": 1,
-      "unit": "Hz"
+      "unit": "Hz",
+      "viz": {
+        "kind": "custom:odive",
+        "group": "dive",
+        "role": "pitch"
+      }
     },
     {
       "key": "length",
@@ -59,7 +72,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odive",
+        "group": "dive",
+        "role": "length"
+      }
     },
     {
       "key": "curve",
@@ -69,7 +87,12 @@
       "max": 1,
       "default": 0.8,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odive",
+        "group": "dive",
+        "role": "curve"
+      }
     },
     {
       "key": "attack",
@@ -79,7 +102,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oclick",
+        "group": "trs",
+        "role": "attack"
+      }
     },
     {
       "key": "trs_dec",
@@ -89,7 +117,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oclick",
+        "group": "trs",
+        "role": "trs_dec"
+      }
     },
     {
       "key": "trs_tne",
@@ -99,7 +132,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oclick",
+        "group": "trs",
+        "role": "trs_tne"
+      }
     },
     {
       "key": "color",
@@ -109,7 +147,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:olpf"
+      }
     },
     {
       "key": "filter_route",
@@ -120,7 +161,10 @@
         "Transient",
         "Both"
       ],
-      "default": 2
+      "default": 2,
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
     },
     {
       "key": "fx_type",
@@ -133,7 +177,12 @@
         "Fold",
         "Crush"
       ],
-      "default": 0
+      "default": 0,
+      "viz": {
+        "kind": "custom:ofx",
+        "group": "fx",
+        "role": "fx_type"
+      }
     },
     {
       "key": "fx_amt",
@@ -143,7 +192,12 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ofx",
+        "group": "fx",
+        "role": "fx_amt"
+      }
     },
     {
       "key": "fx_tone",
@@ -153,7 +207,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ofx",
+        "group": "fx",
+        "role": "fx_tone"
+      }
     },
     {
       "key": "fm_ratio",
@@ -163,7 +222,14 @@
       "max": 1,
       "default": 0.1,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ofm",
+        "extra_keys": [
+          "fm_index",
+          "op2_wave"
+        ]
+      }
     },
     {
       "key": "fm_index",
@@ -173,27 +239,46 @@
       "max": 1,
       "default": 0.05,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ofm",
+        "extra_keys": [
+          "fm_ratio",
+          "op2_wave"
+        ]
+      }
     },
     {
       "key": "op2_wave",
       "name": "OP2 WAVE",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.35,
-      "step": 0.01,
-      "unit": "%"
+      "type": "enum",
+      "default": 0,
+      "options": [
+        "Sine",
+        "Fold",
+        "Tri"
+      ]
     },
     {
       "key": "fm4_algo",
       "name": "FM4 ALGO",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.0,
-      "step": 0.01,
-      "unit": "%"
+      "type": "enum",
+      "default": 0,
+      "options": [
+        "Chain",
+        "Stacks",
+        "Bright",
+        "Hollow"
+      ],
+      "viz": {
+        "kind": "custom:oalgo",
+        "extra_keys": [
+          "fm4_feedback"
+        ]
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
     },
     {
       "key": "fm4_opratio",
@@ -253,7 +338,10 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:omorph"
+      }
     },
     {
       "key": "wtr_bodypitch",
@@ -293,7 +381,15 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odrum",
+        "extra_keys": [
+          "phy_shell",
+          "phy_headtens",
+          "phy_damping"
+        ]
+      }
     },
     {
       "key": "phy_shell",
@@ -303,7 +399,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oripple",
+        "group": "phy",
+        "role": "phy_shell"
+      }
     },
     {
       "key": "phy_headtens",
@@ -313,7 +414,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oripple",
+        "group": "phy",
+        "role": "phy_headtens"
+      }
     },
     {
       "key": "phy_damping",
@@ -323,17 +429,23 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oripple",
+        "group": "phy",
+        "role": "phy_damping"
+      }
     },
     {
       "key": "hrd_sample",
       "name": "SAMPLE",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.5,
-      "step": 0.01,
-      "unit": "%"
+      "type": "enum",
+      "default": 0,
+      "options": [
+        "Saw",
+        "Square",
+        "Digital"
+      ]
     },
     {
       "key": "hrd_mix",
@@ -353,7 +465,10 @@
       "max": 1,
       "default": 0.2,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odrive"
+      }
     },
     {
       "key": "hrd_crush",
@@ -363,17 +478,21 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ocrush"
+      }
     },
     {
       "key": "dig_waveidx",
       "name": "WAVE IDX",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.5,
-      "step": 0.01,
-      "unit": "%"
+      "type": "enum",
+      "default": 0,
+      "options": [
+        "Saw",
+        "Square",
+        "Digital"
+      ]
     },
     {
       "key": "dig_sample",
@@ -393,7 +512,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ocrush"
+      }
     },
     {
       "key": "dig_pitchenv",
@@ -403,7 +525,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:openv"
+      }
     },
     {
       "key": "trs_tone",
@@ -413,7 +538,13 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oclick",
+        "extra_keys": [
+          "trs_tdec"
+        ]
+      }
     },
     {
       "key": "trs_tdec",
@@ -443,7 +574,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:openv"
+      }
     },
     {
       "key": "ana_morph",
@@ -453,7 +587,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:omorph"
+      }
     },
     {
       "key": "ana_sublvl",
@@ -463,7 +600,12 @@
       "max": 1,
       "default": 0.7,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osub",
+        "group": "sub",
+        "role": "ana_sublvl"
+      }
     },
     {
       "key": "ana_subdec",
@@ -473,7 +615,12 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osub",
+        "group": "sub",
+        "role": "ana_subdec"
+      }
     },
     {
       "key": "ana_sample",
@@ -503,7 +650,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:omorph"
+      }
     },
     {
       "key": "usr_layervol",
@@ -523,7 +673,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:openv"
+      }
     },
     {
       "key": "gen_seed",
@@ -590,24 +743,24 @@
       "name": "GRV TYPE",
       "type": "enum",
       "options": [
-        "Taps",
-        "Gen"
+        "Rumble",
+        "Seq"
       ],
       "default": 0
     },
     {
       "key": "grv_vol",
-      "name": "Taps Vol",
+      "name": "RMB VOL",
       "type": "float",
       "min": 0,
-      "max": 1,
+      "max": 2,
       "default": 1.0,
       "step": 0.01,
       "unit": "%"
     },
     {
       "key": "grv_length",
-      "name": "GRV LEN",
+      "name": "RMB LEN",
       "type": "float",
       "min": 0,
       "max": 1,
@@ -617,13 +770,18 @@
     },
     {
       "key": "grv_color",
-      "name": "GRV LPF",
+      "name": "RMB LPF",
       "type": "float",
       "min": 0,
       "max": 1,
       "default": 0.4375,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oband",
+        "group": "band",
+        "role": "grv_color"
+      }
     },
     {
       "key": "grv_tap1",
@@ -633,7 +791,15 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:otaps",
+        "group": "taps",
+        "role": "grv_tap1",
+        "extra_keys": [
+          "grv_length"
+        ]
+      }
     },
     {
       "key": "grv_tap2",
@@ -643,7 +809,12 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:otaps",
+        "group": "taps",
+        "role": "grv_tap2"
+      }
     },
     {
       "key": "grv_tap3",
@@ -653,7 +824,12 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:otaps",
+        "group": "taps",
+        "role": "grv_tap3"
+      }
     },
     {
       "key": "grv_tap4",
@@ -663,11 +839,16 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:otaps",
+        "group": "taps",
+        "role": "grv_tap4"
+      }
     },
     {
       "key": "grv_mono",
-      "name": "GRV MONO",
+      "name": "RMB MONO",
       "type": "enum",
       "options": [
         "Stereo",
@@ -683,11 +864,14 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odrive"
+      }
     },
     {
       "key": "grv_filtype",
-      "name": "GRV FILT",
+      "name": "RMB FILT",
       "type": "enum",
       "options": [
         "LP",
@@ -704,7 +888,12 @@
       "max": 1,
       "default": 0.3,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:olfo",
+        "group": "lfo",
+        "role": "grv_lfospd"
+      }
     },
     {
       "key": "grv_lfoamt",
@@ -714,7 +903,12 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:olfo",
+        "group": "lfo",
+        "role": "grv_lfoamt"
+      }
     },
     {
       "key": "grv_rvmix",
@@ -722,9 +916,14 @@
       "type": "float",
       "min": 0,
       "max": 1,
-      "default": 0.0,
+      "default": 0.25,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oroom",
+        "group": "room",
+        "role": "grv_rvmix"
+      }
     },
     {
       "key": "grv_rvdecay",
@@ -734,7 +933,15 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oroom",
+        "group": "room",
+        "role": "grv_rvdecay"
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
     },
     {
       "key": "grv_rvtone",
@@ -744,18 +951,32 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oroom",
+        "group": "room",
+        "role": "grv_rvtone"
+      }
     },
     {
       "key": "grv_rvtype",
       "name": "RV TYPE",
       "type": "enum",
       "options": [
-        "Room",
-        "Hall",
-        "Plate"
+        "Warehouse",
+        "Concrete",
+        "Tunnel",
+        "Dirt"
       ],
-      "default": 0
+      "default": 0,
+      "viz": {
+        "kind": "custom:oroom",
+        "group": "room",
+        "role": "grv_rvtype"
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
     },
     {
       "key": "grv_route",
@@ -767,11 +988,138 @@
         "Rev>Grv>Drv",
         "Drv>Grv>Rev"
       ],
-      "default": 0
+      "default": 0,
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
+    },
+    {
+      "key": "grv_rvrmb",
+      "name": "RMB>REV",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osend",
+        "group": "send",
+        "role": "grv_rvrmb"
+      }
+    },
+    {
+      "key": "grv_rvseq",
+      "name": "SEQ>REV",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.25,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osend",
+        "group": "send",
+        "role": "grv_rvseq"
+      }
+    },
+    {
+      "key": "grv_rvkick",
+      "name": "KICK>REV",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osend",
+        "group": "send",
+        "role": "grv_rvkick"
+      }
+    },
+    {
+      "key": "grv_rvdly",
+      "name": "DLY>REV",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:osend",
+        "group": "send",
+        "role": "grv_rvdly"
+      }
+    },
+    {
+      "key": "grv_dlysend",
+      "name": "SEQ DLY",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oecho",
+        "group": "echo",
+        "role": "grv_dlysend"
+      }
+    },
+    {
+      "key": "grv_dlytime",
+      "name": "DLY TIME",
+      "type": "enum",
+      "options": [
+        "1/16",
+        "1/8T",
+        "1/8",
+        "1/8D",
+        "1/4",
+        "1/4D"
+      ],
+      "default": 3,
+      "viz": {
+        "kind": "custom:oecho",
+        "group": "echo",
+        "role": "grv_dlytime"
+      }
+    },
+    {
+      "key": "grv_dlyfb",
+      "name": "DLY FDBK",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oecho",
+        "group": "echo",
+        "role": "grv_dlyfb"
+      }
+    },
+    {
+      "key": "grv_dlytone",
+      "name": "DLY TONE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oecho",
+        "group": "echo",
+        "role": "grv_dlytone"
+      }
     },
     {
       "key": "grv_gscale",
-      "name": "GEN SCALE",
+      "name": "SEQ SCALE",
       "type": "enum",
       "options": [
         "Unquantized",
@@ -788,17 +1136,33 @@
         "Blues",
         "Diminished"
       ],
-      "default": 1
+      "default": 1,
+      "viz": {
+        "kind": "custom:oscale"
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
     },
     {
       "key": "grv_gseed",
-      "name": "GEN SEED",
+      "name": "SEQ SEED",
       "type": "float",
       "min": 0,
       "max": 1,
       "default": 0.3,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck",
+        "role": "grv_gseed",
+        "extra_keys": [
+          "grv_gview",
+          "grv_gstep",
+          "grv_gvoice"
+        ]
+      }
     },
     {
       "key": "grv_gseqlen",
@@ -807,7 +1171,12 @@
       "min": 1,
       "max": 64,
       "default": 16,
-      "step": 1
+      "step": 1,
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck",
+        "role": "grv_gseqlen"
+      }
     },
     {
       "key": "grv_gdensity",
@@ -817,7 +1186,12 @@
       "max": 1,
       "default": 0.6,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck",
+        "role": "grv_gdensity"
+      }
     },
     {
       "key": "grv_grotate",
@@ -827,7 +1201,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck",
+        "role": "grv_grotate"
+      }
     },
     {
       "key": "grv_gswing",
@@ -837,7 +1216,13 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:opluck",
+        "extra_keys": [
+          "grv_gvoice"
+        ]
+      }
     },
     {
       "key": "grv_gwave",
@@ -847,7 +1232,12 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gwave"
+      }
     },
     {
       "key": "grv_gfold",
@@ -857,7 +1247,254 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gfold"
+      }
+    },
+    {
+      "key": "grv_gdtwave",
+      "name": "WAVE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.67,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gdtwave"
+      }
+    },
+    {
+      "key": "grv_gdetune",
+      "name": "DETUNE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.25,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gdetune"
+      }
+    },
+    {
+      "key": "grv_gfmwave",
+      "name": "WAVE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gfmwave"
+      }
+    },
+    {
+      "key": "grv_gfmamt",
+      "name": "FM AMT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gfmamt"
+      }
+    },
+    {
+      "key": "grv_gasres",
+      "name": "RES",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gasres"
+      }
+    },
+    {
+      "key": "grv_gasenv",
+      "name": "ENV AMT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gasenv"
+      }
+    },
+    {
+      "key": "grv_gaqres",
+      "name": "RES",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gaqres"
+      }
+    },
+    {
+      "key": "grv_gaqenv",
+      "name": "ENV AMT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.6,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gaqenv"
+      }
+    },
+    {
+      "key": "grv_gd1noise",
+      "name": "NOISE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.3,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gd1noise"
+      }
+    },
+    {
+      "key": "grv_gd1nfm",
+      "name": "NOISE>FLT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gd1nfm"
+      }
+    },
+    {
+      "key": "grv_gd2fm",
+      "name": "FM AMT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gd2fm"
+      }
+    },
+    {
+      "key": "grv_gd2nfm",
+      "name": "NOISE>FLT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.4,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gd2nfm"
+      }
+    },
+    {
+      "key": "grv_gblwave",
+      "name": "WAVE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.33,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gblwave"
+      }
+    },
+    {
+      "key": "grv_gblip",
+      "name": "BLIP",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.5,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gblip"
+      }
+    },
+    {
+      "key": "grv_gstwave",
+      "name": "WAVE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.67,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gstwave"
+      }
+    },
+    {
+      "key": "grv_gchord",
+      "name": "CHORD",
+      "type": "enum",
+      "options": [
+        "5th+Oct",
+        "Minor",
+        "Sus4",
+        "Min7"
+      ],
+      "default": 0,
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gchord"
+      }
     },
     {
       "key": "grv_gretrig",
@@ -899,23 +1536,26 @@
     },
     {
       "key": "grv_genvol",
-      "name": "Gen Vol",
+      "name": "SEQ VOL",
       "type": "float",
       "min": 0,
-      "max": 1,
+      "max": 2,
       "default": 0,
       "step": 0.01,
       "unit": "%"
     },
     {
       "key": "grv_genfilt",
-      "name": "GEN FILTER",
+      "name": "SEQ FILTER",
       "type": "float",
       "min": 0,
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:olpf"
+      }
     },
     {
       "key": "grv_grange",
@@ -929,13 +1569,18 @@
     },
     {
       "key": "grv_hpf",
-      "name": "TAP HPF",
+      "name": "RMB HPF",
       "type": "float",
       "min": 0,
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oband",
+        "group": "band",
+        "role": "grv_hpf"
+      }
     },
     {
       "key": "grv_gnotelen",
@@ -950,7 +1595,12 @@
         "1/16",
         "1/32"
       ],
-      "default": 5
+      "default": 5,
+      "viz": {
+        "kind": "custom:ogrid",
+        "group": "grid",
+        "role": "grv_gnotelen"
+      }
     },
     {
       "key": "grv_gswingamt",
@@ -960,17 +1610,182 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:ogrid",
+        "group": "grid",
+        "role": "grv_gswingamt"
+      }
     },
     {
       "key": "grv_gentaps",
-      "name": "GEN>TAPS",
+      "name": "SEQ>RMB",
       "type": "float",
       "min": 0,
       "max": 1,
       "default": 0.0,
       "step": 0.01,
       "unit": "%"
+    },
+    {
+      "key": "grv_gpattern",
+      "name": "SEQ PATTERN",
+      "type": "enum",
+      "options": [
+        "Random",
+        "Up",
+        "Down",
+        "Ping-Pong",
+        "Leap",
+        "Pedal",
+        "Offbeat",
+        "Rolling",
+        "Acid",
+        "Call+Resp",
+        "Stabs",
+        "Octaves"
+      ],
+      "default": 0,
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck2",
+        "role": "grv_gpattern",
+        "extra_keys": [
+          "grv_gview",
+          "grv_gstep",
+          "grv_gvoice"
+        ]
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
+    },
+    {
+      "key": "grv_gvoice",
+      "name": "SEQ VOICE",
+      "type": "enum",
+      "options": [
+        "Basic",
+        "Detune",
+        "FM",
+        "Acid Saw",
+        "Acid Sq",
+        "Dirt",
+        "Dirt 2",
+        "Bleep",
+        "Stab"
+      ],
+      "default": 0,
+      "viz": {
+        "kind": "custom:ogwave",
+        "group": "gwav",
+        "role": "grv_gvoice",
+        "extra_keys": [
+          "grv_genfilt"
+        ]
+      },
+      "card_script": "cards.js#omega_card",
+      "card_w": 104,
+      "card_h": 40
+    },
+    {
+      "key": "grv_gaccent",
+      "name": "SEQ ACCENT",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck2",
+        "role": "grv_gaccent"
+      }
+    },
+    {
+      "key": "grv_goctjump",
+      "name": "SEQ OCT JUMP",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oneck",
+        "group": "neck2",
+        "role": "grv_goctjump"
+      }
+    },
+    {
+      "key": "grv_gratchet",
+      "name": "SEQ RATCHET",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odice",
+        "group": "dice",
+        "role": "grv_gratchet"
+      }
+    },
+    {
+      "key": "grv_gslide",
+      "name": "SEQ SLIDE",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odice",
+        "group": "dice",
+        "role": "grv_gslide"
+      }
+    },
+    {
+      "key": "grv_gnrand",
+      "name": "SEQ NOTE RND",
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.0,
+      "step": 0.01,
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odice",
+        "group": "dice",
+        "role": "grv_gnrand"
+      }
+    },
+    {
+      "key": "grv_gloop",
+      "name": "SEQ LOOP",
+      "type": "int",
+      "min": 0,
+      "max": 16,
+      "default": 0,
+      "step": 1,
+      "viz": {
+        "kind": "custom:odice",
+        "group": "dice",
+        "role": "grv_gloop"
+      }
+    },
+    {
+      "key": "grv_gstep",
+      "name": "SEQ STEP",
+      "type": "int",
+      "min": 0,
+      "max": 63,
+      "default": 0,
+      "access": "read",
+      "live": true
     },
     {
       "key": "duck",
@@ -980,7 +1795,15 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:opump",
+        "group": "pump",
+        "role": "duck",
+        "extra_keys": [
+          "duck_bs"
+        ]
+      }
     },
     {
       "key": "duck_rel",
@@ -990,7 +1813,12 @@
       "max": 1,
       "default": 0.4,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:opump",
+        "group": "pump",
+        "role": "duck_rel"
+      }
     },
     {
       "key": "duck_smt",
@@ -1000,7 +1828,12 @@
       "max": 1,
       "default": 0.3,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:opump",
+        "group": "pump",
+        "role": "duck_smt"
+      }
     },
     {
       "key": "duck_bs",
@@ -1010,7 +1843,10 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oxover"
+      }
     },
     {
       "key": "dj_filt",
@@ -1020,7 +1856,12 @@
       "max": 1,
       "default": 0.5,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odj",
+        "group": "dj",
+        "role": "dj_filt"
+      }
     },
     {
       "key": "dj_reso",
@@ -1030,7 +1871,12 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:odj",
+        "group": "dj",
+        "role": "dj_reso"
+      }
     },
     {
       "key": "cmpdr",
@@ -1040,7 +1886,10 @@
       "max": 1,
       "default": 0.0,
       "step": 0.01,
-      "unit": "%"
+      "unit": "%",
+      "viz": {
+        "kind": "custom:oknee"
+      }
     }
   ]
 }

@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: make test
         run: make test
+      - name: generated files committed (chain_params_gen.c, canvas.js, cards.js)
+        run: git diff --exit-code -- src/chain_params_gen.c src/chain_params_gen.h canvas.js cards.js
 
   cross-build-gate:
     name: aarch64 cross-build (glibc 2.35) + gate
@@ -35,7 +37,7 @@ jobs:
         run: make dr32_engine.so
       - name: dr32 glibc / libmvec / export gate
         run: ./scripts/glibc_gate.sh build/dr32_engine.so dr32_engine_plugin
-      - name: Upload deployable artifact (dsp.so + dr32_engine.so + module.json + help.json)
+      - name: Upload deployable artifact (dsp.so + dr32_engine.so + module.json + help.json + canvas.js + cards.js)
         uses: actions/upload-artifact@v4
         with:
           name: omega-dsp-aarch64
@@ -44,4 +46,6 @@ jobs:
             build/dr32_engine.so
             module.json
             help.json
+            canvas.js
+            cards.js
           if-no-files-found: error

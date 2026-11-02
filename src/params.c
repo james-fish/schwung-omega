@@ -75,7 +75,7 @@ const float g_global_defaults[GKI_COUNT] = {
      * bare create therefore sits neutral (rv_pre_amt/rv_post_amt both 0). */
     [GKI_GRV_DRIVE]=0.0f, [GKI_GRV_FILTYPE]=0.0f, [GKI_GRV_LFOSPD]=0.3f, [GKI_GRV_LFOAMT]=0.0f,
     /* Phase 1: RVMIX is now a plain dry/wet (0 = off); ROUTE default 0 = Rumble>Drive>Reverb. */
-    [GKI_GRV_RVMIX]=0.0f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
+    [GKI_GRV_RVMIX]=0.25f, [GKI_GRV_RVDECAY]=0.5f, [GKI_GRV_RVTONE]=0.5f, [GKI_GRV_RVTYPE]=0.0f,
     [GKI_GRV_ROUTE]=0.0f,
     /* GEN groove-type defaults (C1-03): musical scale, full 16-step, free-run. */
     [GKI_GRV_GSCALE]=1.0f, [GKI_GRV_GSEED]=0.3f, [GKI_GRV_GSEQLEN]=16.0f, [GKI_GRV_GDENSITY]=0.6f,  /* seqlen RAW int (1..64) */
@@ -94,6 +94,17 @@ const float g_global_defaults[GKI_COUNT] = {
     /* v0.4.1 batch: HPF open (off), NOTE LEN = 1/16 (raw idx 5), SWING center (0.5 = none),
      * GEN>TAPS send off. */
     [GKI_GRV_HPF]=0.0f, [GKI_GRV_GNOTELEN]=5.0f, [GKI_GRV_GSWINGAMT]=0.5f, [GKI_GRV_GENTAPS]=0.0f,
+    /* v0.6 GEN Variation: everything neutral so existing sets sound unchanged. */
+    [GKI_GRV_GPATTERN]=0.0f, [GKI_GRV_GVOICE]=0.0f, [GKI_GRV_GACCENT]=0.0f, [GKI_GRV_GOCTJUMP]=0.0f,
+    [GKI_GRV_GRATCHET]=0.0f, [GKI_GRV_GDROP]=0.0f, [GKI_GRV_GNRAND]=0.0f, [GKI_GRV_GLOOP]=0.0f,
+    /* v0.6 GEN voices: each voice's own A/B knobs start somewhere that sounds like the voice. */
+    [GKI_GRV_GDTWAVE]=0.67f, [GKI_GRV_GDETUNE]=0.25f, [GKI_GRV_GFMWAVE]=0.0f, [GKI_GRV_GFMAMT]=0.4f,
+    [GKI_GRV_GASRES]=0.6f, [GKI_GRV_GASENV]=0.6f, [GKI_GRV_GAQRES]=0.6f, [GKI_GRV_GAQENV]=0.6f,
+    [GKI_GRV_GD1NOISE]=0.3f, [GKI_GRV_GD1NFM]=0.4f, [GKI_GRV_GD2FM]=0.4f, [GKI_GRV_GD2NFM]=0.4f,
+    [GKI_GRV_GBLWAVE]=0.33f, [GKI_GRV_GBLIP]=0.5f, [GKI_GRV_GSTWAVE]=0.67f, [GKI_GRV_GCHORD]=0.0f,
+    [GKI_GRV_GSLIDE]=0.0f,
+    [GKI_GRV_RVRMB]=0.5f, [GKI_GRV_RVSEQ]=0.25f, [GKI_GRV_RVKICK]=0.0f, [GKI_GRV_RVDLY]=0.5f,
+    [GKI_GRV_DLYSEND]=0.0f, [GKI_GRV_DLYTIME]=3.0f, [GKI_GRV_DLYFB]=0.4f, [GKI_GRV_DLYTONE]=0.5f,
 };
 
 /* ---- key <-> index ------------------------------------------------------- */
@@ -153,6 +164,22 @@ static const char *const k_global_keys[GKI_COUNT] = {
     [GKI_GRV_GENFILT]=PK_GRV_GENFILT,
     [GKI_GRV_HPF]=PK_GRV_HPF, [GKI_GRV_GNOTELEN]=PK_GRV_GNOTELEN,
     [GKI_GRV_GSWINGAMT]=PK_GRV_GSWINGAMT, [GKI_GRV_GENTAPS]=PK_GRV_GENTAPS,
+    [GKI_GRV_GPATTERN]=PK_GRV_GPATTERN, [GKI_GRV_GVOICE]=PK_GRV_GVOICE,
+    [GKI_GRV_GACCENT]=PK_GRV_GACCENT, [GKI_GRV_GOCTJUMP]=PK_GRV_GOCTJUMP,
+    [GKI_GRV_GRATCHET]=PK_GRV_GRATCHET, [GKI_GRV_GDROP]=PK_GRV_GDROP,
+    [GKI_GRV_GNRAND]=PK_GRV_GNRAND, [GKI_GRV_GLOOP]=PK_GRV_GLOOP,
+    [GKI_GRV_GDTWAVE]=PK_GRV_GDTWAVE, [GKI_GRV_GDETUNE]=PK_GRV_GDETUNE,
+    [GKI_GRV_GFMWAVE]=PK_GRV_GFMWAVE, [GKI_GRV_GFMAMT]=PK_GRV_GFMAMT,
+    [GKI_GRV_GASRES]=PK_GRV_GASRES, [GKI_GRV_GASENV]=PK_GRV_GASENV,
+    [GKI_GRV_GAQRES]=PK_GRV_GAQRES, [GKI_GRV_GAQENV]=PK_GRV_GAQENV,
+    [GKI_GRV_GD1NOISE]=PK_GRV_GD1NOISE, [GKI_GRV_GD1NFM]=PK_GRV_GD1NFM,
+    [GKI_GRV_GD2FM]=PK_GRV_GD2FM, [GKI_GRV_GD2NFM]=PK_GRV_GD2NFM,
+    [GKI_GRV_GBLWAVE]=PK_GRV_GBLWAVE, [GKI_GRV_GBLIP]=PK_GRV_GBLIP,
+    [GKI_GRV_GSTWAVE]=PK_GRV_GSTWAVE, [GKI_GRV_GCHORD]=PK_GRV_GCHORD,
+    [GKI_GRV_GSLIDE]=PK_GRV_GSLIDE,
+    [GKI_GRV_RVRMB]=PK_GRV_RVRMB, [GKI_GRV_RVSEQ]=PK_GRV_RVSEQ, [GKI_GRV_RVKICK]=PK_GRV_RVKICK,
+    [GKI_GRV_RVDLY]=PK_GRV_RVDLY, [GKI_GRV_DLYSEND]=PK_GRV_DLYSEND, [GKI_GRV_DLYTIME]=PK_GRV_DLYTIME,
+    [GKI_GRV_DLYFB]=PK_GRV_DLYFB, [GKI_GRV_DLYTONE]=PK_GRV_DLYTONE,
 };
 
 int pk_kick_index(const char *key) {

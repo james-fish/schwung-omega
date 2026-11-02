@@ -17,6 +17,7 @@
 #include "dsp_primitives.h"
 #include "groove.h"   /* Phase C: groove rumble voice (kick+groove sum) */
 #include "params.h"   /* B1: central raw-value param cache (UIX-01/04) */
+#include "chain_params_gen.h"   /* v0.6: chain_params served by the DSP (keeps viz/card_script) */
 
 #include <stdlib.h>
 #include <string.h>
@@ -259,7 +260,10 @@ static void perf_config(bohm_instance_t *inst) {
     float reso = inst->global_cache[GKI_DJ_RESO];
     float cmpdr = inst->global_cache[GKI_CLIP];   /* GKI_CLIP slot repurposed as CMPDR */
 
-    inst->duck_depth = duck < 0 ? 0 : (duck > 1 ? 1 : duck);
+    duck = duck < 0 ? 0 : (duck > 1 ? 1 : duck);
+    /* v0.6.2: steeper curve so the pump is audible early: 25% knob ~ 58% depth,
+     * 50% ~ 82%, 100% = full. */
+    inst->duck_depth = 1.0f - powf(1.0f - duck, 2.5f);
     float rel_ms = 10.0f + rel * 490.0f;                       /* 10..500 ms (PERF-01) */
     inst->duck_rel_coef = expf(-1.0f / (rel_ms * 0.001f * OMEGA_SR));
     inst->duck_smt_a = 0.02f + (1.0f - smt) * 0.6f;           /* slew: more SMT = slower */
@@ -268,7 +272,9 @@ static void perf_config(bohm_instance_t *inst) {
      * the LP follows the full signal -> the ENTIRE taps/gen rumble ducks (on-device
      * feedback: full-up should duck everything). This same path handles BOTH TAPS
      * and GEN (groove_tick produces gl/gr for either type), so GEN ducks too. */
-    float bs_fc = 20.0f * powf(1000.0f, bs);                  /* 20 Hz .. 20 kHz log */
+    /* v0.6.2: bent so the crossover climbs fast (25% ~ 600 Hz, 50% ~ 2 kHz):
+     * the rumble's body is fully inside the duck well before the top. */
+    float bs_fc = 20.0f * powf(1000.0f, powf(bs, 0.6f));     /* 20 Hz .. 20 kHz */
     inst->duck_bs_g = tanf((float)M_PI * bs_fc / OMEGA_SR);
 
     /* DJ filter: LP below neutral, HP above (PERF-03). */
@@ -395,7 +401,12 @@ static void omega_on_midi(void *instance, const uint8_t *msg, int len, int sourc
          * (item 8). v0.4 removed the TYPE selector (TAPS + GEN run together), so the
          * old `type==GEN` gate was never true and On-Note never fired — drop it. */
         if (inst->groove.gen_retrig == GRV_RETRIG_ONNOTE)
-            groove_gen_restart(&inst->groove);
+        {
+            /* Beat-locked GEN keeps its clock: the kick only re-anchors step 0 to
+             * the nearest step boundary (no free-running restart to drift from). */
+            if (inst->groove.gen_locked) inst->groove.gen_restart_pending = 1;
+            else groove_gen_restart(&inst->groove);
+        }
         /* Sidechain duck triggers on the kick note-on (PERF-01), not amplitude —
          * set the duck envelope to full; it recovers over DUCK REL. */
         inst->duck_env = 1.0f;
@@ -541,6 +552,24 @@ static int omega_get_param(void *instance, const char *key, char *buf, int buf_l
     /* Key-specific display formatting (Findings 2 + 6) — BEFORE the generic
      * 4-decimal fallthrough. get_param runs at UI/control rate (never render),
      * so powf here is fine. */
+    if (strcmp(key, PK_CHAIN_PARAMS) == 0) {
+        /* v0.6: serve chain_params ourselves. The host's module.json fallback
+         * re-serialises only key/name/type/min/max/options and DROPS `viz` and
+         * `card_script`, so the custom widgets and cards would never register. */
+        int n = (int)omega_chain_params_len;
+        if (!buf || buf_len <= n) return -1;
+        memcpy(buf, omega_chain_params, (size_t)n);
+        buf[n] = '\0';
+        return n;
+    }
+    if (strcmp(key, PK_GRV_GVIEW) == 0 || strcmp(key, PK_GRV_GVIEW ":effective") == 0)
+        return groove_gen_view(&inst->groove, buf, buf_len);
+    if (strcmp(key, PK_GRV_GSTEP) == 0 || strcmp(key, PK_GRV_GSTEP ":effective") == 0)
+        return pk_format_value((float)inst->groove.gen_cur_step, 0, buf, buf_len);
+    if (strcmp(key, PK_GRV_GLOOP) == 0) {
+        float v = inst->global_cache[GKI_GRV_GLOOP];
+        return pk_format_value((float)(int)(v + 0.5f), 0, buf, buf_len);
+    }
     if (strcmp(key, PK_GRV_GSEQLEN) == 0) {
         /* v0.4.1: SEQ LEN is a RAW int (1..64). Echo the stored integer directly
          * (the old v*63 map treated the raw value as normalized and always read 64). */

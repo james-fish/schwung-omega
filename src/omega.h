@@ -40,7 +40,7 @@
  * header). params.c binds these to the pk_kick_index_t / pk_global_index_t enum
  * counts with a _Static_assert so they can never drift. */
 #define OMEGA_PKI_COUNT 55   /* == PKI_COUNT (every kick param) */
-#define OMEGA_GKI_COUNT 45   /* +1 FX route (P1) +3 v0.4 dual-voice +4 v0.4.1 batch (hpf/gnotelen/gswingamt/gentaps) */
+#define OMEGA_GKI_COUNT 78   /* +8 v0.6.2 Space page (sends + delay); +17 v0.6 GEN voices + SLIDE; +1 FX route (P1) +3 v0.4 dual-voice +4 v0.4.1 batch (hpf/gnotelen/gswingamt/gentaps) */
 
 /* --- Host ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h ----
  * This MUST match the host struct byte-for-byte or callback offsets shift and
@@ -85,8 +85,10 @@ typedef struct host_api_v1 {
     void *reserved[8];
 } host_api_v1_t;
 
+#ifndef OMEGA_WASM   /* LP64 ABI lock; the browser bench is wasm32 */
 _Static_assert(offsetof(host_api_v1_t, reserved) == 120,
                "host_api_v1_t::reserved must start at +120 (ABI contract)");
+#endif
 
 /* --- Plugin ABI — VERBATIM from the real schwung src/host/plugin_api_v1.h --
  * get_error sits BETWEEN get_param and render_block. Omitting it put our
@@ -106,8 +108,10 @@ typedef struct plugin_api_v2 {
 /* Lock the vtable layout: render_block must land at +56 (after 7 slots on
  * LP64). If a slot is dropped or reordered, the host reads render_block past
  * the struct and calls garbage — this catches it at compile time. */
+#ifndef OMEGA_WASM   /* LP64 ABI lock; the browser bench is wasm32 */
 _Static_assert(offsetof(plugin_api_v2_t, render_block) == 56,
                "plugin_api_v2_t layout drift: render_block must be at +56");
+#endif
 
 plugin_api_v2_t* move_plugin_init_v2(const host_api_v1_t *host);
 
@@ -228,7 +232,7 @@ struct bohm_instance {
  * buffers (usr_wavetable 2049*4 + usr_sample 44100*4 ~= 184 KB) + small fields
  * the real sizeof is ~1.24 MB. Bound set just above at 1,300,000 (DC-08's
  * 1,100,000 was illustrative; sized to the TRUE mask footprint, no padding). */
-_Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
+_Static_assert(sizeof(struct bohm_instance) < 2400000, "instance under 2.4MB (v0.6.2: +256 KB SEQ delay)");
 
 /* --- Param key macros (D-08) — must match set_param/get_param dispatch -- */
 #define PK_PITCH      "pitch"
@@ -310,6 +314,48 @@ _Static_assert(sizeof(struct bohm_instance) < 2200000, "instance under 2.2MB");
 #define PK_GRV_GNOTELEN  "grv_gnotelen"   /* GEN step note length enum (1/4d..1/32) */
 #define PK_GRV_GSWINGAMT "grv_gswingamt"  /* GEN swing, bipolar 0..1 (0.5 = none) */
 #define PK_GRV_GENTAPS   "grv_gentaps"    /* GEN>TAPS send (feeds the taps delay ring) */
+/* v0.6 GEN Variation page */
+#define PK_GRV_GPATTERN  "grv_gpattern"   /* pattern mode / riff enum */
+#define PK_GRV_GVOICE    "grv_gvoice"     /* GEN voice enum, see GEN_V_* in groove.h */
+#define PK_GRV_GACCENT   "grv_gaccent"
+#define PK_GRV_GOCTJUMP  "grv_goctjump"
+#define PK_GRV_GRATCHET  "grv_gratchet"
+#define PK_GRV_GDROP     "grv_gdrop"
+#define PK_GRV_GNRAND    "grv_gnrand"
+#define PK_GRV_GLOOP     "grv_gloop"      /* RAW int 0..16 */
+/* v0.6 GEN voices: each voice owns its two sound knobs (A = main control, B = character),
+ * gated on the page by visible_if grv_gvoice==N like the kick models. Basic keeps
+ * grv_gwave / grv_gfold so older sets still load. */
+#define PK_GRV_GDTWAVE   "grv_gdtwave"    /* Detune: wave */
+#define PK_GRV_GDETUNE   "grv_gdetune"    /* Detune: 0..-40 cents, then -5/-7/-12 st */
+#define PK_GRV_GFMWAVE   "grv_gfmwave"    /* FM: carrier wave */
+#define PK_GRV_GFMAMT    "grv_gfmamt"     /* FM: amount */
+#define PK_GRV_GASRES    "grv_gasres"     /* Acid Saw: resonance */
+#define PK_GRV_GASENV    "grv_gasenv"     /* Acid Saw: env amount */
+#define PK_GRV_GAQRES    "grv_gaqres"     /* Acid Sq: resonance */
+#define PK_GRV_GAQENV    "grv_gaqenv"     /* Acid Sq: env amount */
+#define PK_GRV_GD1NOISE  "grv_gd1noise"   /* Dirt: noise level */
+#define PK_GRV_GD1NFM    "grv_gd1nfm"     /* Dirt: noise > filter FM */
+#define PK_GRV_GD2FM     "grv_gd2fm"      /* Dirt 2: FM amount */
+#define PK_GRV_GD2NFM    "grv_gd2nfm"     /* Dirt 2: noise > filter FM */
+#define PK_GRV_GBLWAVE   "grv_gblwave"    /* Bleep: wave */
+#define PK_GRV_GBLIP     "grv_gblip"      /* Bleep: blip depth */
+#define PK_GRV_GSTWAVE   "grv_gstwave"    /* Stab: wave */
+#define PK_GRV_GCHORD    "grv_gchord"     /* Stab: chord enum (RAW 0..3) */
+#define PK_GRV_GSLIDE    "grv_gslide"     /* acid slide dice 0..1 (replaces DROP on the page) */
+/* v0.6.2 Space page: per-source sends into the shared reverb + a synced SEQ delay */
+#define PK_GRV_RVRMB     "grv_rvrmb"      /* rumble -> reverb send 0..1 */
+#define PK_GRV_RVSEQ     "grv_rvseq"      /* seq -> reverb send 0..1 */
+#define PK_GRV_RVKICK    "grv_rvkick"     /* kick -> reverb send 0..1 */
+#define PK_GRV_RVDLY     "grv_rvdly"      /* delay -> reverb send 0..1 */
+#define PK_GRV_DLYSEND   "grv_dlysend"    /* seq -> delay send 0..1 */
+#define PK_GRV_DLYTIME   "grv_dlytime"    /* delay time enum (RAW 0..5) */
+#define PK_GRV_DLYFB     "grv_dlyfb"      /* delay feedback 0..1 */
+#define PK_GRV_DLYTONE   "grv_dlytone"    /* delay tone: dark .. bright/thin */
+/* read-only UI telemetry */
+#define PK_GRV_GVIEW     "grv_gview"      /* pattern string for the necklace widget */
+#define PK_GRV_GSTEP     "grv_gstep"      /* current step (live playhead) */
+#define PK_CHAIN_PARAMS  "chain_params"
 
 /* --- Per-model Page-2 param keys (Phase B, KICK-03..11) ---------------- */
 /* Each key is unique across all models (dispatch is a flat strcmp chain).

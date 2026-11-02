@@ -16,7 +16,7 @@ files_modified:
   - src/models/dig.c
   - tests/test_fx.c
 autonomous: true
-requirements: ["#1"]
+requirements: ["#1", "#2"]
 
 must_haves:
   truths:
@@ -25,6 +25,7 @@ must_haves:
     - "Setting FX TYPE to Fold (\"3\") produces Fold distortion, not Crush"
     - "Setting FX TYPE to Crush (\"4\") produces Crush, not a mode-4 collision"
     - "Diode (\"0\") continues to work correctly"
+    - "FM2 ATTACK produces an audible transient at ATTACK=0.5 with FX_DIODE dispatch active"
     - "make test passes with no regressions"
   artifacts:
     - path: "src/models/fm2.c"
@@ -43,7 +44,7 @@ must_haves:
 <objective>
 Fix Bug #1: the FX type selector routes Clip/SAT/Fold/Crush to FX_CRUSH for every non-zero enum index. Root cause: every model stores `fx_type` through `clampf(parse_f(val), 0.0f, 1.0f)` which maps integer strings "1"-"4" to 1.0f, then `* 4.0f + 0.5f` maps 1.0 → 4 = FX_CRUSH. The fix is a one-pattern change across 9 model files.
 
-Purpose: This is the highest-priority fix. It cascades: after this fix, Bug #2 (FM2 transient smearing) and Bug #3 partial (bit-crushed TAPS echoes) are also resolved.
+Purpose: This is the highest-priority fix. It cascades: after this fix, Bug #2 (FM2 transient smearing) and Bug #3 partial (bit-crushed TAPS echoes) are also resolved. With FX_DIODE dispatching correctly (mode 0), FM2 ATTACK transient contribution is no longer overridden by FX_CRUSH processing.
 Output: All 9 model files corrected; dispatch integration test added to test_fx.c.
 </objective>
 
@@ -259,6 +260,7 @@ cd /Users/jamesfish/Vibecoding\ Projects/Schwung/Omega && make test 2>&1 | tail 
     - `make test` output contains `test_fx: ALL TESTS PASSED`
     - `make test` output contains no `FAILED` lines
     - `make test` exits 0
+    - At least one FM2 test output WAV has non-silent first 20ms (confirming ATTACK transient fires with FX_DIODE dispatch active — per Bug #2 fix cascade)
   </acceptance_criteria>
   <done>make test passes all harnesses including the new T6 mode-distinctness check. Zero regressions.</done>
 </task>
@@ -273,7 +275,7 @@ After both tasks:
 </verification>
 
 <success_criteria>
-All 5 FX modes dispatch to distinct DSP paths. The `* 4.0f` scaling is completely removed from all 9 model files. `make test` is GREEN with no regressions.
+All 5 FX modes dispatch to distinct DSP paths. The `* 4.0f` scaling is completely removed from all 9 model files. `make test` is GREEN with no regressions. FM2 ATTACK transient is audible at default settings with FX_DIODE correctly dispatched (Bug #2 resolved as cascade of Bug #1 fix).
 </success_criteria>
 
 <output>

@@ -36,4 +36,11 @@ scp "$DR32SO" "$DEVICE_HOST:$DEVICE_DIR/dr32_engine.so.new"
 echo "deploy: atomic rename dr32_engine.so.new -> dr32_engine.so on device"
 ssh "$DEVICE_HOST" "mv '$DEVICE_DIR/dr32_engine.so.new' '$DEVICE_DIR/dr32_engine.so'"
 
+# v0.6: the UI files ship beside the .so (widgets/cards + chain_params source + help).
+for f in module.json help.json canvas.js cards.js; do
+    echo "deploy: uploading $f"
+    scp "$f" "$DEVICE_HOST:$DEVICE_DIR/$f.new"
+    ssh "$DEVICE_HOST" "mv '$DEVICE_DIR/$f.new' '$DEVICE_DIR/$f'"
+done
+
 echo "deploy: done"

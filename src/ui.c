@@ -51,6 +51,7 @@ typedef struct {
                                 * NULL => host draws `options`. Appended last so
                                 * existing positional initializers default it to
                                 * NULL without edits. */
+    const char *vis;         /* optional pre-serialized visible_if object (per-param gate) */
 } uiparam_t;
 
 /* Default lookup: reuse the value-cache key->index so schema defaults never
@@ -78,7 +79,7 @@ static int ui_parse_int_literal(const char *s) {
  * unit; enum params carry options. Default comes from the params tables. */
 static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) {
     char defbuf[24];
-    char obj[320];
+    char obj[640];
     if (p->type == UP_ENUM) {
         pk_format_value(ui_default_for(p->key), 0, defbuf, (int)sizeof defbuf);
         if (p->short_options)
@@ -124,6 +125,11 @@ static void ui_emit_param(char *buf, int buf_len, int *off, const uiparam_t *p) 
             "\"type\":\"float\",\"min\":%s,\"max\":%s,\"default\":%s,"
             "\"step\":%s,\"unit\":\"%s\"}",
             p->key, p->name, p->shortn, mn, mx, defbuf, p->step, p->unit);
+    }
+    if (p->vis) {                      /* gate: splice ,"visible_if":{...} before the closing brace */
+        size_t n = strlen(obj);
+        if (n > 0 && obj[n - 1] == '}')
+            snprintf(obj + n - 1, sizeof obj - (n - 1), ",\"visible_if\":%s}", p->vis);
     }
     ui_puts(buf, buf_len, off, obj);
 }
@@ -174,9 +180,15 @@ static const char OPT_FX_SHORT[] = "[\"Diode\",\"Clip\",\"SAT\",\"Fold\",\"Crush
 static const char OPT_MONO[]  = "[\"Stereo\",\"Mono\"]";
 static const char OPT_POLE[]  = "[\"2-pole\",\"4-pole\"]";
 static const char OPT_ROUTE[] = "[\"Synth\",\"Transient\",\"Both\"]";
-static const char OPT_GRVTYPE[] = "[\"Taps\",\"Gen\"]";
+static const char OPT_GRVTYPE[] = "[\"Rumble\",\"Seq\"]";
 static const char OPT_GFILT[]   = "[\"LP\",\"HP\",\"Off\"]";
-static const char OPT_RVTYPE[]  = "[\"Room\",\"Hall\",\"Plate\"]";
+static const char OPT_RVTYPE[]  = "[\"Warehouse\",\"Concrete\",\"Tunnel\",\"Dirt\"]";
+static const char OPT_RVTYPE_SHORT[] = "[\"Whse\",\"Concr\",\"Tunnl\",\"Dirt\"]";
+static const char OPT_GPAT[] = "[\"Random\",\"Up\",\"Down\",\"Ping-Pong\",\"Leap\",\"Pedal\",\"Offbeat\",\"Rolling\",\"Acid\",\"Call+Resp\",\"Stabs\",\"Octaves\"]";
+static const char OPT_GPAT_SHORT[] = "[\"Rnd\",\"Up\",\"Down\",\"PiPo\",\"Leap\",\"Pedal\",\"OffB\",\"Roll\",\"Acid\",\"Call\",\"Stab\",\"Oct\"]";
+static const char OPT_GVOICE[] = "[\"Basic\",\"Detune\",\"FM\",\"Acid Saw\",\"Acid Sq\",\"Dirt\",\"Dirt 2\",\"Bleep\",\"Stab\"]";
+static const char OPT_GVOICE_SHORT[] = "[\"Basic\",\"Detun\",\"FM\",\"AcSaw\",\"AcSq\",\"Dirt\",\"Dirt2\",\"Bleep\",\"Stab\"]";
+static const char OPT_GCHORD[] = "[\"5th+Oct\",\"Minor\",\"Sus4\",\"Min7\"]";
 static const char OPT_SCALE[]   = "[\"Unquantized\",\"Chromatic\",\"Major\",\"Minor\","
     "\"Penta\",\"Dorian\",\"Phrygian\",\"Mixolydian\","
     "\"Hirajoshi\",\"Hungarian\",\"WholeTone\",\"Blues\",\"Diminished\"]";
@@ -253,7 +265,7 @@ static const char KN_KICK2[] =
  * taps line up on the lower encoders). VOL shows "TAP VOL" up top, short "TVOL". The
  * new HPF sits before the LPF in the signal chain and the UI. */
 static const uiparam_t P_GROOVE1[] = {
-    { PK_GRV_VOL,    "Taps Volume","TVOL",UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_VOL,    "Rumble Vol", "RMBVOL",UP_FLOAT, "%", "0.01", NULL, "0.0", "2.0" },  /* past noon: drive */
     { PK_GRV_LENGTH, "Decay",      "DECAY",UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_HPF,    "High-Pass",  "HPF",  UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_COLOR,  "Low-Pass",   "LPF",  UP_FLOAT, "%", "0.01", NULL },
@@ -286,32 +298,85 @@ static const uiparam_t P_GROOVE_FX[] = {
     { PK_GRV_RVMIX,   "REVERB",  "REV",   UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVDECAY, "RV DECAY","RVDEC", UP_FLOAT, "%", "0.01", NULL },
     { PK_GRV_RVTONE,  "RV TONE", "RVTONE",UP_FLOAT, "%", "0.01", NULL },
-    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE },
+    { PK_GRV_RVTYPE,  "RV TYPE", "RVTYPE",UP_ENUM,  "",  "0",    OPT_RVTYPE, NULL, NULL, OPT_RVTYPE_SHORT },
 };
 static const char KN_GROOVE_FX[] =
     "[\"" PK_GRV_DRIVE "\",\"" PK_GRV_LFOSPD "\",\"" PK_GRV_LFOAMT
     "\",\"" PK_GRV_ROUTE "\",\"" PK_GRV_RVMIX "\",\"" PK_GRV_RVDECAY
     "\",\"" PK_GRV_RVTONE "\",\"" PK_GRV_RVTYPE "\"]";
 
+/* v0.6.2 Space: per-source sends into the shared reverb (top row) and the synced
+ * SEQ delay (bottom row). The Effects page REVERB knob is the reverb's return. */
+static const char OPT_DLYTIME[] = "[\"1/16\",\"1/8T\",\"1/8\",\"1/8D\",\"1/4\",\"1/4D\"]";
+static const uiparam_t P_SPACE[] = {
+    { PK_GRV_RVRMB,   "RMB>REV",  "R>REV", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVSEQ,   "SEQ>REV",  "S>REV", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVKICK,  "KICK>REV", "K>REV", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_RVDLY,   "DLY>REV",  "D>REV", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_DLYSEND, "SEQ DLY",  "S>DLY", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_DLYTIME, "DLY TIME", "DTIME", UP_ENUM,  "",  "0",    OPT_DLYTIME },
+    { PK_GRV_DLYFB,   "DLY FDBK", "DFDBK", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_DLYTONE, "DLY TONE", "DTONE", UP_FLOAT, "%", "0.01", NULL },
+};
+static const char KN_SPACE[] =
+    "[\"" PK_GRV_RVRMB "\",\"" PK_GRV_RVSEQ "\",\"" PK_GRV_RVKICK "\",\"" PK_GRV_RVDLY
+    "\",\"" PK_GRV_DLYSEND "\",\"" PK_GRV_DLYTIME "\",\"" PK_GRV_DLYFB "\",\"" PK_GRV_DLYTONE "\"]";
+
 /* GEN groove page 2: sequence controls (SCALE/ROOT/RANGE/RETRIG moved to groove1). */
 /* Gen Seq (8 knobs). iter-2: SEQ LEN shows 1–64; ROTATE is bidirectional −32..+32;
  * SEED is stepped (discrete patterns); SWING is replaced by DECAY (gen note
  * length); WAVE is a continuous scan (sine→…→analog + fold), not a discrete enum;
- * and the GEN LP FILTER lives here next to WAVE/FOLD (moved off the FX page). */
+ * and the GEN LP FILTER lives here next to WAVE/FOLD (moved off the FX page).
+ * v0.6.1: row 2 is the sound row VOICE / WAVE / FOLD / FILTER; DECAY moved to Gen Variation. */
+#define VIS_V(n) "{\"param\":\"" PK_GRV_GVOICE "\",\"equals\":" #n "}"
+#define VK(key, nm, sn, v) { key, nm, sn, UP_FLOAT, "%", "0.01", NULL, NULL, NULL, NULL, VIS_V(v) }
 static const uiparam_t P_GROOVE_GEN_SEQ[] = {
     { PK_GRV_GSEED,    "SEED",    "SEED",  UP_FLOAT, "",  "0.0079", NULL, "0",   "127" },
     { PK_GRV_GSEQLEN,  "SEQ LEN", "SEQLEN",UP_INT,   "",  "1",      NULL, "1",   "64"  },
     { PK_GRV_GDENSITY, "DENSITY", "DENS",  UP_FLOAT, "%", "0.01",   NULL },
     { PK_GRV_GROTATE,  "ROTATE",  "ROT",   UP_FLOAT, "",  "0.0156", NULL, "-32", "32"  },
-    { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GWAVE,    "WAVE",    "WAVE",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GFOLD,    "FOLD",    "FOLD",  UP_FLOAT, "%", "0.01",   NULL },
-    { PK_GRV_GENFILT,  "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },  /* GEN's own filter (v0.4) */
+    { PK_GRV_GVOICE,   "VOICE",   "VOICE", UP_ENUM,  "",  "0",    OPT_GVOICE, NULL, NULL, OPT_GVOICE_SHORT },
+    /* each voice's own A (main control) + B (character), shown only for that voice */
+    VK(PK_GRV_GWAVE,    "WAVE",      "WAVE",  0), VK(PK_GRV_GFOLD,   "FOLD",      "FOLD",  0),
+    VK(PK_GRV_GDTWAVE,  "WAVE",      "WAVE",  1), VK(PK_GRV_GDETUNE, "DETUNE",    "DETUNE",1),
+    VK(PK_GRV_GFMWAVE,  "WAVE",      "WAVE",  2), VK(PK_GRV_GFMAMT,  "FM AMT",    "FM",    2),
+    VK(PK_GRV_GASRES,   "RES",       "RES",   3), VK(PK_GRV_GASENV,  "ENV AMT",   "ENV",   3),
+    VK(PK_GRV_GAQRES,   "RES",       "RES",   4), VK(PK_GRV_GAQENV,  "ENV AMT",   "ENV",   4),
+    VK(PK_GRV_GD1NOISE, "NOISE",     "NOISE", 5), VK(PK_GRV_GD1NFM,  "NOISE>FLT", "N>FLT", 5),
+    VK(PK_GRV_GD2FM,    "FM AMT",    "FM",    6), VK(PK_GRV_GD2NFM,  "NOISE>FLT", "N>FLT", 6),
+    VK(PK_GRV_GBLWAVE,  "WAVE",      "WAVE",  7), VK(PK_GRV_GBLIP,   "BLIP",      "BLIP",  7),
+    VK(PK_GRV_GSTWAVE,  "WAVE",      "WAVE",  8),
+    { PK_GRV_GCHORD,   "CHORD",   "CHORD", UP_ENUM,  "",  "0",    OPT_GCHORD, NULL, NULL, NULL, VIS_V(8) },
+    { PK_GRV_GENFILT,  "FILTER",  "FILT",  UP_FLOAT, "%", "0.01",   NULL },  /* the voice's own filter */
 };
 static const char KN_GROOVE_GEN_SEQ[] =
     "[\"" PK_GRV_GSEED "\",\"" PK_GRV_GSEQLEN "\",\"" PK_GRV_GDENSITY
-    "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GWAVE
-    "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_GENFILT "\"]";
+    "\",\"" PK_GRV_GROTATE "\",\"" PK_GRV_GVOICE
+    "\",\"" PK_GRV_GWAVE "\",\"" PK_GRV_GFOLD "\",\"" PK_GRV_GDTWAVE "\",\"" PK_GRV_GDETUNE
+    "\",\"" PK_GRV_GFMWAVE "\",\"" PK_GRV_GFMAMT "\",\"" PK_GRV_GASRES "\",\"" PK_GRV_GASENV
+    "\",\"" PK_GRV_GAQRES "\",\"" PK_GRV_GAQENV "\",\"" PK_GRV_GD1NOISE "\",\"" PK_GRV_GD1NFM
+    "\",\"" PK_GRV_GD2FM "\",\"" PK_GRV_GD2NFM "\",\"" PK_GRV_GBLWAVE "\",\"" PK_GRV_GBLIP
+    "\",\"" PK_GRV_GSTWAVE "\",\"" PK_GRV_GCHORD
+    "\",\"" PK_GRV_GENFILT "\"]";
+
+/* Gen Variation (v0.6.1): arp-style pattern + note shape + per-step dice. Row 1 is the
+ * pattern necklace (custom:oneck) and DECAY's pluck; row 2 the dice strip (custom:odice).
+ * VOICE moved to Gen Seq, next to WAVE/FOLD: it is how many oscillators play and where,
+ * WAVE is the shape every one of them uses. */
+static const uiparam_t P_GROOVE_GEN_VAR[] = {
+    { PK_GRV_GPATTERN, "PATTERN", "PATT",  UP_ENUM,  "",  "0",    OPT_GPAT, NULL, NULL, OPT_GPAT_SHORT },
+    { PK_GRV_GACCENT,  "ACCENT",  "ACCNT", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GOCTJUMP, "OCT JUMP","OCTJ",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GSWING,   "DECAY",   "DECAY", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GRATCHET, "RATCHET", "RATCH", UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GSLIDE,   "SLIDE",   "SLIDE", UP_FLOAT, "%", "0.01", NULL },   /* acid voices; replaced DROP */
+    { PK_GRV_GNRAND,   "NOTE RND","NRND",  UP_FLOAT, "%", "0.01", NULL },
+    { PK_GRV_GLOOP,    "LOOP",    "LOOP",  UP_INT,   "",  "1",    NULL, "0", "16" },
+};
+static const char KN_GROOVE_GEN_VAR[] =
+    "[\"" PK_GRV_GPATTERN "\",\"" PK_GRV_GACCENT "\",\"" PK_GRV_GOCTJUMP
+    "\",\"" PK_GRV_GSWING "\",\"" PK_GRV_GRATCHET "\",\"" PK_GRV_GSLIDE
+    "\",\"" PK_GRV_GNRAND "\",\"" PK_GRV_GLOOP "\"]";
 
 /* (Legacy MODEL_GEN-kick groove2 page removed: GEN is not a selectable kick
  * model — OPT_MODEL is FM2..USR — so that branch was unreachable.) */
@@ -387,7 +452,7 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
     /* v0.4.1 layout — row1: GEN VOL, SCALE, ROOT, RANGE; row2: RESET, NOTE LEN,
      * SWING, GEN>TAPS. ROOT is a SINGLE merged Hz control (ROOT NOTE removed). */
     static const uiparam_t p_head[] = {
-        { PK_GRV_GENVOL, "Gen Vol","GVOL",  UP_FLOAT, "%","0.01", NULL,      NULL, NULL },
+        { PK_GRV_GENVOL, "Seq Vol","SEQVOL",UP_FLOAT, "%","0.01", NULL,      "0.0", "2.0" },  /* past noon: drive */
         { PK_GRV_GSCALE, "SCALE",  "SCALE", UP_ENUM,  "", "0",    OPT_SCALE, NULL, NULL },
     };
     static const uiparam_t p_tail[] = {
@@ -395,10 +460,10 @@ static void ui_emit_gen_groove1(char *buf, int buf_len, int *off,
         { PK_GRV_GRETRIG,  "RESET",   "RESET", UP_ENUM,  "",  "0",    OPT_RESET,   NULL, NULL },
         { PK_GRV_GNOTELEN, "NOTE LEN","NLEN",  UP_ENUM,  "",  "0",    OPT_NOTELEN, NULL, NULL },
         { PK_GRV_GSWINGAMT,"SWING",   "SWING", UP_FLOAT, "%", "0.01", NULL,        NULL, NULL },
-        { PK_GRV_GENTAPS,  "GEN>TAPS","G>TAP", UP_FLOAT, "%", "0.01", NULL,        NULL, NULL },
+        { PK_GRV_GENTAPS,  "SEQ>RMB", "S>RMB", UP_FLOAT, "%", "0.01", NULL,        NULL, NULL },
     };
     (void)inst;
-    ui_puts(buf, buf_len, off, "\"gengroove1\":{\"name\":\"Groove Gen\",\"params\":[");
+    ui_puts(buf, buf_len, off, "\"gengroove1\":{\"name\":\"Sequence\",\"params\":[");
     for (int i = 0; i < (int)(sizeof p_head / sizeof p_head[0]); i++) {
         if (i) ui_puts(buf, buf_len, off, ",");
         ui_emit_param(buf, buf_len, off, &p_head[i]);
@@ -492,21 +557,27 @@ int omega_build_ui(bohm_instance_t *inst, char *buf, int buf_len) {
     ui_emit_level(buf, buf_len, &off, "kick2", "Kick 2", P_KICK2, NELEM(P_KICK2), KN_KICK2, NULL);
 
     /* Groove pages (v0.4 — ALL ungated, always visible):
-     *   groove1    "Groove Taps"  (TAPS VOL + FIR rumble controls)
-     *   gengroove1 "Groove Gen"   (GEN VOL/SCALE/ROOT/ROOT NOTE/RANGE/RETRIG)
+     *   groove1    "Rumble"       (RUMBLE VOL + FIR rumble controls)
+     *   gengroove1 "Sequence"     (SEQ VOL/SCALE/ROOT/RANGE/RESET...)
      *   genseq     "Gen Seq"      (SEED/SEQLEN/.../GEN FILTER)
-     *   groovefx   "Groove Effects" (shared drive/reverb/route) */
+     *   groovefx   "Effects"      (shared drive/reverb/route) */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "groove1", "Groove Taps",
+    ui_emit_level(buf, buf_len, &off, "groove1", "Rumble",
                   P_GROOVE1, NELEM(P_GROOVE1), KN_GROOVE1, NULL);
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_gen_groove1(buf, buf_len, &off, inst);          /* "gengroove1" "Groove Gen" */
+    ui_emit_gen_groove1(buf, buf_len, &off, inst);          /* "gengroove1" "Sequence" */
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "genseq", "Gen Seq",
+    ui_emit_level(buf, buf_len, &off, "genseq", "Seq Voice",
                   P_GROOVE_GEN_SEQ, NELEM(P_GROOVE_GEN_SEQ), KN_GROOVE_GEN_SEQ, NULL);
     ui_puts(buf, buf_len, &off, ",");
-    ui_emit_level(buf, buf_len, &off, "groovefx", "Groove Effects",
+    ui_emit_level(buf, buf_len, &off, "genvar", "Seq Variation",
+                  P_GROOVE_GEN_VAR, NELEM(P_GROOVE_GEN_VAR), KN_GROOVE_GEN_VAR, NULL);
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "groovefx", "Effects",
                   P_GROOVE_FX, NELEM(P_GROOVE_FX), KN_GROOVE_FX, NULL);
+    ui_puts(buf, buf_len, &off, ",");
+    ui_emit_level(buf, buf_len, &off, "space", "Space",
+                  P_SPACE, NELEM(P_SPACE), KN_SPACE, NULL);
 
     /* Performer chain page (Phase D) — always present, no gate. */
     ui_puts(buf, buf_len, &off, ",");

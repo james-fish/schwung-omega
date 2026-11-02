@@ -118,6 +118,14 @@ None — all three model bugs are corrected with no placeholder values or hardco
 - Ready for E1-03 (the third and final E1 plan)
 - On-device voicing audit (B-09 checkpoint) remains open — not a code blocker
 
+## Self-Check: PASSED
+- FOUND: src/models/phy.c
+- FOUND: src/models/dig.c
+- FOUND: src/models/hrd.c
+- FOUND: .planning/phases/E1-critical-audio-fixes/E1-02-SUMMARY.md
+- FOUND commit: 7c4aab6
+- FOUND commit: 0ab5520
+
 ---
 *Phase: E1-critical-audio-fixes*
 *Completed: 2026-09-30*

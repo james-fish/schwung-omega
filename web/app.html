@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141416">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Omega — techno kick, rumble, seq &amp; warehouse (Schwung bench)</title>
+<style>/*@@STYLE@@*/</style>
+</head>
+<body>
+<header class="top">
+  <div class="logo">OMEGA<span>kick · rumble · seq · warehouse</span></div>
+  <button id="power" class="power">&#9211; Start audio</button>
+  <button id="run" class="run" disabled>&#9654; Play</button>
+  <div class="tempo">
+    <label for="bpm">Tempo</label>
+    <input id="bpm" type="range" min="125" max="150" step="1" value="132">
+    <b id="bpmv">132</b>
+  </div>
+  <div class="meter" title="Output peak"><div id="peak"></div></div>
+</header>
+
+<main>
+  <section class="card seqcard">
+    <div class="sechead"><h2>Kick sequencer</h2>
+      <div class="chips">
+        <button data-pat="0x8888">4/4</button>
+        <button data-pat="0x888A">Push</button>
+        <button data-pat="0x8889">Roll</button>
+        <button data-pat="0x8928">Broken</button>
+        <button data-pat="0x0000">Clear</button>
+      </div>
+    </div>
+    <div class="seq" id="seq"></div>
+    <p class="hint">Tap a step: off → on → <b>accent</b> → off. The sequencer and the rumble follow this transport.</p>
+  </section>
+
+  <section class="card scenecard">
+    <div class="sechead"><h2>Scenes</h2><small>quick starts that reset then set a sound</small></div>
+    <div class="scenes" id="scenes"></div>
+  </section>
+
+  <section class="card move">
+    <div class="sechead"><h2>Move display</h2><small>Omega's real <code>canvas.js</code> widgets + <code>cards.js</code></small></div>
+    <div class="oled-wrap"><canvas id="oled" width="512" height="256"></canvas></div>
+    <div class="jog">
+      <button id="jprev" aria-label="Previous page">&#9664;</button>
+      <select id="pagesel" aria-label="Page"></select>
+      <button id="jnext" aria-label="Next page">&#9654;</button>
+    </div>
+    <div class="encoders" id="encoders"></div>
+    <p class="hint">Drag an encoder up/down (or scroll) · double-tap resets · <kbd>[</kbd> <kbd>]</kbd> pages · <kbd>Shift</kbd> fine · <kbd>Space</kbd> play</p>
+  </section>
+
+  <section class="card about">
+    <h2>What's new in v0.6</h2>
+    <ul>
+      <li><b>Widgets</b>: every page draws the sound — the kick's pitch dive, ghost-kick taps, the GEN necklace with a live playhead, dice, the warehouse with a ping bouncing in it, the sidechain pump.</li>
+      <li><b>Warehouse reverb</b>: concrete early reflections + an 8-line FDN with grit in the loop. Types: Warehouse, Concrete, Tunnel, Dirt (6-bit, decimated).</li>
+      <li><b>Sequencer voices</b>: Basic, Detune, FM, Acid Saw, Acid Sq, Dirt, Dirt 2, Bleep, Stab. Each has its own two knobs next to VOICE (e.g. Acid: RES + ENV AMT, with SLIDE on Seq Variation).</li>
+      <li><b>Drive on the volumes</b>: RUMBLE VOL and SEQ VOL are 100% at noon; past noon they drive into the voice's filter at roughly even loudness.</li>
+      <li><b>Space</b>: separate sends from the rumble, sequence, kick and delay into the shared reverb, plus a tempo-synced sequence delay (1/16 to dotted 1/4) with feedback and tone.</li>
+      <li><b>Seq Variation</b>: patterns (Up/Down/Ping-Pong/Leap/Pedal + Offbeat, Rolling, Acid, Call+Resp, Stabs, Octaves riffs), accent, octave jump, ratchet, slide, note-random and LOOP.</li>
+    </ul>
+    <p class="hint" id="engineinfo">Engine: not started. Same C as the Move's dsp.so, compiled to WebAssembly.</p>
+  </section>
+</main>
+
+<script>/*@@SCRIPTS@@*/</script>
+</body>
+</html>

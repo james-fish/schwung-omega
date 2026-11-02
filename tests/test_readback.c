@@ -68,8 +68,8 @@ int main(void) {
     assert(approx(get_val(api, inst, PK_PITCH), 50.0f));
     assert(approx(get_val(api, inst, PK_MASTER_VOL), 1.0f));   /* main vol full */
     assert(approx(get_val(api, inst, PK_FX_TYPE), 0.0f));
-    assert(approx(get_val(api, inst, PK_GRV_RVMIX), 0.0f));    /* Phase 1: plain reverb MIX, 0 = off on bare create */
-    printf("test_readback: create defaults OK (pitch=50Hz, master=1.0, rvmix=0.0 off)\n");
+    assert(approx(get_val(api, inst, PK_GRV_RVMIX), 0.25f));   /* v0.6.2: reverb RETURN, a little on by default */
+    printf("test_readback: create defaults OK (pitch=50Hz, master=1.0, rvmix=0.25 return)\n");
 
     /* 1. set -> get echoes the value the host set. PITCH in Hz. */
     api->set_param(inst, PK_PITCH, "45.0000");

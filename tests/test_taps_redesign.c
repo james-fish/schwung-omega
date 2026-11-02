@@ -225,38 +225,45 @@ static void gate_no_bitcrush(plugin_api_v2_t *api) {
 
 /* ---- Gate: COLOR darkens (ZCR falls as COLOR closes) ---------------------- */
 static void gate_color_darkens(plugin_api_v2_t *api) {
+    /* v0.6.2: the rumble now sits under the kick, so measure the RUMBLE itself:
+     * (kick + rumble) minus the same render with the rumble off. */
     const double BPM = 128.0;
     double zcr_lo = 0.0, zcr_hi = 0.0;
     double dbeat = dbeat_for_bpm(BPM);
+    static int16_t buf[NSAMP], ref[NSAMP];
     for (int pass = 0; pass < 2; pass++) {
-        void *inst = api->create_instance("/tmp/omega", "{}");
-        assert(inst);
-        prime_kick(api, inst);
-        neutralise_chain(api, inst);
-        prime_taps(api, inst);
-        api->set_param(inst, KGRV_LENGTH, "0.5");
-        api->set_param(inst, PK_GRV_FILTYPE, "0");   /* LP active */
-        api->set_param(inst, KGRV_COLOR, pass == 0 ? "0.1" : "0.9");
-        mock_host_set_beat(0.0);
-        mock_host_set_bpm((float)BPM);
-        static int16_t buf[NSAMP];
-        int16_t out[BLOCK * 2];
-        int fpos = 0, cap = 0, fpb = (int)(60.0 / BPM * SR), next = 0;
-        for (int b = 0; b < NBLOCKS; b++) {
-            if (fpos >= next) { uint8_t no[3]={0x90,36,100}; api->on_midi(inst,no,3,0); next += fpb; }
-            mock_host_advance_beat(dbeat);
-            api->render_block(inst, out, BLOCK);
-            for (int k = 0; k < BLOCK * 2 && cap < NSAMP; k++, cap++) buf[cap] = out[k];
-            fpos += BLOCK;
+        for (int on = 1; on >= 0; on--) {
+            void *inst = api->create_instance("/tmp/omega", "{}");
+            assert(inst);
+            prime_kick(api, inst);
+            neutralise_chain(api, inst);
+            prime_taps(api, inst);
+            api->set_param(inst, KGRV_LENGTH, "0.5");
+            api->set_param(inst, KGRV_VOL, on ? "1.0" : "0.0");
+            api->set_param(inst, PK_GRV_FILTYPE, "0");   /* LP active */
+            api->set_param(inst, KGRV_COLOR, pass == 0 ? "0.1" : "0.9");
+            mock_host_set_beat(0.0);
+            mock_host_set_bpm((float)BPM);
+            int16_t *dst = on ? buf : ref;
+            int16_t out[BLOCK * 2];
+            int fpos = 0, cap = 0, fpb = (int)(60.0 / BPM * SR), next = 0;
+            for (int b = 0; b < NBLOCKS; b++) {
+                if (fpos >= next) { uint8_t no[3]={0x90,36,100}; api->on_midi(inst,no,3,0); next += fpb; }
+                mock_host_advance_beat(dbeat);
+                api->render_block(inst, out, BLOCK);
+                for (int k = 0; k < BLOCK * 2 && cap < NSAMP; k++, cap++) dst[cap] = out[k];
+                fpos += BLOCK;
+            }
+            api->destroy_instance(inst);
         }
+        for (int i = 0; i < NSAMP; i++) buf[i] = (int16_t)(buf[i] - ref[i]);
         double z = buf_zcr(buf, NSAMP / 2);
         if (pass == 0) zcr_lo = z; else zcr_hi = z;
-        api->destroy_instance(inst);
     }
     if (!(zcr_hi > zcr_lo * 1.2))
         fprintf(stderr, "color_darkens: zcr_hi=%.5f zcr_lo=%.5f (want hi>1.2*lo)\n", zcr_hi, zcr_lo);
     assert(zcr_hi > zcr_lo * 1.2);
-    assert(zcr_hi > 0.01);
+    assert(zcr_hi > 0.002);   /* rumble-only signal: lower than the old kick+rumble floor */
     printf("test_taps_redesign: COLOR darkens OK (zcr lo=%.4f hi=%.4f)\n", zcr_lo, zcr_hi);
 }
 

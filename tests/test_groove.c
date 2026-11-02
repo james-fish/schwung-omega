@@ -27,6 +27,8 @@
 #include "omega.h"
 #include "dsp_primitives.h"
 #include "mock_host.h"
+#include "groove.h"
+#include <stdlib.h>
 
 #include <assert.h>
 #include <math.h>
@@ -317,7 +319,10 @@ static void test_page1_responsive(void) {
         render_driven(api, inst, dbeat, hi);
 
         double rlo = buf_rms(lo, NSAMP), rhi = buf_rms(hi, NSAMP);
-        if (fabs(rhi - rlo) > 1e-4) responsive++;   /* measurable change */
+        /* measurable change: RMS can hide a late tap, so also compare the samples */
+        long dsum = 0; for (int i = 0; i < NSAMP; i++) dsum += labs((long)hi[i] - (long)lo[i]);
+        if (fabs(rhi - rlo) > 1e-4 || dsum > 100L * 32) responsive++;
+        else printf("unresponsive: %s (%g vs %g)\n", k_grv_keys[k], rlo, rhi);
     }
     /* Every groove key must move the output (RED until C-02 makes them live). */
     assert(responsive == N_GRV);
@@ -590,7 +595,9 @@ static void test_rumble_audible(void) {
     if (!(ron > 0.003))
         fprintf(stderr, "rumble_audible: tail rms on=%.5f (want >0.003)\n", ron);
     assert(ron > 0.003);            /* absolute audibility floor (not near-silent) */
-    assert(ron > roff * 2.0);       /* groove clearly adds a rumble tail */
+    /* v0.6.2 gain staging keeps the rumble just under the kick: rumble tail ~ the kick tail: 1.4x, not 2x */
+    if (!(ron > roff * 1.4)) fprintf(stderr, "rumble_audible: off=%.5f on=%.5f\n", roff, ron);
+    assert(ron > roff * 1.4);       /* groove clearly adds a rumble tail */
     api->destroy_instance(inst);
     printf("test_groove: P1 rumble audible at default OK (tail off=%.4f on=%.4f)\n", roff, ron);
 }
@@ -985,18 +992,18 @@ static void test_e3_gen_groove_enhancements(void) {
     assert(strstr(ui, "Unquantized") != NULL);
     assert(strstr(ui, "WholeTone")   != NULL);
 
-    /* SC4: the GEN control page ("Groove Gen"/gengroove1) shows ROOT and RANGE. */
+    /* SC4: the GEN control page ("Sequence"/gengroove1) shows ROOT and RANGE. */
     assert(strstr(ui, PK_GRV_GROOT)  != NULL);
     assert(strstr(ui, PK_GRV_GRANGE) != NULL);
-    assert(strstr(ui, "Groove Gen")  != NULL);
+    assert(strstr(ui, "\"Sequence\"")  != NULL);   /* v0.6: GEN renamed Sequence */
     /* v0.4: groove pages are UNGATED (TAPS + GEN run together) — no grv_type gate,
      * and the independent GEN VOL + note-root + GEN filter controls are present. */
     assert(strstr(ui, PK_GRV_TYPE "\",\"equals\":1}") == NULL);
     assert(strstr(ui, PK_GRV_GENVOL)    != NULL);
     assert(strstr(ui, PK_GRV_GROOTNOTE) == NULL);   /* v0.4.1: ROOT NOTE merged away */
 
-    /* SC5: the shared effects page is named "Groove Effects". */
-    assert(strstr(ui, "Groove Effects") != NULL);
+    /* SC5: the shared effects page is named "Effects" (v0.6: was "Groove Effects"). */
+    assert(strstr(ui, "\"Effects\"") != NULL);
 
     /* SC2/SC3 (v0.4.1): ROOT is a SINGLE Hz control used in BOTH modes. Moving it
      * moves the pitch -> different output (in a scale too). */
@@ -1046,6 +1053,200 @@ static void test_e3_gen_groove_enhancements(void) {
     printf("test_groove: E3 GEN groove enhancements OK (scales+root+range+unquantized+page layout)\n");
 }
 
+
+/* v0.6.1 beat lock: GEN steps must land on the host's exact 16ths for a long run
+ * (the old free-running counter settled up to 0.5 BPM off and slid 2-5 ms a bar).
+ * Drives groove_state_t directly so each fired step's sample time is visible. */
+static void gen_lock_run(double bpm, int nblocks, int jitter, double *worst_out, int *fires_out) {
+    host_api_v1_t host = make_mock_host();
+    mock_host_set_bpm((float)bpm);
+    groove_state_t *g = calloc(1, sizeof *g);
+    assert(g);
+    groove_init(g);
+    double spq = 60.0 / bpm * 44100.0 / 4.0;          /* exact 16th in samples */
+    double dbeat = bpm / 60.0 * 128.0 / 44100.0;
+    long last = g->gen_abs_step;
+    double worst = 0.0; int fires = 0;
+    float l, r;
+    for (int b = 0; b < nblocks; b++) {
+        double beat = (double)b * dbeat;
+        /* a host that reports the beat with a little per-block jitter (+-0.2 ms) */
+        if (jitter) beat += ((b * 7919) % 17 - 8) * (0.0002 * bpm / 60.0 / 8.0);
+        mock_host_set_beat(beat);
+        groove_update_tempo(g, (const struct host_api_v1 *)&host, 128);
+        for (int i = 0; i < 128; i++) {
+            groove_tick(g, 0.0f, 0.0f, &l, &r);
+            if (g->gen_abs_step != last) {
+                last = g->gen_abs_step;
+                double t = (double)(b * 128 + i);
+                double err = fabs(t - (double)last * spq);
+                if (b > 2 && err > worst) worst = err;       /* skip the lock-in block */
+                fires++;
+            }
+        }
+    }
+    free(g);
+    *worst_out = worst; *fires_out = fires;
+}
+
+static void test_gen_beat_lock(void) {
+    static const double bpms[] = { 125.0, 128.0, 132.0, 138.0, 150.0 };
+    for (int k = 0; k < 5; k++) {
+        double worst; int fires;
+        int nb = (int)(64.0 * 4.0 * 60.0 / bpms[k] * 44100.0 / 128.0);   /* 64 bars */
+        gen_lock_run(bpms[k], nb, 0, &worst, &fires);
+        assert(fires >= 64 * 16 - 2);
+
+        assert(worst <= 1.01);             /* every step within a sample, bar 1 to bar 64 */
+        gen_lock_run(bpms[k], nb, 1, &worst, &fires);
+        assert(fires >= 64 * 16 - 2 && fires <= 64 * 16 + 2);   /* jitter: no double/missed steps */
+        assert(worst <= 0.0002 * 44100.0 + 2.0);   /* error stays the host's jitter, never grows */
+    }
+    printf("test_groove: v0.6.1 GEN beat lock OK (64 bars, 125-150 BPM, on the 16th +-1 sample)\n");
+}
+
+/* ---- v0.6 SEQ voices, SLIDE, Detune snaps, volume drive ------------------ */
+/* Render 2 bars of the sequencer alone at 132 BPM; returns RMS (0..1) and checks bounds. */
+static double seq_rms(plugin_api_v2_t *api, void *inst, int blocks_out, int16_t *keep) {
+    int16_t out[BLOCK * 2];
+    double dbeat = 132.0 / 60.0 * BLOCK / SR, s2 = 0.0;
+    int blocks = (int)(8.0 / dbeat);
+    mock_host_set_bpm(132.0f); mock_host_set_beat(0.0);
+    for (int b = 0; b < blocks; b++) {
+        mock_host_advance_beat(dbeat);
+        api->render_block(inst, out, BLOCK);
+        for (int i = 0; i < BLOCK * 2; i++) {
+            double x = out[i] / 32768.0; s2 += x * x;
+            if (keep && b < blocks_out) keep[b * BLOCK * 2 + i] = out[i];
+        }
+    }
+    return sqrt(s2 / (blocks * BLOCK * 2.0));
+}
+static void *seq_fresh(plugin_api_v2_t *api) {
+    void *inst = api->create_instance("/tmp/omega", "{}");
+    assert(inst);
+    api->set_param(inst, PK_GRV_VOL, "0");
+    api->set_param(inst, PK_GRV_GENVOL, "1.0");
+    api->set_param(inst, PK_GRV_GDENSITY, "0.8");
+    api->set_param(inst, PK_GRV_GPATTERN, "8");
+    api->set_param(inst, PK_GRV_GENFILT, "0.55");
+    return inst;
+}
+/* ---- v0.6.2 Space: per-source reverb sends + the synced SEQ delay ----------- */
+static void test_space(void) {
+    host_api_v1_t host = make_mock_host();
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    enum { KEEP = 200 };
+    static int16_t a[KEEP * BLOCK * 2], b[KEEP * BLOCK * 2];
+    /* 1. send/return: all sends closed -> the REVERB return adds nothing */
+    void *x = seq_fresh(api), *y = seq_fresh(api);
+    const char *ks[] = { PK_GRV_RVRMB, PK_GRV_RVSEQ, PK_GRV_RVKICK, PK_GRV_RVDLY };
+    for (int i = 0; i < 4; i++) { api->set_param(x, ks[i], "0"); api->set_param(y, ks[i], "0"); }
+    api->set_param(x, PK_GRV_RVMIX, "0"); api->set_param(y, PK_GRV_RVMIX, "1");
+    seq_rms(api, x, KEEP, a); seq_rms(api, y, KEEP, b);
+    assert(memcmp(a, b, sizeof a) == 0);
+    /* 2. SEQ>REV alone opens the room */
+    api->set_param(y, PK_GRV_RVSEQ, "1");
+    seq_rms(api, y, KEEP, b);
+    assert(memcmp(a, b, sizeof a) != 0);
+    api->destroy_instance(x); api->destroy_instance(y);
+    /* 3. the delay: SEQ DLY adds echoes; at full feedback it stays bounded */
+    x = seq_fresh(api); y = seq_fresh(api);
+    api->set_param(x, PK_GRV_RVMIX, "0"); api->set_param(y, PK_GRV_RVMIX, "0");
+    api->set_param(y, PK_GRV_DLYSEND, "1"); api->set_param(y, PK_GRV_DLYFB, "1");
+    double r0 = seq_rms(api, x, KEEP, a), r1 = seq_rms(api, y, KEEP, b);
+    assert(memcmp(a, b, sizeof a) != 0 && r1 > r0);
+    for (int pass = 0; pass < 4; pass++) {             /* 32 more beats of full feedback */
+        double r = seq_rms(api, y, 0, NULL);
+        assert(isfinite(r) && r < 0.6);
+    }
+    /* every delay time gives a different echo */
+    static int16_t t[6][KEEP * BLOCK * 2];
+    char v[8];
+    for (int i = 0; i < 6; i++) {
+        void *z = seq_fresh(api);
+        api->set_param(z, PK_GRV_RVMIX, "0"); api->set_param(z, PK_GRV_DLYSEND, "1");
+        snprintf(v, sizeof v, "%d", i); api->set_param(z, PK_GRV_DLYTIME, v);
+        seq_rms(api, z, KEEP, t[i]);
+        for (int j = 0; j < i; j++) assert(memcmp(t[i], t[j], sizeof t[i]) != 0);
+        api->destroy_instance(z);
+    }
+    api->destroy_instance(x); api->destroy_instance(y);
+    /* 4. KICK>REV puts the kick into the room */
+    x = seq_fresh(api); y = seq_fresh(api);
+    api->set_param(x, PK_GRV_GENVOL, "0"); api->set_param(y, PK_GRV_GENVOL, "0");
+    api->set_param(x, PK_GRV_RVKICK, "0"); api->set_param(y, PK_GRV_RVKICK, "1");
+    uint8_t no[3] = { 0x90, 36, 110 };
+    api->on_midi(x, no, 3, 0); api->on_midi(y, no, 3, 0);
+    seq_rms(api, x, KEEP, a); seq_rms(api, y, KEEP, b);
+    assert(memcmp(a, b, sizeof a) != 0);
+    api->destroy_instance(x); api->destroy_instance(y);
+    printf("test_groove: v0.6.2 Space OK (send/return isolated, delay bounded, 6 times, kick send)\n");
+}
+static void test_seq_voices(void) {
+    host_api_v1_t host = make_mock_host();
+    plugin_api_v2_t *api = move_plugin_init_v2(&host);
+    enum { KEEP = 200 };
+    static int16_t a[9][KEEP * BLOCK * 2];
+    double r[9];
+    char v[8];
+    for (int i = 0; i < 9; i++) {      /* every voice sounds, at a sane level, and differently */
+        void *inst = seq_fresh(api);
+        snprintf(v, sizeof v, "%d", i);
+        api->set_param(inst, PK_GRV_GVOICE, v);
+        r[i] = seq_rms(api, inst, KEEP, a[i]);
+        assert(r[i] > 0.02 && r[i] < 0.35);
+        api->destroy_instance(inst);
+        for (int j = 0; j < i; j++) assert(memcmp(a[i], a[j], sizeof a[i]) != 0);
+    }
+    /* SLIDE only acts on the acid voices */
+    for (int vc = 0; vc < 9; vc++) {
+        void *x = seq_fresh(api), *y = seq_fresh(api);
+        snprintf(v, sizeof v, "%d", vc);
+        api->set_param(x, PK_GRV_GVOICE, v); api->set_param(y, PK_GRV_GVOICE, v);
+        api->set_param(y, PK_GRV_GSLIDE, "1.0");
+        static int16_t bx[KEEP * BLOCK * 2], by[KEEP * BLOCK * 2];
+        seq_rms(api, x, KEEP, bx); seq_rms(api, y, KEEP, by);
+        int same = memcmp(bx, by, sizeof bx) == 0;
+        assert(same == !(vc == 3 || vc == 4));
+        api->destroy_instance(x); api->destroy_instance(y);
+    }
+    /* DETUNE: the second half snaps (0.55 and 0.6 are both -5 st), the first half is smooth */
+    {
+        static const char *d[4] = { "0.55", "0.6", "0.75", "0.2" };
+        static int16_t b[4][KEEP * BLOCK * 2];
+        for (int i = 0; i < 4; i++) {
+            void *inst = seq_fresh(api);
+            api->set_param(inst, PK_GRV_GVOICE, "1");
+            api->set_param(inst, PK_GRV_GDETUNE, d[i]);
+            seq_rms(api, inst, KEEP, b[i]);
+            api->destroy_instance(inst);
+        }
+        assert(memcmp(b[0], b[1], sizeof b[0]) == 0);
+        assert(memcmp(b[0], b[2], sizeof b[0]) != 0);
+        assert(memcmp(b[0], b[3], sizeof b[0]) != 0);
+    }
+    /* SEQ VOL: 0.5 is half level (old sets keep their meaning); past noon is drive at
+     * roughly even loudness (within 5 dB of noon) and changes the sound. */
+    for (int vc = 0; vc < 9; vc++) {
+        double lv[3]; static const char *vol[3] = { "0.5", "1.0", "2.0" };
+        snprintf(v, sizeof v, "%d", vc);
+        for (int k = 0; k < 3; k++) {
+            void *inst = seq_fresh(api);
+            api->set_param(inst, PK_GRV_GVOICE, v);
+            api->set_param(inst, PK_GRV_GENVOL, vol[k]);
+            lv[k] = seq_rms(api, inst, 0, NULL);
+            api->destroy_instance(inst);
+        }
+        double half = 20.0 * log10(lv[0] / lv[1]), drv = 20.0 * log10(lv[2] / lv[1]);
+        assert(fabs(half + 6.02) < 0.5);
+        assert(fabs(drv) < 5.0);
+        printf("test_groove: voice %d rms %.1f dB, vol 0.5 %+.1f dB, vol 2.0 %+.1f dB\n",
+               vc, 20.0 * log10(lv[1]), half, drv);
+    }
+    printf("test_groove: SEQ voices / slide / detune snaps / volume drive OK\n");
+}
+
 int main(void) {
     omega_primitives_selfcheck();
 
@@ -1058,6 +1259,9 @@ int main(void) {
 
     /* GRV-02 (the crux): tap positions track driven BPM + guarded fallback. */
     test_bpm_sweep();
+    test_gen_beat_lock();
+    test_seq_voices();
+    test_space();
     test_fallback_chain();
 
     /* GRV-01 / GRV-03 / GRV-05. */
